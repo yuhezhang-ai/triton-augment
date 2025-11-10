@@ -216,16 +216,17 @@ class TritonNormalize(nn.Module):
 
 class TritonColorJitterNormalize(nn.Module):
     """
-    Combined color jitter and normalization in a single fused operation.
+    Combined color jitter, random grayscale, and normalization in a single fused operation.
     
-    This class combines TritonColorJitter and TritonNormalize into a single
-    operation that uses a fused kernel for maximum performance. This is the
-    recommended way to apply both color jitter and normalization.
+    This class combines TritonColorJitter, TritonRandomGrayscale, and TritonNormalize 
+    into a single operation that uses a fused kernel for maximum performance. This is the
+    recommended way to apply color augmentations and normalization.
     
     Args:
         brightness: How much to jitter brightness (same as TritonColorJitter)
         contrast: How much to jitter contrast (same as TritonColorJitter)
         saturation: How much to jitter saturation (same as TritonColorJitter)
+        random_grayscale_p: Probability of converting to grayscale (default: 0.0)
         mean: Sequence of means for normalization (R, G, B)
         std: Sequence of standard deviations for normalization (R, G, B)
         
@@ -235,6 +236,7 @@ class TritonColorJitterNormalize(nn.Module):
         ...     brightness=0.2,  # Range: [0.8, 1.2]
         ...     contrast=0.2,    # Range: [0.8, 1.2]
         ...     saturation=0.2,  # Range: [0.8, 1.2]
+        ...     random_grayscale_p=0.1,  # 10% chance of grayscale
         ...     mean=(0.485, 0.456, 0.406),
         ...     std=(0.229, 0.224, 0.225)
         ... )
@@ -247,6 +249,7 @@ class TritonColorJitterNormalize(nn.Module):
         brightness: Optional[Union[float, Sequence[float]]] = None,
         contrast: Optional[Union[float, Sequence[float]]] = None,
         saturation: Optional[Union[float, Sequence[float]]] = None,
+        random_grayscale_p: float = 0.0,
         mean: Tuple[float, float, float] = (0.485, 0.456, 0.406),
         std: Tuple[float, float, float] = (0.229, 0.224, 0.225),
     ):
@@ -256,6 +259,10 @@ class TritonColorJitterNormalize(nn.Module):
         self.brightness = self._check_input(brightness, "brightness")
         self.contrast = self._check_input(contrast, "contrast")
         self.saturation = self._check_input(saturation, "saturation")
+        self.random_grayscale_p = random_grayscale_p
+        
+        if not (0.0 <= random_grayscale_p <= 1.0):
+            raise ValueError(f"random_grayscale_p must be in [0, 1], got {random_grayscale_p}")
         
         # Store normalization parameters
         self.mean = tuple(mean)
@@ -336,6 +343,7 @@ class TritonColorJitterNormalize(nn.Module):
             brightness_factor=brightness_factor,
             contrast_factor=contrast_factor,
             saturation_factor=saturation_factor,
+            random_grayscale_p=self.random_grayscale_p,
             mean=self.mean,
             std=self.std,
         )
@@ -346,6 +354,7 @@ class TritonColorJitterNormalize(nn.Module):
             f"brightness={self.brightness}, "
             f"contrast={self.contrast}, "
             f"saturation={self.saturation}, "
+            f"random_grayscale_p={self.random_grayscale_p}, "
             f"mean={self.mean}, "
             f"std={self.std})"
         )
