@@ -32,6 +32,16 @@ Example:
 
 from . import functional
 from . import transforms
+from . import utils
+
+# Import utility functions
+from .utils import warmup_cache
+
+# First-run detection and helpful message
+import sys
+if sys.stderr.isatty():  # Only print if running in terminal (not piped/redirected)
+    if utils.is_first_run():
+        utils.print_first_run_message()
 
 # Import commonly used transforms
 from .transforms import (
@@ -64,6 +74,10 @@ __all__ = [
     # Submodules
     'functional',
     'transforms',
+    'utils',
+    
+    # Utilities
+    'warmup_cache',
     
     # Transform classes
     'TritonColorJitter',

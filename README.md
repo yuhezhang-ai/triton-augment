@@ -8,6 +8,7 @@ Triton-Augment is a high-performance image augmentation library that leverages [
 
 - **Kernel Fusion**: Fuse brightness, contrast, saturation, and normalization into a single GPU kernel
 - **Zero Intermediate Memory**: Eliminate DRAM reads/writes between operations
+- **Auto-Tuned Performance**: Triton automatically selects optimal kernel configurations for your GPU and image sizes
 - **Drop-in Replacement**: Familiar torchvision-like API
 - **Significant Speedup**: Faster than sequential PyTorch operations
 - **PyTorch Compatible**: Works seamlessly with PyTorch data loading pipelines
@@ -58,6 +59,41 @@ pip install -e .
 
 - **Tensor Dimensions**: Only 4D tensors `(N, C, H, W)` are currently supported. Torchvision supports 3D `(C, H, W)` and 5D `(N, T, C, H, W)` as well. Support for these will be added in a future release (see Roadmap).
 - **Device**: All tensors must be on CUDA. CPU execution is not supported (Triton requires GPU).
+
+### 🔥 Recommended: Warm Up the Cache
+
+On first use, Triton will auto-tune kernels for your GPU (5-10 seconds per image size). To avoid this delay during training, **warm up the cache once after installation**.
+
+#### Option 1: CLI (Easiest)
+
+```bash
+# Use defaults (batch=32,64; size=224,256,512)
+python -m triton_augment.warmup
+
+# Specify YOUR training sizes
+python -m triton_augment.warmup --batch-sizes 64,128 --image-sizes 320,384,640
+```
+
+#### Option 2: Python API
+
+```python
+import triton_augment as ta
+
+# Use defaults
+ta.warmup_cache()
+
+# Specify YOUR training sizes
+ta.warmup_cache(batch_sizes=(64, 128), image_sizes=(320, 384, 640))
+```
+
+**⚠️ Important**: Specify your **actual training sizes**! Auto-tuning is size-specific. Warming up 224×224 won't help if you train with 320×320.
+
+You only need to do this **once per GPU**. All subsequent runs will be instant!
+
+**What happens if you skip this?**
+- First import will show a helpful message
+- First use of each image size will take 5-10 seconds (auto-tuning)
+- After that, performance is optimal (configs are cached)
 
 ## 🎯 Quick Start
 
@@ -480,6 +516,35 @@ GPU Memory ←→ [Brightness + Contrast + Saturation + Normalize] ←→ GPU Me
 ```
 
 By fusing operations, we eliminate 3 round-trips to GPU memory, resulting in significant speedups.
+
+### Auto-Tuning
+
+Triton-Augment uses **automatic kernel tuning** to find the optimal configuration for your specific GPU and workload. The key kernels (`fused_color_normalize`, `normalize`, `saturation`) automatically benchmark multiple configurations:
+
+- **BLOCK_SIZE**: Number of elements processed per thread block (256, 512, 1024, 2048)
+- **num_warps**: Thread group size for better parallelism (2, 4, 8)
+- **num_stages**: Memory pipeline depth for memory-compute overlap (2, 3)
+
+**How it works:**
+1. **First run**: Auto-tuning tests ~7 configurations and caches the best one (5-10 seconds)
+2. **Subsequent runs**: Uses cached optimal configuration (zero overhead)
+3. **Per GPU + size**: Cache is specific to your GPU model and image dimensions
+
+**Recommended workflow:**
+```bash
+# After installation, warm up the cache (one-time, ~30 seconds)
+# CLI method (easiest):
+python -m triton_augment.warmup --batch-sizes 64,128 --image-sizes 320,384
+
+# Or Python API:
+python -c "import triton_augment as ta; ta.warmup_cache(batch_sizes=(64, 128), image_sizes=(320, 384))"
+```
+
+**⚠️ Critical**: Auto-tuning is **size-specific**! A cache for 224×224 won't help with 320×320 images. Always use your actual training dimensions.
+
+**Don't want to run warmup?** No problem! On first import, you'll see a helpful message. The first use of each new image size will auto-tune (5-10 seconds), then all subsequent uses are instant.
+
+This ensures maximum performance across different GPUs (A100, V100, RTX 3090, etc.) and image sizes without manual tuning!
 
 ## 🛠️ Development
 

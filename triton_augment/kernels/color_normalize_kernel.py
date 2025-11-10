@@ -15,6 +15,18 @@ import triton.language as tl
 import torch
 
 
+@triton.autotune(
+    configs=[
+        triton.Config({'BLOCK_SIZE': 256}, num_warps=4, num_stages=2),
+        triton.Config({'BLOCK_SIZE': 512}, num_warps=4, num_stages=2),
+        triton.Config({'BLOCK_SIZE': 1024}, num_warps=4, num_stages=2),
+        triton.Config({'BLOCK_SIZE': 2048}, num_warps=8, num_stages=2),
+        triton.Config({'BLOCK_SIZE': 256}, num_warps=2, num_stages=3),
+        triton.Config({'BLOCK_SIZE': 512}, num_warps=4, num_stages=3),
+        triton.Config({'BLOCK_SIZE': 1024}, num_warps=8, num_stages=3),
+    ],
+    key=['batch_size', 'channels', 'height', 'width'],
+)
 @triton.jit
 def fused_color_normalize_kernel(
     # Pointers
@@ -244,6 +256,15 @@ def contrast_fast_kernel(
     tl.store(output_ptr + offsets, pixel, mask=mask)
 
 
+@triton.autotune(
+    configs=[
+        triton.Config({'BLOCK_SIZE': 256}, num_warps=4),
+        triton.Config({'BLOCK_SIZE': 512}, num_warps=4),
+        triton.Config({'BLOCK_SIZE': 1024}, num_warps=8),
+        triton.Config({'BLOCK_SIZE': 2048}, num_warps=8),
+    ],
+    key=['batch_size', 'height', 'width'],
+)
 @triton.jit
 def saturation_kernel(
     input_ptr,
@@ -294,6 +315,15 @@ def saturation_kernel(
     tl.store(output_ptr + b_offset, b, mask=spatial_mask)
 
 
+@triton.autotune(
+    configs=[
+        triton.Config({'BLOCK_SIZE': 256}, num_warps=4),
+        triton.Config({'BLOCK_SIZE': 512}, num_warps=4),
+        triton.Config({'BLOCK_SIZE': 1024}, num_warps=8),
+        triton.Config({'BLOCK_SIZE': 2048}, num_warps=8),
+    ],
+    key=['n_elements'],
+)
 @triton.jit
 def normalize_kernel(
     input_ptr,

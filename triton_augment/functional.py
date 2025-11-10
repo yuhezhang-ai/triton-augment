@@ -394,11 +394,10 @@ def adjust_saturation(
     spatial_size = height * width
     total_spatial_elements = batch_size * spatial_size
     
-    # Calculate grid size
-    BLOCK_SIZE = 256
+    # Calculate grid size (BLOCK_SIZE will be auto-tuned)
     grid = lambda meta: (triton.cdiv(total_spatial_elements, meta['BLOCK_SIZE']),)
     
-    # Launch kernel
+    # Launch kernel (auto-tuned for optimal performance)
     saturation_kernel[grid](
         image,
         output_tensor,
@@ -407,7 +406,6 @@ def adjust_saturation(
         height,
         width,
         saturation_factor,
-        BLOCK_SIZE=BLOCK_SIZE,
     )
     
     return output_tensor
@@ -450,14 +448,13 @@ def normalize(
     mean_tensor = torch.tensor(mean, device=image.device, dtype=image.dtype)
     std_tensor = torch.tensor(std, device=image.device, dtype=image.dtype)
     
-    # Calculate grid size
+    # Calculate grid size (BLOCK_SIZE will be auto-tuned)
     n_elements = image.numel()
     _, n_channels, height, width = image.shape
     spatial_size = height * width
-    BLOCK_SIZE = 1024
     grid = lambda meta: (triton.cdiv(n_elements, meta['BLOCK_SIZE']),)
     
-    # Launch kernel
+    # Launch kernel (auto-tuned for optimal performance)
     normalize_kernel[grid](
         image,
         output_tensor,
@@ -466,7 +463,6 @@ def normalize(
         n_channels,
         mean_tensor,
         std_tensor,
-        BLOCK_SIZE=BLOCK_SIZE,
     )
     
     return output_tensor
@@ -583,11 +579,10 @@ def fused_color_normalize(
     spatial_size = height * width
     total_spatial_elements = batch_size * spatial_size
     
-    # Calculate grid size
-    BLOCK_SIZE = 256
+    # Calculate grid size (BLOCK_SIZE will be auto-tuned)
     grid = lambda meta: (triton.cdiv(total_spatial_elements, meta['BLOCK_SIZE']),)
     
-    # Launch the fused kernel
+    # Launch the fused kernel (auto-tuned for optimal performance)
     fused_color_normalize_kernel[grid](
         image,
         output_tensor,
@@ -604,7 +599,6 @@ def fused_color_normalize(
         apply_contrast,
         apply_saturation,
         apply_normalize,
-        BLOCK_SIZE=BLOCK_SIZE,
     )
     
     return output_tensor

@@ -382,14 +382,29 @@ def print_speedup_summary():
         std=std,
     )
     
-    # Benchmark
-    t_tv = triton.testing.do_bench(lambda: transform_tv(test_img))
-    t_fused = triton.testing.do_bench(lambda: transform_fused(test_img))
+    # Benchmark with more accurate settings
+    # warmup: GPU warmup iterations
+    # rep: number of repetitions to measure
+    quantiles = [0.5, 0.2, 0.8]  # median, min, max
+    
+    t_tv, min_tv, max_tv = triton.testing.do_bench(
+        lambda: transform_tv(test_img),
+        warmup=25,
+        rep=100,
+        quantiles=quantiles
+    )
+    t_fused, min_fused, max_fused = triton.testing.do_bench(
+        lambda: transform_fused(test_img),
+        warmup=25,
+        rep=100,
+        quantiles=quantiles
+    )
     
     speedup = t_tv / t_fused
     
-    print(f"  torchvision Compose:          {t_tv:.3f} ms")
-    print(f"  Triton-Augment Fused:         {t_fused:.3f} ms  (uses FAST contrast)")
+    print(f"  torchvision Compose:          {t_tv:.3f} ms  (range: {min_tv:.3f} - {max_tv:.3f})")
+    print(f"  Triton-Augment Fused:         {t_fused:.3f} ms  (range: {min_fused:.3f} - {max_fused:.3f})")
+    print(f"                                (uses FAST contrast)")
     print()
     print(f"  🚀 Speedup: {speedup:.2f}x faster")
     print()
