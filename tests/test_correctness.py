@@ -189,48 +189,18 @@ class TestFusedCorrectness:
     Test fused operations correctness.
     
     NOTE: Fused kernel uses FAST contrast (centered scaling), not torchvision's
-    blend-with-mean. We test against sequential triton operations instead.
+    blend-with-mean.
     """
-    
-    def test_fused_matches_sequential_triton(self):
-        """Test that fused kernel matches sequential triton operations (with fast contrast)."""
-        # Create test image
-        img = torch.rand(4, 3, 128, 128, device='cuda', dtype=torch.float32)
-        
-        # Parameters
-        brightness_factor = 1.2
-        contrast_factor = 1.1
-        saturation_factor = 0.9
-        mean = (0.485, 0.456, 0.406)
-        std = (0.229, 0.224, 0.225)
-        
-        # Apply triton operations sequentially (using FAST contrast)
-        ta_seq = F.adjust_brightness(img, brightness_factor)
-        ta_seq = F.adjust_contrast_fast(ta_seq, contrast_factor)  # FAST contrast
-        ta_seq = F.adjust_saturation(ta_seq, saturation_factor)
-        ta_seq = F.normalize(ta_seq, mean=mean, std=std)
-        
-        # Apply triton-augment fused
-        ta_fused = F.fused_color_normalize(
-            img,
-            brightness_factor=brightness_factor,
-            contrast_factor=contrast_factor,
-            saturation_factor=saturation_factor,
-            mean=mean,
-            std=std,
-        )
-        
-        # Compare results (using PyTorch default tolerances: rtol=1e-05, atol=1e-08)
-        torch.testing.assert_close(
-            ta_fused,
-            ta_seq,
-            msg="Fused kernel doesn't match sequential triton operations"
-        )
     
     @pytest.mark.parametrize("batch_size", [1, 2, 4, 8])
     @pytest.mark.parametrize("size", [64, 128, 224])
-    def test_fused_different_sizes(self, batch_size, size):
-        """Test fused operation with different batch sizes and image sizes."""
+    def test_fused_matches_sequential_triton(self, batch_size, size):
+        """
+        Test that fused kernel matches sequential triton operations (with fast contrast).
+        
+        This is the main correctness test for the fused kernel, parameterized across
+        multiple batch sizes and image sizes.
+        """
         img = torch.rand(batch_size, 3, size, size, device='cuda', dtype=torch.float32)
         
         brightness_factor = 1.3
@@ -258,9 +228,31 @@ class TestFusedCorrectness:
         # Compare results (using PyTorch default tolerances: rtol=1e-05, atol=1e-08)
         torch.testing.assert_close(ta_fused, ta_seq)
     
-    def test_fused_without_contrast(self):
-        """Test fused operation without contrast (should match torchvision exactly)."""
-        img = torch.rand(2, 3, 128, 128, device='cuda', dtype=torch.float32)
+    @pytest.mark.parametrize("batch_size,height,width", [
+        # Regular sizes
+        (2, 128, 128),
+        (1, 224, 224),
+        # Odd sizes (not multiple of 2)
+        (2, 223, 223),
+        # Non-square
+        (1, 64, 128),
+        (2, 224, 112),
+        (1, 197, 211),  # Both odd and non-square
+        # Very small
+        (1, 7, 7),
+        (2, 13, 13),
+        (1, 1, 1),  # Extreme: single pixel
+        # Very large
+        (1, 512, 512),
+        (1, 1024, 768),
+        (1, 4096, 4096),
+        # Prime numbers (often edge cases)
+        (1, 97, 97),
+        (2, 101, 103),
+    ])
+    def test_fused_matches_torchvision_without_contrast(self, batch_size, height, width):
+        """Test fused operation without contrast on various irregular sizes (should match torchvision exactly)."""
+        img = torch.rand(batch_size, 3, height, width, device='cuda', dtype=torch.float32)
         
         brightness_factor = 1.2
         saturation_factor = 0.9
@@ -270,9 +262,7 @@ class TestFusedCorrectness:
         # Torchvision (no contrast)
         tv_result = tvF.adjust_brightness(img, brightness_factor)
         tv_result = tvF.adjust_saturation(tv_result, saturation_factor)
-        mean_t = torch.tensor(mean, device=img.device, dtype=img.dtype).view(1, 3, 1, 1)
-        std_t = torch.tensor(std, device=img.device, dtype=img.dtype).view(1, 3, 1, 1)
-        tv_result = (tv_result - mean_t) / std_t
+        tv_result = tvF.normalize(tv_result, mean=list(mean), std=list(std))
         
         # Triton fused (no contrast)
         ta_result = F.fused_color_normalize(
@@ -285,7 +275,11 @@ class TestFusedCorrectness:
         )
         
         # Should match torchvision exactly (no fast contrast involved)
-        torch.testing.assert_close(ta_result, tv_result)
+        torch.testing.assert_close(
+            ta_result, 
+            tv_result,
+            msg=f"Mismatch for shape ({batch_size}, 3, {height}, {width})"
+        )
 
 
 class TestEdgeCases:

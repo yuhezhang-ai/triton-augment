@@ -54,6 +54,11 @@ pip install -e .
 - Triton >= 2.0.0
 - CUDA-capable GPU
 
+### Current Limitations
+
+- **Tensor Dimensions**: Only 4D tensors `(N, C, H, W)` are currently supported. Torchvision supports 3D `(C, H, W)` and 5D `(N, T, C, H, W)` as well. Support for these will be added in a future release (see Roadmap).
+- **Device**: All tensors must be on CUDA. CPU execution is not supported (Triton requires GPU).
+
 ## 🎯 Quick Start
 
 ### Basic Usage
@@ -510,6 +515,8 @@ python examples/benchmark.py
 - [ ] Random erasing
 - [ ] CutMix and MixUp
 - [ ] Advanced color transformations (hue, sharpness)
+- [ ] Multi-dimensional tensor support (3D: single image, 5D: video batches)
+- [ ] Per-image random parameters (like Kornia's `same_on_batch=False`)
 
 ## 🤝 Contributing
 

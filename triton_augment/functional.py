@@ -33,6 +33,13 @@ def _validate_image_tensor(tensor: torch.Tensor, name: str = "tensor") -> None:
     Raises:
         TypeError: If tensor is not a torch.Tensor
         ValueError: If tensor is not on CUDA or has invalid shape
+    
+    Note:
+        Currently only supports 4D tensors (N, C, H, W).
+        Future versions will support:
+        - 3D tensors (C, H, W) for single images
+        - 5D tensors (N, T, C, H, W) for video batches
+        This matches torchvision's broader dimension support.
     """
     if not isinstance(tensor, torch.Tensor):
         raise TypeError(f"{name} must be a torch.Tensor, got {type(tensor)}")
