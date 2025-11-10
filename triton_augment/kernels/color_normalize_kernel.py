@@ -17,21 +17,27 @@ import torch
 
 @triton.autotune(
     configs=[
-        triton.Config({'BLOCK_SIZE': 256}, num_warps=4, num_stages=2),
-        triton.Config({'BLOCK_SIZE': 512}, num_warps=4, num_stages=2),
-        triton.Config({'BLOCK_SIZE': 1024}, num_warps=4, num_stages=2),
-        triton.Config({'BLOCK_SIZE': 2048}, num_warps=8, num_stages=2),
-        triton.Config({'BLOCK_SIZE': 256}, num_warps=2, num_stages=3),
+        # Config 1: Good for smaller, older GPUs (lower register pressure)
+        triton.Config({'BLOCK_SIZE': 256}, num_warps=4, num_stages=2), 
+        
+        # Config 2: Balanced, high occupancy, robust default
         triton.Config({'BLOCK_SIZE': 512}, num_warps=4, num_stages=3),
-        triton.Config({'BLOCK_SIZE': 1024}, num_warps=8, num_stages=3),
+        
+        # Config 3: Higher concurrency (num_warps=8) for large data center GPUs
+        triton.Config({'BLOCK_SIZE': 1024}, num_warps=8, num_stages=3), 
+
+        # Config 4: Max block size, testing higher staging for L2 cache
+        triton.Config({'BLOCK_SIZE': 1024}, num_warps=4, num_stages=4), 
     ],
-    key=['batch_size', 'channels', 'height', 'width'],
+    key=['N'],  # Tune based on total elements (passed explicitly)
 )
 @triton.jit
 def fused_color_normalize_kernel(
     # Pointers
     input_ptr,
     output_ptr,
+    # Total elements (for auto-tuning key)
+    N,  # batch_size * channels * height * width
     # Shape parameters
     batch_size,
     channels,
@@ -44,7 +50,7 @@ def fused_color_normalize_kernel(
     brightness_factor,
     contrast_factor,
     saturation_factor,
-    # Flags
+    # Flags                                
     apply_brightness: tl.constexpr,
     apply_contrast: tl.constexpr,
     apply_saturation: tl.constexpr,
@@ -67,11 +73,13 @@ def fused_color_normalize_kernel(
     Args:
         input_ptr: Pointer to input tensor (N, C, H, W) flattened
         output_ptr: Pointer to output tensor (N, C, H, W) flattened
+        N: Total number of elements (batch_size * channels * height * width)
+           Used as auto-tuning key, not in computation
         batch_size, channels, height, width: Tensor dimensions
         norm_mean_ptr, norm_std_ptr: Normalization parameters [C]
         brightness_factor, contrast_factor, saturation_factor: Adjustment factors
         apply_* flags: Compile-time constants to enable/disable operations
-        BLOCK_SIZE: Number of spatial locations to process per thread block
+        BLOCK_SIZE: Number of spatial locations to process per thread block (auto-tuned)
     """
     # Calculate total spatial size
     spatial_size = height * width
@@ -256,15 +264,6 @@ def contrast_fast_kernel(
     tl.store(output_ptr + offsets, pixel, mask=mask)
 
 
-@triton.autotune(
-    configs=[
-        triton.Config({'BLOCK_SIZE': 256}, num_warps=4),
-        triton.Config({'BLOCK_SIZE': 512}, num_warps=4),
-        triton.Config({'BLOCK_SIZE': 1024}, num_warps=8),
-        triton.Config({'BLOCK_SIZE': 2048}, num_warps=8),
-    ],
-    key=['batch_size', 'height', 'width'],
-)
 @triton.jit
 def saturation_kernel(
     input_ptr,
@@ -315,15 +314,6 @@ def saturation_kernel(
     tl.store(output_ptr + b_offset, b, mask=spatial_mask)
 
 
-@triton.autotune(
-    configs=[
-        triton.Config({'BLOCK_SIZE': 256}, num_warps=4),
-        triton.Config({'BLOCK_SIZE': 512}, num_warps=4),
-        triton.Config({'BLOCK_SIZE': 1024}, num_warps=8),
-        triton.Config({'BLOCK_SIZE': 2048}, num_warps=8),
-    ],
-    key=['n_elements'],
-)
 @triton.jit
 def normalize_kernel(
     input_ptr,

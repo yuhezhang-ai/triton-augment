@@ -49,10 +49,13 @@ def print_first_run_message():
     
     message = f"""
 {'='*80}
-[Triton-Augment] First run detected. Optimizing kernels for {gpu_name}.
+[Triton-Augment] First run detected. Optimizing fused kernel for {gpu_name}.
 
-This will take 5-10 seconds to auto-tune for optimal performance.
-All subsequent runs will be instantaneous (results are cached).
+⚠️  The fused kernel will auto-tune on first use (2-5 sec per image size).
+   You'll see: "[Triton-Augment] Auto-tuning fused_color_normalize_kernel..."
+   
+   After tuning, that specific size will be instant (cached).
+   Simple operations (brightness, saturation, normalize) use fixed settings.
 
 💡 Tip: Pre-warm the cache to avoid delays during training:
    
@@ -66,6 +69,61 @@ All subsequent runs will be instantaneous (results are cached).
 {'='*80}
 """
     print(message, file=sys.stderr)
+
+
+# Cache to track which kernel+config combos we've already checked
+# This avoids repeated file system calls during training (performance optimization)
+_checked_kernels = set()
+
+
+def should_show_autotune_message(kernel_name: str, cache_key: tuple) -> bool:
+    """
+    Check if we should show an auto-tuning message for a kernel.
+    
+    This checks if the specific kernel with this cache key is already tuned.
+    Uses an in-memory cache to avoid repeated file system calls during training.
+    
+    Args:
+        kernel_name: Name of the kernel (e.g., "fused_color_normalize_kernel")
+        cache_key: Tuple of dimensions that identify this specific config
+        
+    Returns:
+        True if we should show message (kernel will auto-tune), False otherwise
+    """
+    # Create a unique key for this kernel+config combo
+    check_key = (kernel_name, cache_key)
+    
+    # If we've already checked this kernel+config, don't show message again
+    # This avoids file system overhead on every training step
+    if check_key in _checked_kernels:
+        return False  # Already checked, don't show message again
+    
+    # Mark as checked before doing file system operations
+    _checked_kernels.add(check_key)
+    
+    cache_dir = get_triton_cache_dir()
+    
+    # If cache directory doesn't exist, kernel will definitely auto-tune
+    if not cache_dir.exists():
+        return True  # Show message: will auto-tune
+    
+    # Look for cache files matching this kernel name
+    # Triton cache files include kernel name in the filename
+    try:
+        kernel_cache_files = list(cache_dir.rglob(f"*{kernel_name}*"))
+        
+        # If no cache files exist for this kernel at all, it will auto-tune
+        if len(kernel_cache_files) == 0:
+            return True  # Show message: will auto-tune
+        
+        # If cache files exist, we can't easily tell if THIS specific size is cached
+        # without parsing Triton's internal cache format. 
+        # Conservatively assume it's cached and don't show message.
+        return False  # Don't show message: probably cached
+        
+    except Exception:
+        # On error, assume it will auto-tune to be safe
+        return True  # Show message: might auto-tune
 
 
 def warmup_cache(
@@ -153,5 +211,6 @@ __all__ = [
     'is_first_run',
     'print_first_run_message',
     'get_triton_cache_dir',
+    'should_show_autotune_message',
 ]
 

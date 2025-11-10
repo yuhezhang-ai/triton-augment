@@ -12,6 +12,7 @@ Author: yuhezhang-ai
 
 import torch
 import triton
+import sys
 from .kernels.color_normalize_kernel import (
     fused_color_normalize_kernel,
     brightness_kernel,
@@ -20,6 +21,7 @@ from .kernels.color_normalize_kernel import (
     saturation_kernel,
     normalize_kernel,
 )
+from .utils import should_show_autotune_message
 
 
 def _validate_image_tensor(tensor: torch.Tensor, name: str = "tensor") -> None:
@@ -394,10 +396,11 @@ def adjust_saturation(
     spatial_size = height * width
     total_spatial_elements = batch_size * spatial_size
     
-    # Calculate grid size (BLOCK_SIZE will be auto-tuned)
+    # Calculate grid size  
+    BLOCK_SIZE = 1024  # Fixed block size for simple operations
     grid = lambda meta: (triton.cdiv(total_spatial_elements, meta['BLOCK_SIZE']),)
     
-    # Launch kernel (auto-tuned for optimal performance)
+    # Launch kernel
     saturation_kernel[grid](
         image,
         output_tensor,
@@ -406,6 +409,7 @@ def adjust_saturation(
         height,
         width,
         saturation_factor,
+        BLOCK_SIZE=BLOCK_SIZE,
     )
     
     return output_tensor
@@ -448,13 +452,14 @@ def normalize(
     mean_tensor = torch.tensor(mean, device=image.device, dtype=image.dtype)
     std_tensor = torch.tensor(std, device=image.device, dtype=image.dtype)
     
-    # Calculate grid size (BLOCK_SIZE will be auto-tuned)
+    # Calculate grid size
     n_elements = image.numel()
-    _, n_channels, height, width = image.shape
+    batch_size, n_channels, height, width = image.shape
     spatial_size = height * width
+    BLOCK_SIZE = 1024  # Fixed block size for simple operations
     grid = lambda meta: (triton.cdiv(n_elements, meta['BLOCK_SIZE']),)
     
-    # Launch kernel (auto-tuned for optimal performance)
+    # Launch kernel
     normalize_kernel[grid](
         image,
         output_tensor,
@@ -463,6 +468,7 @@ def normalize(
         n_channels,
         mean_tensor,
         std_tensor,
+        BLOCK_SIZE=BLOCK_SIZE,
     )
     
     return output_tensor
@@ -579,13 +585,22 @@ def fused_color_normalize(
     spatial_size = height * width
     total_spatial_elements = batch_size * spatial_size
     
+    # Calculate N for auto-tuning key
+    N = batch_size * channels * height * width
+    
     # Calculate grid size (BLOCK_SIZE will be auto-tuned)
     grid = lambda meta: (triton.cdiv(total_spatial_elements, meta['BLOCK_SIZE']),)
+    
+    # Show auto-tuning message if this kernel hasn't been tuned yet
+    if should_show_autotune_message('fused_color_normalize_kernel', (N,)):
+        print(f"[Triton-Augment] Auto-tuning fused_color_normalize_kernel for batch={batch_size}, size={height}×{width}... (~2-5 sec)", 
+              file=sys.stderr, flush=True)
     
     # Launch the fused kernel (auto-tuned for optimal performance)
     fused_color_normalize_kernel[grid](
         image,
         output_tensor,
+        N,  # Total elements for auto-tuning key
         batch_size,
         channels,
         height,

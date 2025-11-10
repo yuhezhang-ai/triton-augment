@@ -525,14 +525,17 @@ By fusing operations, we eliminate 3 round-trips to GPU memory, resulting in sig
 
 ### Auto-Tuning
 
-Triton-Augment uses **automatic kernel tuning** to find the optimal configuration for your specific GPU and workload. The key kernels (`fused_color_normalize`, `normalize`, `saturation`) automatically benchmark multiple configurations:
+Triton-Augment uses **automatic kernel tuning** for the complex **fused kernel** to find the optimal configuration for your specific GPU and workload. Simple operations (brightness, saturation, normalize) use fixed, sensible defaults.
 
-- **BLOCK_SIZE**: Number of elements processed per thread block (256, 512, 1024, 2048)
-- **num_warps**: Thread group size for better parallelism (2, 4, 8)
-- **num_stages**: Memory pipeline depth for memory-compute overlap (2, 3)
+**Auto-tuned kernel** (`fused_color_normalize`):
+- **BLOCK_SIZE**: Number of elements processed per thread block (512, 1024)
+- **num_warps**: Thread group size for better parallelism (4, 8)
+- **num_stages**: Memory pipeline depth for memory-compute overlap (2, 3, 4)
+
+**Fixed kernels** (simple operations): Use `BLOCK_SIZE=1024` for optimal performance on most GPUs
 
 **How it works:**
-1. **First run**: Auto-tuning tests ~7 configurations and caches the best one (5-10 seconds)
+1. **First run**: Auto-tuning tests 3 configurations and caches the best one (2-5 seconds)
 2. **Subsequent runs**: Uses cached optimal configuration (zero overhead)
 3. **Per GPU + size**: Cache is specific to your GPU model and image dimensions
 
