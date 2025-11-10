@@ -351,8 +351,88 @@ class TritonColorJitterNormalize(nn.Module):
         )
 
 
+class TritonGrayscale(nn.Module):
+    """
+    Convert image to grayscale.
+    
+    Matches torchvision.transforms.v2.Grayscale behavior.
+    Uses weights: 0.2989*R + 0.587*G + 0.114*B
+    
+    Args:
+        num_output_channels: Number of output channels (1 or 3).
+                            If 1, output is single-channel grayscale.
+                            If 3, grayscale is replicated to 3 channels.
+                            
+    Example:
+        >>> transform = TritonGrayscale(num_output_channels=3)
+        >>> img = torch.rand(1, 3, 224, 224, device='cuda')
+        >>> gray = transform(img)  # Shape: (1, 3, 224, 224), all channels identical
+    """
+    
+    def __init__(self, num_output_channels: int = 1):
+        super().__init__()
+        if num_output_channels not in (1, 3):
+            raise ValueError(f"num_output_channels must be 1 or 3, got {num_output_channels}")
+        self.num_output_channels = num_output_channels
+    
+    def forward(self, image: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            image: Input tensor of shape (N, 3, H, W)
+            
+        Returns:
+            Grayscale tensor of shape (N, num_output_channels, H, W)
+        """
+        return F.rgb_to_grayscale(image, num_output_channels=self.num_output_channels)
+    
+    def __repr__(self):
+        return f"{self.__class__.__name__}(num_output_channels={self.num_output_channels})"
+
+
+class TritonRandomGrayscale(nn.Module):
+    """
+    Randomly convert image to grayscale with probability p.
+    
+    Matches torchvision.transforms.v2.RandomGrayscale behavior.
+    
+    Args:
+        p: Probability of converting to grayscale (default: 0.1)
+        num_output_channels: Number of output channels (1 or 3, default: 3)
+                            Usually 3 to maintain compatibility with RGB pipelines
+                            
+    Example:
+        >>> transform = TritonRandomGrayscale(p=0.5, num_output_channels=3)
+        >>> img = torch.rand(4, 3, 224, 224, device='cuda')
+        >>> result = transform(img)  # 50% chance of being grayscale
+    """
+    
+    def __init__(self, p: float = 0.1, num_output_channels: int = 3):
+        super().__init__()
+        if not (0.0 <= p <= 1.0):
+            raise ValueError(f"p ({p}) must be in [0, 1]")
+        if num_output_channels not in (1, 3):
+            raise ValueError(f"num_output_channels must be 1 or 3, got {num_output_channels}")
+        self.p = p
+        self.num_output_channels = num_output_channels
+    
+    def forward(self, image: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            image: Input tensor of shape (N, 3, H, W)
+            
+        Returns:
+            Image tensor, either original or grayscale based on probability
+        """
+        return F.random_grayscale(image, p=self.p, num_output_channels=self.num_output_channels)
+    
+    def __repr__(self):
+        return f"{self.__class__.__name__}(p={self.p}, num_output_channels={self.num_output_channels})"
+
+
 __all__ = [
     'TritonColorJitter',
     'TritonNormalize',
     'TritonColorJitterNormalize',
+    'TritonGrayscale',
+    'TritonRandomGrayscale',
 ]

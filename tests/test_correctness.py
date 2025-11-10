@@ -342,6 +342,136 @@ class TestRGBToGrayscale:
         torch.testing.assert_close(ta_gray, tv_gray, rtol=1e-5, atol=1e-5)
 
 
+class TestGrayscaleCorrectness:
+    """Test grayscale conversion correctness against torchvision."""
+    
+    @pytest.mark.parametrize("num_output_channels", [1, 3])
+    @pytest.mark.parametrize("shape", [(2, 3, 64, 64), (1, 3, 224, 224)])
+    def test_rgb_to_grayscale_matches_torchvision(self, num_output_channels, shape):
+        """Test that rgb_to_grayscale matches torchvision exactly."""
+        # Create test image
+        img = torch.rand(*shape, device='cuda', dtype=torch.float32)
+        
+        # Apply torchvision
+        tv_result = tvF.rgb_to_grayscale(img, num_output_channels=num_output_channels)
+        
+        # Apply triton-augment
+        ta_result = F.rgb_to_grayscale(img, num_output_channels=num_output_channels)
+        
+        # Compare results
+        torch.testing.assert_close(
+            ta_result,
+            tv_result,
+            msg=f"Grayscale mismatch for num_output_channels={num_output_channels}, shape={shape}"
+        )
+        
+        # Verify output shape
+        expected_shape = (shape[0], num_output_channels, shape[2], shape[3])
+        assert ta_result.shape == expected_shape
+    
+    def test_grayscale_deterministic(self):
+        """Test that grayscale conversion is deterministic."""
+        img = torch.rand(2, 3, 128, 128, device='cuda', dtype=torch.float32)
+        
+        # Apply twice
+        result1 = F.rgb_to_grayscale(img, num_output_channels=3)
+        result2 = F.rgb_to_grayscale(img, num_output_channels=3)
+        
+        # Should be identical
+        torch.testing.assert_close(result1, result2)
+    
+    def test_random_grayscale_with_p_zero(self):
+        """Test that random_grayscale with p=0 returns original image."""
+        img = torch.rand(2, 3, 128, 128, device='cuda', dtype=torch.float32)
+        
+        result = F.random_grayscale(img, p=0.0)
+        
+        # Should be unchanged
+        torch.testing.assert_close(result, img)
+    
+    def test_random_grayscale_with_p_one(self):
+        """Test that random_grayscale with p=1 always converts to grayscale."""
+        img = torch.rand(2, 3, 128, 128, device='cuda', dtype=torch.float32)
+        
+        result = F.random_grayscale(img, p=1.0, num_output_channels=3)
+        
+        # Should be grayscale (all channels identical)
+        assert torch.allclose(result[:, 0], result[:, 1])
+        assert torch.allclose(result[:, 1], result[:, 2])
+    
+    def test_fused_with_random_grayscale(self):
+        """Test that fused_color_normalize with random_grayscale_p=1.0 produces grayscale."""
+        img = torch.rand(2, 3, 128, 128, device='cuda', dtype=torch.float32)
+        
+        # Apply with random_grayscale_p=1.0 (always grayscale)
+        result = F.fused_color_normalize(
+            img,
+            brightness_factor=1.2,
+            contrast_factor=1.1,
+            saturation_factor=0.9,  # This should be overridden
+            random_grayscale_p=1.0,  # Force grayscale
+            mean=(0.485, 0.456, 0.406),
+            std=(0.229, 0.224, 0.225)
+        )
+        
+        # After normalization, check if it was grayscale before normalize
+        # Unnormalize to check
+        mean_t = torch.tensor([0.485, 0.456, 0.406], device='cuda').view(1, 3, 1, 1)
+        std_t = torch.tensor([0.229, 0.224, 0.225], device='cuda').view(1, 3, 1, 1)
+        unnormalized = result * std_t + mean_t
+        
+        # Should be grayscale (all channels should have similar values after accounting for different normalization)
+        # Actually, after normalization with different mean/std per channel, they won't be identical
+        # So let's test the saturation=0 effect directly
+        
+        # Better test: compare with explicit saturation=0
+        result_explicit = F.fused_color_normalize(
+            img,
+            brightness_factor=1.2,
+            contrast_factor=1.1,
+            saturation_factor=0.0,  # Explicit grayscale
+            random_grayscale_p=0.0,  # No random
+            mean=(0.485, 0.456, 0.406),
+            std=(0.229, 0.224, 0.225)
+        )
+        
+        # The random_grayscale_p=1.0 should match saturation_factor=0.0
+        torch.testing.assert_close(result, result_explicit, rtol=1e-5, atol=1e-5)
+
+
+class TestGrayscaleTransforms:
+    """Test grayscale transform classes."""
+    
+    def test_triton_grayscale_class(self):
+        """Test TritonGrayscale transform class."""
+        from triton_augment.transforms import TritonGrayscale
+        
+        transform = TritonGrayscale(num_output_channels=3)
+        img = torch.rand(2, 3, 128, 128, device='cuda', dtype=torch.float32)
+        
+        result = transform(img)
+        
+        # Should be grayscale
+        assert result.shape == (2, 3, 128, 128)
+        assert torch.allclose(result[:, 0], result[:, 1])
+        assert torch.allclose(result[:, 1], result[:, 2])
+    
+    def test_triton_random_grayscale_class(self):
+        """Test TritonRandomGrayscale transform class."""
+        from triton_augment.transforms import TritonRandomGrayscale
+        
+        # Test with p=0
+        transform_never = TritonRandomGrayscale(p=0.0, num_output_channels=3)
+        img = torch.rand(2, 3, 128, 128, device='cuda', dtype=torch.float32)
+        result = transform_never(img)
+        torch.testing.assert_close(result, img)
+        
+        # Test with p=1
+        transform_always = TritonRandomGrayscale(p=1.0, num_output_channels=3)
+        result = transform_always(img)
+        assert torch.allclose(result[:, 0], result[:, 1])
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
 

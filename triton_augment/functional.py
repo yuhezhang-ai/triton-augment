@@ -64,6 +64,89 @@ def _rgb_to_grayscale(image: torch.Tensor) -> torch.Tensor:
     return l_img.unsqueeze(dim=-3)
 
 
+def rgb_to_grayscale(
+    image: torch.Tensor,
+    num_output_channels: int = 1,
+) -> torch.Tensor:
+    """
+    Convert RGB image to grayscale.
+    
+    Matches torchvision.transforms.v2.functional.rgb_to_grayscale exactly.
+    Uses weights: 0.2989*R + 0.587*G + 0.114*B
+    
+    Args:
+        image: Input image tensor of shape (N, C, H, W) on CUDA
+               where C must be 3 (RGB)
+        num_output_channels: Number of output channels (1 or 3)
+                            If 3, grayscale is replicated across channels
+                            
+    Returns:
+        Grayscale tensor of shape (N, num_output_channels, H, W)
+        
+    Raises:
+        ValueError: If num_output_channels not in {1, 3} or if input not RGB
+        
+    Example:
+        >>> img = torch.rand(1, 3, 224, 224, device='cuda')
+        >>> gray_1ch = rgb_to_grayscale(img, num_output_channels=1)   # Shape: (1, 1, 224, 224)
+        >>> gray_3ch = rgb_to_grayscale(img, num_output_channels=3)   # Shape: (1, 3, 224, 224)
+    """
+    _validate_image_tensor(image, "image")
+    
+    if num_output_channels not in (1, 3):
+        raise ValueError(f"num_output_channels must be 1 or 3, got {num_output_channels}")
+    
+    if image.shape[1] != 3:
+        raise ValueError(f"Expected 3 channels (RGB), got {image.shape[1]}")
+    
+    # Compute grayscale using helper
+    grayscale = _rgb_to_grayscale(image)  # Shape: (N, 1, H, W)
+    
+    # Replicate to 3 channels if requested
+    if num_output_channels == 3:
+        grayscale = grayscale.expand(-1, 3, -1, -1).contiguous()
+    
+    return grayscale
+
+
+def random_grayscale(
+    image: torch.Tensor,
+    p: float = 0.1,
+    num_output_channels: int = 3,
+) -> torch.Tensor:
+    """
+    Randomly convert image to grayscale with probability p.
+    
+    Matches torchvision.transforms.v2.RandomGrayscale behavior.
+    
+    Args:
+        image: Input image tensor of shape (N, 3, H, W) on CUDA
+        p: Probability of converting to grayscale (default: 0.1)
+        num_output_channels: Number of output channels (1 or 3, default: 3)
+                            Usually 3 to maintain compatibility with RGB pipelines
+                            
+    Returns:
+        Image tensor, either original or grayscale based on probability
+        
+    Raises:
+        ValueError: If p not in [0, 1]
+        
+    Example:
+        >>> img = torch.rand(4, 3, 224, 224, device='cuda')
+        >>> result = random_grayscale(img, p=0.5)  # 50% chance of grayscale
+    """
+    _validate_image_tensor(image, "image")
+    
+    if not (0.0 <= p <= 1.0):
+        raise ValueError(f"p ({p}) must be in [0, 1]")
+    
+    # Decide randomly whether to apply grayscale
+    if p > 0 and torch.rand(1).item() < p:
+        return rgb_to_grayscale(image, num_output_channels=num_output_channels)
+    else:
+        return image
+
+
 def adjust_brightness(
     image: torch.Tensor,
     brightness_factor: float,
@@ -385,6 +468,7 @@ def fused_color_normalize(
     brightness_factor: float = 1.0,
     contrast_factor: float = 1.0,
     saturation_factor: float = 1.0,
+    random_grayscale_p: float = 0.0,
     mean: tuple[float, float, float] | None = None,
     std: tuple[float, float, float] | None = None,
 ) -> torch.Tensor:
@@ -395,7 +479,8 @@ def fused_color_normalize(
     1. Brightness adjustment: pixel = pixel * brightness_factor [torchvision-exact]
     2. Contrast adjustment (FAST): pixel = (pixel - 0.5) * contrast + 0.5
     3. Saturation adjustment: blend with grayscale [torchvision-exact]
-    4. Per-channel normalization [torchvision-exact]
+    4. Random grayscale: with probability p, convert to grayscale (saturation=0)
+    5. Per-channel normalization [torchvision-exact]
     
     The fusion eliminates intermediate memory reads/writes, providing
     2-5x performance improvements over sequential operations.
@@ -412,6 +497,8 @@ def fused_color_normalize(
                         Must be non-negative. 0.5=low, 1=original, >1=high contrast
         saturation_factor: Saturation multiplier (default: 1.0 = no change)
                           Must be non-negative. 0=grayscale, 1=original, >1=more saturated
+        random_grayscale_p: Probability of converting to grayscale (default: 0.0 = no grayscale)
+                           Must be in [0, 1]. When triggered, overrides saturation to 0.
         mean: Tuple of mean values for normalization (R, G, B)
               If None, normalization is skipped
         std: Tuple of standard deviation values for normalization (R, G, B)
@@ -450,6 +537,13 @@ def fused_color_normalize(
         raise ValueError(f"contrast_factor ({contrast_factor}) is not non-negative.")
     if saturation_factor < 0:
         raise ValueError(f"saturation_factor ({saturation_factor}) is not non-negative.")
+    if not (0.0 <= random_grayscale_p <= 1.0):
+        raise ValueError(f"random_grayscale_p ({random_grayscale_p}) must be in [0, 1].")
+    
+    # Handle random grayscale by overriding saturation to 0
+    # This converts to grayscale using the existing saturation kernel
+    if random_grayscale_p > 0 and torch.rand(1).item() < random_grayscale_p:
+        saturation_factor = 0.0
     
     # Determine which operations to apply
     apply_brightness = (brightness_factor != 1.0)

@@ -38,6 +38,8 @@ from .transforms import (
     TritonColorJitter,
     TritonNormalize,
     TritonColorJitterNormalize,
+    TritonGrayscale,
+    TritonRandomGrayscale,
 )
 
 # Import commonly used functional operations
@@ -47,6 +49,8 @@ from .functional import (
     adjust_contrast_fast,
     adjust_saturation,
     normalize,
+    rgb_to_grayscale,
+    random_grayscale,
     apply_brightness,
     apply_contrast,
     apply_saturation,
@@ -65,6 +69,8 @@ __all__ = [
     'TritonColorJitter',
     'TritonNormalize',
     'TritonColorJitterNormalize',
+    'TritonGrayscale',
+    'TritonRandomGrayscale',
     
     # Functional API
     'adjust_brightness',
@@ -72,6 +78,8 @@ __all__ = [
     'adjust_contrast_fast',
     'adjust_saturation',
     'normalize',
+    'rgb_to_grayscale',
+    'random_grayscale',
     'apply_brightness',
     'apply_contrast',
     'apply_saturation',
