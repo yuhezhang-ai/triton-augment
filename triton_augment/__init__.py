@@ -38,8 +38,9 @@ from . import utils
 from .utils import warmup_cache
 
 # First-run detection and helpful message
-import sys
-if sys.stderr.isatty():  # Only print if running in terminal (not piped/redirected)
+import os
+# Allow suppressing the message via environment variable (useful for CI/CD)
+if os.getenv('TRITON_AUGMENT_SUPPRESS_FIRST_RUN_MESSAGE') != '1':
     if utils.is_first_run():
         utils.print_first_run_message()
 

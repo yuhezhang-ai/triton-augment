@@ -91,9 +91,15 @@ ta.warmup_cache(batch_sizes=(64, 128), image_sizes=(320, 384, 640))
 You only need to do this **once per GPU**. All subsequent runs will be instant!
 
 **What happens if you skip this?**
-- First import will show a helpful message
-- First use of each image size will take 5-10 seconds (auto-tuning)
-- After that, performance is optimal (configs are cached)
+- **First import** will show a helpful message (printed to stderr)
+- **First use** of each image size will take 5-10 seconds (auto-tuning)
+- **After that**, performance is optimal (configs are cached)
+
+**Suppress the first-run message** (useful for CI/CD):
+```bash
+export TRITON_AUGMENT_SUPPRESS_FIRST_RUN_MESSAGE=1
+python my_script.py  # No message printed
+```
 
 ## 🎯 Quick Start
 
