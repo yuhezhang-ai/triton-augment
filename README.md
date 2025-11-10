@@ -9,7 +9,7 @@ Triton-Augment is a high-performance image augmentation library that leverages [
 - **Kernel Fusion**: Fuse brightness, contrast, saturation, and normalization into a single GPU kernel
 - **Zero Intermediate Memory**: Eliminate DRAM reads/writes between operations
 - **Drop-in Replacement**: Familiar torchvision-like API
-- **Significant Speedup**: 2-5x faster than sequential PyTorch operations
+- **Significant Speedup**: Faster than sequential PyTorch operations
 - **PyTorch Compatible**: Works seamlessly with PyTorch data loading pipelines
 
 ## 📦 Installation
@@ -113,6 +113,119 @@ for images, labels in loader:
     augmented, labels = gpu_transform((images, labels))
     # ... training code ...
 ```
+
+## ⚖️ Important: Contrast Difference for Speed
+
+**TL;DR**: This library implements a **different contrast algorithm** than torchvision for speed and fusion.
+- `fused_color_normalize()` uses **fast contrast** (not torchvision-exact)
+- For exact torchvision results, use individual functions
+
+### Three Equivalent Ways (All Produce Identical Output)
+
+All three approaches below produce **pixel-perfect identical results**:
+
+#### 1. Torchvision
+
+```python
+import torchvision.transforms.v2.functional as tvF
+
+img = torch.rand(1, 3, 224, 224, device='cuda')
+result = tvF.adjust_brightness(img, 1.2)
+result = tvF.adjust_contrast(result, 1.1)
+result = tvF.adjust_saturation(result, 0.9)
+mean_t = torch.tensor([0.485, 0.456, 0.406], device='cuda').view(1, 3, 1, 1)
+std_t = torch.tensor([0.229, 0.224, 0.225], device='cuda').view(1, 3, 1, 1)
+result = (result - mean_t) / std_t
+```
+
+⏱️ **Speed**: Baseline
+
+#### 2. Triton Individual Functions (Exact)
+
+```python
+import triton_augment.functional as F
+
+img = torch.rand(1, 3, 224, 224, device='cuda')
+result = F.adjust_brightness(img, 1.2)
+result = F.adjust_contrast(result, 1.1)        # Torchvision-exact
+result = F.adjust_saturation(result, 0.9)
+result = F.normalize(result, 
+                     mean=(0.485, 0.456, 0.406),
+                     std=(0.229, 0.224, 0.225))
+```
+
+⏱️ **Speed**: Faster (optimized Triton kernels) ⚡
+
+#### 3. Triton Contrast + Fused (Exact + Fast)
+
+```python
+import triton_augment.functional as F
+
+img = torch.rand(1, 3, 224, 224, device='cuda')
+# Apply exact contrast first
+result = F.adjust_brightness(img, 1.2)
+result = F.adjust_contrast(result, 1.1)        # Torchvision-exact
+
+# Then fuse remaining ops (no contrast)
+result = F.fused_color_normalize(
+    result,
+    brightness_factor=1.0,                     # Identity (already applied)
+    contrast_factor=1.0,                       # Identity (already applied)
+    saturation_factor=0.9,
+    mean=(0.485, 0.456, 0.406),
+    std=(0.229, 0.224, 0.225)
+)
+```
+
+⏱️ **Speed**: Fast (2 kernel launches) ⚡⚡
+
+### For Maximum Speed (Not Exact)
+
+If you don't need exact torchvision reproduction:
+
+```python
+import triton_augment.functional as F
+
+# Single fused kernel - fastest!
+result = F.fused_color_normalize(
+    img,
+    brightness_factor=1.2,
+    contrast_factor=1.1,                       # Fast contrast (different from torchvision)
+    saturation_factor=0.9,
+    mean=(0.485, 0.456, 0.406),
+    std=(0.229, 0.224, 0.225)
+)
+```
+
+⏱️ **Speed**: Fastest (single fused kernel) 🚀
+
+**⚠️ Note**: Fast contrast uses `(pixel - 0.5) * factor + 0.5` instead of torchvision's blend-with-mean.
+
+### Fast Contrast: Comparison to Other Libraries
+
+| Library | Formula | Type | Speed |
+|---------|---------|------|-------|
+| **NVIDIA DALI** | `(x - 0.5) * f + 0.5` | Linear (centered) | Fastest ✅ |
+| **Triton-Augment (fast)** | `(x - 0.5) * f + 0.5` | Linear (centered) | Fastest ✅ |
+| **OpenCV** | `alpha * x + beta` | Linear | Fast |
+| **Torchvision** | `x * f + mean * (1-f)` | Linear (mean) | Slower |
+| **Scikit-image** | `1/(1+exp(-gain*(x-cut)))` | Sigmoid (S-curve) | Slowest |
+
+**Why this formula?**
+- ✅ **Production-proven**: Same as NVIDIA DALI
+- ✅ **Fast & fusible**: No mean computation required
+- ✅ **Effective for training**: Models learn robustness to augmentation variations
+- ⚠️ **Different from torchvision**: Uses fixed 0.5 instead of computed mean
+
+For **exact torchvision reproduction**, use `adjust_contrast()` instead of fast mode.
+
+### Which Should You Use?
+
+| Goal | Method | Speed |
+|------|--------|-------|
+| Exact torchvision match | Individual functions (#2) | Faster |
+| Best speed + exact | Contrast + fused (#3) | Fast |
+| Maximum speed | Full fused (#4) | Fastest |
 
 ## 📚 API Reference
 
@@ -242,11 +355,40 @@ Apply brightness adjustment: `output = input * brightness_factor` (MULTIPLICATIV
 ta.adjust_contrast(input_tensor, contrast_factor)
 ```
 
-Apply contrast adjustment using blend with grayscale mean:
+Apply contrast adjustment using blend with grayscale mean (torchvision-exact):
 ```python
 grayscale_mean = mean(rgb_to_grayscale(input))
 output = input * contrast_factor + grayscale_mean * (1 - contrast_factor)
 ```
+
+- `contrast_factor=1.0`: no change (identity)
+- `contrast_factor=0.0`: uniform gray image
+- `contrast_factor=2.0`: doubles contrast
+
+#### `adjust_contrast_fast`
+
+```python
+ta.adjust_contrast_fast(input_tensor, contrast_factor)
+```
+
+Apply **FAST** contrast adjustment using centered scaling (same as NVIDIA DALI):
+```python
+output = (input - 0.5) * contrast_factor + 0.5
+```
+
+**Use this when:**
+- You want maximum speed with fusion
+- Exact torchvision reproduction is not critical
+- Training performance is prioritized over exact reproducibility
+
+**Differences from `adjust_contrast()`:**
+- ⚡ Faster (no grayscale mean computation)
+- ✅ Fully fusible with other operations
+- ✅ Same formula as NVIDIA DALI (production-proven)
+- ⚠️ NOT pixel-perfect with torchvision
+- ✅ Effective for DNN training
+
+See the [comparison table](#fast-contrast-comparison-to-other-libraries) for how this compares to other libraries.
 
 #### `adjust_saturation` / `apply_saturation`
 
@@ -274,17 +416,9 @@ Apply per-channel normalization: `output[c] = (input[c] - mean[c]) / std[c]`
 
 ## 🔥 Performance
 
-Triton-Augment achieves significant speedups by fusing operations into a single kernel, eliminating intermediate memory reads/writes.
+Triton-Augment achieves speedups by fusing operations into a single kernel, eliminating intermediate memory reads/writes.
 
-### Benchmark Results (NVIDIA A100)
-
-| Transform | PyTorch (Sequential) | Triton-Augment (Fused) | Speedup |
-|-----------|---------------------|------------------------|---------|
-| ColorJitter | 2.3 ms | 0.8 ms | **2.9x** |
-| ColorJitter + Normalize | 3.1 ms | 0.9 ms | **3.4x** |
-| Full Pipeline (224x224) | 4.2 ms | 1.1 ms | **3.8x** |
-
-*Batch size: 32, Image size: 224x224x3*
+Run `examples/benchmark_triton.py` to benchmark on your hardware.
 
 ### Why is it faster?
 

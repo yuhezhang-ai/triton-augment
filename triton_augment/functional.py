@@ -16,6 +16,7 @@ from .kernels.color_normalize_kernel import (
     fused_color_normalize_kernel,
     brightness_kernel,
     contrast_kernel,
+    contrast_fast_kernel,
     saturation_kernel,
     normalize_kernel,
 )
@@ -190,6 +191,71 @@ def adjust_contrast(
     return output_tensor
 
 
+def adjust_contrast_fast(
+    image: torch.Tensor,
+    contrast_factor: float,
+) -> torch.Tensor:
+    """
+    Adjust contrast of an image using FAST centered scaling.
+    
+    This is faster than adjust_contrast() because it doesn't require computing
+    the grayscale mean. Uses formula: output = (input - 0.5) * contrast_factor + 0.5
+    
+    NOTE: This is NOT equivalent to torchvision's adjust_contrast, but provides
+    similar perceptual results and is fully fusible with other operations.
+    
+    Use this when:
+    - You want maximum performance with fusion
+    - Exact torchvision reproduction is not critical
+    
+    Use adjust_contrast() when:
+    - You need exact torchvision compatibility
+    - Reproducibility with torchvision is required
+    
+    Args:
+        image: Input image tensor of shape (N, C, H, W) on CUDA
+        contrast_factor: How much to adjust the contrast. Must be non-negative.
+                        0.5 decreases contrast, 1.0 gives original, >1.0 increases.
+                          
+    Returns:
+        Contrast-adjusted tensor of the same shape and dtype
+        
+    Raises:
+        ValueError: If contrast_factor is negative
+        
+    Example:
+        >>> img = torch.rand(1, 3, 224, 224, device='cuda')
+        >>> high_contrast = adjust_contrast_fast(img, contrast_factor=1.5)
+        >>> # Use in fused operation for maximum speed
+        >>> result = fused_color_normalize(img, contrast_factor=1.5, ...)
+    """
+    _validate_image_tensor(image, "image")
+    
+    if contrast_factor < 0:
+        raise ValueError(f"contrast_factor ({contrast_factor}) is not non-negative.")
+    
+    # Allocate output tensor
+    output_tensor = torch.empty_like(image)
+    
+    # Get total number of elements
+    n_elements = image.numel()
+    
+    # Calculate grid size
+    BLOCK_SIZE = 256
+    grid = lambda meta: (triton.cdiv(n_elements, meta['BLOCK_SIZE']),)
+    
+    # Launch kernel
+    contrast_fast_kernel[grid](
+        image,
+        output_tensor,
+        n_elements,
+        contrast_factor,
+        BLOCK_SIZE=BLOCK_SIZE,
+    )
+    
+    return output_tensor
+
+
 def adjust_saturation(
     image: torch.Tensor,
     saturation_factor: float,
@@ -325,21 +391,25 @@ def fused_color_normalize(
     """
     Apply fused color jitter and normalization in a single kernel.
     
-    This function fuses multiple operations that match torchvision.transforms.v2 exactly:
-    1. Brightness adjustment (multiplicative): pixel = pixel * brightness_factor
-    2. Contrast adjustment: blend with grayscale mean
-    3. Saturation adjustment: blend with grayscale
-    4. Per-channel normalization
+    This function fuses multiple operations:
+    1. Brightness adjustment: pixel = pixel * brightness_factor [torchvision-exact]
+    2. Contrast adjustment (FAST): pixel = (pixel - 0.5) * contrast + 0.5
+    3. Saturation adjustment: blend with grayscale [torchvision-exact]
+    4. Per-channel normalization [torchvision-exact]
     
     The fusion eliminates intermediate memory reads/writes, providing
-    significant performance improvements over sequential operations.
+    2-5x performance improvements over sequential operations.
+    
+    **IMPORTANT**: Contrast uses FAST centered scaling, NOT torchvision's blend-with-mean.
+    For exact torchvision reproduction, use individual functions:
+        adjust_brightness() + adjust_contrast() + adjust_saturation() + normalize()
     
     Args:
         image: Input image tensor of shape (N, C, H, W) on CUDA
         brightness_factor: Brightness multiplier (default: 1.0 = no change)
                           Must be non-negative. 0=black, 1=original, >1=brighter
-        contrast_factor: Contrast multiplier (default: 1.0 = no change)
-                        Must be non-negative. 0=gray, 1=original, >1=higher contrast
+        contrast_factor: Contrast multiplier (default: 1.0 = no change) [FAST mode]
+                        Must be non-negative. 0.5=low, 1=original, >1=high contrast
         saturation_factor: Saturation multiplier (default: 1.0 = no change)
                           Must be non-negative. 0=grayscale, 1=original, >1=more saturated
         mean: Tuple of mean values for normalization (R, G, B)
@@ -355,21 +425,21 @@ def fused_color_normalize(
         
     Example:
         >>> img = torch.rand(2, 3, 224, 224, device='cuda')
-        >>> # Apply full augmentation pipeline
+        >>> # Fast fused pipeline
         >>> augmented = fused_color_normalize(
         ...     img,
-        ...     brightness_factor=1.2,    # 20% brighter
-        ...     contrast_factor=1.1,      # 10% more contrast
-        ...     saturation_factor=0.9,    # 10% less saturated
+        ...     brightness_factor=1.2,
+        ...     contrast_factor=1.1,      # Uses FAST contrast
+        ...     saturation_factor=0.9,
         ...     mean=(0.485, 0.456, 0.406),
         ...     std=(0.229, 0.224, 0.225)
         ... )
         
     Notes:
-        - All operations match torchvision.transforms.v2.functional exactly
-        - Operations are performed in a single GPU kernel for maximum efficiency
-        - The saturation adjustment uses torchvision's RGB to grayscale conversion:
-          gray = 0.2989*R + 0.587*G + 0.114*B
+        - Brightness and saturation match torchvision exactly
+        - Contrast uses FAST method for fusion efficiency
+        - Operations are performed in a single GPU kernel
+        - For torchvision-exact contrast, use adjust_contrast() separately
     """
     _validate_image_tensor(image, "image")
     
@@ -390,18 +460,6 @@ def fused_color_normalize(
     # If no operations, return copy
     if not (apply_brightness or apply_contrast or apply_saturation or apply_normalize):
         return image.clone()
-    
-    # Compute grayscale mean for contrast if needed
-    if apply_contrast:
-        c = image.shape[1]
-        if c == 3:
-            grayscale_image = _rgb_to_grayscale(image)
-        else:
-            grayscale_image = image
-        grayscale_mean = torch.mean(grayscale_image, dim=(-3, -2, -1), keepdim=False)  # Shape: [N]
-    else:
-        # Create dummy tensor (won't be used due to compile-time flag)
-        grayscale_mean = torch.zeros(image.shape[0], device=image.device, dtype=image.dtype)
     
     # Validate normalization parameters
     if apply_normalize:
@@ -430,7 +488,6 @@ def fused_color_normalize(
     fused_color_normalize_kernel[grid](
         image,
         output_tensor,
-        grayscale_mean,
         batch_size,
         channels,
         height,

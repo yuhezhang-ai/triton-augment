@@ -44,6 +44,7 @@ from .transforms import (
 from .functional import (
     adjust_brightness,
     adjust_contrast,
+    adjust_contrast_fast,
     adjust_saturation,
     normalize,
     apply_brightness,
@@ -68,6 +69,7 @@ __all__ = [
     # Functional API
     'adjust_brightness',
     'adjust_contrast',
+    'adjust_contrast_fast',
     'adjust_saturation',
     'normalize',
     'apply_brightness',

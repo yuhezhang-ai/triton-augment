@@ -79,6 +79,53 @@ class TestContrastCorrectness:
         )
 
 
+class TestContrastFastCorrectness:
+    """Test fast contrast adjustment (does NOT match torchvision)."""
+    
+    @pytest.mark.parametrize("contrast_factor", [0.0, 0.5, 1.0, 1.5, 2.0])
+    @pytest.mark.parametrize("shape", [(2, 3, 64, 64), (1, 3, 224, 224)])
+    def test_contrast_fast_formula(self, contrast_factor, shape):
+        """Test that fast contrast uses correct formula: (pixel - 0.5) * factor + 0.5"""
+        # Create test image
+        img = torch.rand(*shape, device='cuda', dtype=torch.float32)
+        
+        # Apply triton fast contrast
+        ta_result = F.adjust_contrast_fast(img, contrast_factor)
+        
+        # Manual calculation
+        expected = (img - 0.5) * contrast_factor + 0.5
+        expected = torch.clamp(expected, 0.0, 1.0)
+        
+        # Compare results (using PyTorch default tolerances)
+        torch.testing.assert_close(
+            ta_result,
+            expected,
+            msg=f"Fast contrast mismatch for factor={contrast_factor}, shape={shape}"
+        )
+    
+    def test_contrast_fast_differs_from_torchvision(self):
+        """Verify that fast contrast produces different results from torchvision."""
+        img = torch.rand(2, 3, 128, 128, device='cuda', dtype=torch.float32)
+        contrast_factor = 1.5
+        
+        # Apply both methods
+        tv_result = tvF.adjust_contrast(img, contrast_factor)
+        ta_fast_result = F.adjust_contrast_fast(img, contrast_factor)
+        
+        # They should NOT match (different algorithms)
+        # We expect differences, so catch the assertion error
+        try:
+            torch.testing.assert_close(ta_fast_result, tv_result, rtol=1e-3, atol=1e-3)
+            # If we get here, they matched unexpectedly
+            assert False, "Fast contrast should differ from torchvision"
+        except AssertionError as e:
+            # Expected - they should be different
+            if "should differ" in str(e):
+                raise  # Re-raise our custom assertion
+            # Otherwise it's the expected mismatch
+            pass
+
+
 class TestSaturationCorrectness:
     """Test saturation adjustment correctness against torchvision."""
     
@@ -104,10 +151,15 @@ class TestSaturationCorrectness:
 
 
 class TestFusedCorrectness:
-    """Test fused operations correctness against sequential torchvision."""
+    """
+    Test fused operations correctness.
     
-    def test_fused_matches_sequential_torchvision(self):
-        """Test that fused kernel matches sequential torchvision operations."""
+    NOTE: Fused kernel uses FAST contrast (centered scaling), not torchvision's
+    blend-with-mean. We test against sequential triton operations instead.
+    """
+    
+    def test_fused_matches_sequential_triton(self):
+        """Test that fused kernel matches sequential triton operations (with fast contrast)."""
         # Create test image
         img = torch.rand(4, 3, 128, 128, device='cuda', dtype=torch.float32)
         
@@ -118,17 +170,14 @@ class TestFusedCorrectness:
         mean = (0.485, 0.456, 0.406)
         std = (0.229, 0.224, 0.225)
         
-        # Apply torchvision sequentially
-        tv_result = tvF.adjust_brightness(img, brightness_factor)
-        tv_result = tvF.adjust_contrast(tv_result, contrast_factor)
-        tv_result = tvF.adjust_saturation(tv_result, saturation_factor)
-        # Normalize
-        mean_t = torch.tensor(mean, device=img.device, dtype=img.dtype).view(1, 3, 1, 1)
-        std_t = torch.tensor(std, device=img.device, dtype=img.dtype).view(1, 3, 1, 1)
-        tv_result = (tv_result - mean_t) / std_t
+        # Apply triton operations sequentially (using FAST contrast)
+        ta_seq = F.adjust_brightness(img, brightness_factor)
+        ta_seq = F.adjust_contrast_fast(ta_seq, contrast_factor)  # FAST contrast
+        ta_seq = F.adjust_saturation(ta_seq, saturation_factor)
+        ta_seq = F.normalize(ta_seq, mean=mean, std=std)
         
         # Apply triton-augment fused
-        ta_result = F.fused_color_normalize(
+        ta_fused = F.fused_color_normalize(
             img,
             brightness_factor=brightness_factor,
             contrast_factor=contrast_factor,
@@ -139,9 +188,9 @@ class TestFusedCorrectness:
         
         # Compare results (using PyTorch default tolerances: rtol=1e-05, atol=1e-08)
         torch.testing.assert_close(
-            ta_result,
-            tv_result,
-            msg="Fused kernel doesn't match sequential torchvision operations"
+            ta_fused,
+            ta_seq,
+            msg="Fused kernel doesn't match sequential triton operations"
         )
     
     @pytest.mark.parametrize("batch_size", [1, 2, 4, 8])
@@ -156,16 +205,14 @@ class TestFusedCorrectness:
         mean = (0.5, 0.5, 0.5)
         std = (0.5, 0.5, 0.5)
         
-        # Torchvision
-        tv_result = tvF.adjust_brightness(img, brightness_factor)
-        tv_result = tvF.adjust_contrast(tv_result, contrast_factor)
-        tv_result = tvF.adjust_saturation(tv_result, saturation_factor)
-        mean_t = torch.tensor(mean, device=img.device, dtype=img.dtype).view(1, 3, 1, 1)
-        std_t = torch.tensor(std, device=img.device, dtype=img.dtype).view(1, 3, 1, 1)
-        tv_result = (tv_result - mean_t) / std_t
+        # Sequential triton (with fast contrast)
+        ta_seq = F.adjust_brightness(img, brightness_factor)
+        ta_seq = F.adjust_contrast_fast(ta_seq, contrast_factor)
+        ta_seq = F.adjust_saturation(ta_seq, saturation_factor)
+        ta_seq = F.normalize(ta_seq, mean=mean, std=std)
         
-        # Triton-augment
-        ta_result = F.fused_color_normalize(
+        # Triton-augment fused
+        ta_fused = F.fused_color_normalize(
             img,
             brightness_factor=brightness_factor,
             contrast_factor=contrast_factor,
@@ -175,6 +222,35 @@ class TestFusedCorrectness:
         )
         
         # Compare results (using PyTorch default tolerances: rtol=1e-05, atol=1e-08)
+        torch.testing.assert_close(ta_fused, ta_seq)
+    
+    def test_fused_without_contrast(self):
+        """Test fused operation without contrast (should match torchvision exactly)."""
+        img = torch.rand(2, 3, 128, 128, device='cuda', dtype=torch.float32)
+        
+        brightness_factor = 1.2
+        saturation_factor = 0.9
+        mean = (0.485, 0.456, 0.406)
+        std = (0.229, 0.224, 0.225)
+        
+        # Torchvision (no contrast)
+        tv_result = tvF.adjust_brightness(img, brightness_factor)
+        tv_result = tvF.adjust_saturation(tv_result, saturation_factor)
+        mean_t = torch.tensor(mean, device=img.device, dtype=img.dtype).view(1, 3, 1, 1)
+        std_t = torch.tensor(std, device=img.device, dtype=img.dtype).view(1, 3, 1, 1)
+        tv_result = (tv_result - mean_t) / std_t
+        
+        # Triton fused (no contrast)
+        ta_result = F.fused_color_normalize(
+            img,
+            brightness_factor=brightness_factor,
+            contrast_factor=1.0,  # Identity (no contrast)
+            saturation_factor=saturation_factor,
+            mean=mean,
+            std=std,
+        )
+        
+        # Should match torchvision exactly (no fast contrast involved)
         torch.testing.assert_close(ta_result, tv_result)
 
 

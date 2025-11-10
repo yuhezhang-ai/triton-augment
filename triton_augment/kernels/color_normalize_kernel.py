@@ -20,7 +20,6 @@ def fused_color_normalize_kernel(
     # Pointers
     input_ptr,
     output_ptr,
-    mean_ptr,  # Grayscale mean for contrast (computed per-image)
     # Shape parameters
     batch_size,
     channels,
@@ -42,20 +41,20 @@ def fused_color_normalize_kernel(
     BLOCK_SIZE: tl.constexpr,
 ):
     """
-    Fused kernel for color jitter and normalization matching torchvision.transforms.v2.
+    Fused kernel for color jitter and normalization.
     
     Operations are applied in sequence:
-    1. Brightness: pixel = pixel * brightness_factor (MULTIPLICATIVE, not additive!)
-    2. Contrast: pixel = blend(pixel, grayscale_mean, contrast_factor)
-    3. Saturation: pixel = blend(pixel, grayscale, saturation_factor)
+    1. Brightness: pixel = pixel * brightness_factor (MULTIPLICATIVE)
+    2. Contrast (FAST): pixel = (pixel - 0.5) * contrast_factor + 0.5
+    3. Saturation: pixel = blend(pixel, grayscale, saturation_factor) [torchvision-exact]
     4. Normalize: pixel = (pixel - mean) / std
     
-    Where blend(a, b, ratio) = a * ratio + b * (1 - ratio)
+    NOTE: Contrast uses FAST centered scaling, NOT torchvision's blend-with-mean.
+    For torchvision-exact contrast, use adjust_contrast() separately.
     
     Args:
         input_ptr: Pointer to input tensor (N, C, H, W) flattened
         output_ptr: Pointer to output tensor (N, C, H, W) flattened
-        mean_ptr: Pointer to per-image grayscale mean for contrast [N]
         batch_size, channels, height, width: Tensor dimensions
         norm_mean_ptr, norm_std_ptr: Normalization parameters [C]
         brightness_factor, contrast_factor, saturation_factor: Adjustment factors
@@ -96,17 +95,15 @@ def fused_color_normalize_kernel(
         g = tl.maximum(0.0, tl.minimum(1.0, g))
         b = tl.maximum(0.0, tl.minimum(1.0, b))
     
-    # Apply contrast adjustment
-    # contrast blends with the mean of grayscale image
+    # Apply contrast adjustment (FAST version: centered scaling)
+    # NOTE: This uses fast contrast, not torchvision's blend-with-mean approach
+    # Formula: output = (input - 0.5) * contrast_factor + 0.5
     if apply_contrast:
-        # Load pre-computed grayscale mean for this batch
-        grayscale_mean = tl.load(mean_ptr + batch_idx, mask=spatial_mask, other=0.0)
-        
-        # blend(image, mean, contrast_factor) = image * contrast_factor + mean * (1 - contrast_factor)
-        r = r * contrast_factor + grayscale_mean * (1.0 - contrast_factor)
-        g = g * contrast_factor + grayscale_mean * (1.0 - contrast_factor)
-        b = b * contrast_factor + grayscale_mean * (1.0 - contrast_factor)
-        # Clamp to [0, 1] as torchvision does
+        # Center around 0.5, scale, and re-center
+        r = (r - 0.5) * contrast_factor + 0.5
+        g = (g - 0.5) * contrast_factor + 0.5
+        b = (b - 0.5) * contrast_factor + 0.5
+        # Clamp to [0, 1]
         r = tl.maximum(0.0, tl.minimum(1.0, r))
         g = tl.maximum(0.0, tl.minimum(1.0, g))
         b = tl.maximum(0.0, tl.minimum(1.0, b))
@@ -215,6 +212,36 @@ def contrast_kernel(
     tl.store(output_ptr + r_offset, r, mask=spatial_mask)
     tl.store(output_ptr + g_offset, g, mask=spatial_mask)
     tl.store(output_ptr + b_offset, b, mask=spatial_mask)
+
+
+@triton.jit
+def contrast_fast_kernel(
+    input_ptr,
+    output_ptr,
+    n_elements,
+    contrast_factor,
+    BLOCK_SIZE: tl.constexpr,
+):
+    """
+    Fast contrast adjustment using simple centered scaling.
+    
+    This is faster than torchvision's method because it doesn't require
+    computing the grayscale mean. It applies: output = (input - 0.5) * contrast + 0.5
+    
+    Note: This is NOT equivalent to torchvision's adjust_contrast, but provides
+    similar perceptual results and is fully fusible with other operations.
+    """
+    pid = tl.program_id(axis=0)
+    block_start = pid * BLOCK_SIZE
+    offsets = block_start + tl.arange(0, BLOCK_SIZE)
+    mask = offsets < n_elements
+    
+    pixel = tl.load(input_ptr + offsets, mask=mask, other=0.0)
+    # Center around 0.5, scale, and re-center
+    pixel = (pixel - 0.5) * contrast_factor + 0.5
+    # Clamp to [0, 1]
+    pixel = tl.maximum(0.0, tl.minimum(1.0, pixel))
+    tl.store(output_ptr + offsets, pixel, mask=mask)
 
 
 @triton.jit

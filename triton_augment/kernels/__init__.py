@@ -11,6 +11,7 @@ from .color_normalize_kernel import (
     fused_color_normalize_kernel,
     brightness_kernel,
     contrast_kernel,
+    contrast_fast_kernel,
     saturation_kernel,
     normalize_kernel,
 )
@@ -19,6 +20,7 @@ __all__ = [
     'fused_color_normalize_kernel',
     'brightness_kernel',
     'contrast_kernel',
+    'contrast_fast_kernel',
     'saturation_kernel',
     'normalize_kernel',
 ]
