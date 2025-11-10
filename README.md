@@ -131,9 +131,9 @@ ta.TritonColorJitter(
 ```
 
 **Parameters:**
-- `brightness`: How much to jitter brightness. If float, range is `(-brightness, +brightness)`. If tuple, range is `(min, max)`. Default: 0
-- `contrast`: How much to jitter contrast. If float, range is `(1-contrast, 1+contrast)`. If tuple, range is `(min, max)`. Default: 0
-- `saturation`: How much to jitter saturation. If float, range is `(1-saturation, 1+saturation)`. If tuple, range is `(min, max)`. Default: 0
+- `brightness`: How much to jitter brightness. brightness_factor is chosen uniformly from `[max(0, 1-brightness), 1+brightness]`. For example, `brightness=0.2` gives range `[0.8, 1.2]`. If tuple, range is `(min, max)`. Default: 0
+- `contrast`: How much to jitter contrast. contrast_factor is chosen uniformly from `[max(0, 1-contrast), 1+contrast]`. For example, `contrast=0.2` gives range `[0.8, 1.2]`. If tuple, range is `(min, max)`. Default: 0
+- `saturation`: How much to jitter saturation. saturation_factor is chosen uniformly from `[max(0, 1-saturation), 1+saturation]`. For example, `saturation=0.2` gives range `[0.8, 1.2]`. If tuple, range is `(min, max)`. Default: 0
 
 **Example:**
 ```python
@@ -224,26 +224,50 @@ augmented = F.fused_color_normalize(
 )
 ```
 
-#### `apply_brightness`
+#### `adjust_brightness` / `apply_brightness`
 
 ```python
-ta.apply_brightness(input_tensor, brightness_factor)
+ta.adjust_brightness(input_tensor, brightness_factor)
 ```
 
-Apply brightness adjustment: `output = input + brightness_factor`
+Apply brightness adjustment: `output = input * brightness_factor` (MULTIPLICATIVE)
 
-#### `apply_contrast`
+- `brightness_factor=1.0`: no change (identity)
+- `brightness_factor=0.0`: black image
+- `brightness_factor=2.0`: doubles brightness
+
+#### `adjust_contrast` / `apply_contrast`
 
 ```python
-ta.apply_contrast(input_tensor, contrast_factor)
+ta.adjust_contrast(input_tensor, contrast_factor)
 ```
 
-Apply contrast adjustment: `output = input * contrast_factor`
+Apply contrast adjustment using blend with grayscale mean:
+```python
+grayscale_mean = mean(rgb_to_grayscale(input))
+output = input * contrast_factor + grayscale_mean * (1 - contrast_factor)
+```
 
-#### `apply_normalize`
+#### `adjust_saturation` / `apply_saturation`
 
 ```python
-ta.apply_normalize(input_tensor, mean, std)
+ta.adjust_saturation(input_tensor, saturation_factor)
+```
+
+Apply saturation adjustment using blend with grayscale:
+```python
+grayscale = rgb_to_grayscale(input)  # 0.2989*R + 0.587*G + 0.114*B
+output = input * saturation_factor + grayscale * (1 - saturation_factor)
+```
+
+- `saturation_factor=0.0`: grayscale image
+- `saturation_factor=1.0`: original image
+- `saturation_factor=2.0`: highly saturated
+
+#### `normalize` / `apply_normalize`
+
+```python
+ta.normalize(input_tensor, mean, std)
 ```
 
 Apply per-channel normalization: `output[c] = (input[c] - mean[c]) / std[c]`
@@ -323,7 +347,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## 📝 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
 ## 🙏 Acknowledgments
 
