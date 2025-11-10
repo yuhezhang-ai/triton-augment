@@ -91,6 +91,10 @@ def fused_color_normalize_kernel(
         r = r * brightness_factor
         g = g * brightness_factor
         b = b * brightness_factor
+        # Clamp to [0, 1] as torchvision does
+        r = tl.maximum(0.0, tl.minimum(1.0, r))
+        g = tl.maximum(0.0, tl.minimum(1.0, g))
+        b = tl.maximum(0.0, tl.minimum(1.0, b))
     
     # Apply contrast adjustment
     # contrast blends with the mean of grayscale image
@@ -102,6 +106,10 @@ def fused_color_normalize_kernel(
         r = r * contrast_factor + grayscale_mean * (1.0 - contrast_factor)
         g = g * contrast_factor + grayscale_mean * (1.0 - contrast_factor)
         b = b * contrast_factor + grayscale_mean * (1.0 - contrast_factor)
+        # Clamp to [0, 1] as torchvision does
+        r = tl.maximum(0.0, tl.minimum(1.0, r))
+        g = tl.maximum(0.0, tl.minimum(1.0, g))
+        b = tl.maximum(0.0, tl.minimum(1.0, b))
     
     # Apply saturation adjustment with proper RGB to grayscale conversion
     # Uses torchvision's weights: 0.2989*R + 0.587*G + 0.114*B
@@ -113,6 +121,10 @@ def fused_color_normalize_kernel(
         r = r * saturation_factor + gray * (1.0 - saturation_factor)
         g = g * saturation_factor + gray * (1.0 - saturation_factor)
         b = b * saturation_factor + gray * (1.0 - saturation_factor)
+        # Clamp to [0, 1] as torchvision does
+        r = tl.maximum(0.0, tl.minimum(1.0, r))
+        g = tl.maximum(0.0, tl.minimum(1.0, g))
+        b = tl.maximum(0.0, tl.minimum(1.0, b))
     
     # Apply normalization (per-channel)
     if apply_normalize:
@@ -150,6 +162,7 @@ def brightness_kernel(
     
     pixel = tl.load(input_ptr + offsets, mask=mask, other=0.0)
     pixel = pixel * brightness_factor  # MULTIPLICATIVE per torchvision
+    pixel = tl.maximum(0.0, tl.minimum(1.0, pixel))  # Clamp to [0, 1]
     tl.store(output_ptr + offsets, pixel, mask=mask)
 
 
@@ -193,6 +206,11 @@ def contrast_kernel(
     r = r * contrast_factor + grayscale_mean * (1.0 - contrast_factor)
     g = g * contrast_factor + grayscale_mean * (1.0 - contrast_factor)
     b = b * contrast_factor + grayscale_mean * (1.0 - contrast_factor)
+    
+    # Clamp to [0, 1]
+    r = tl.maximum(0.0, tl.minimum(1.0, r))
+    g = tl.maximum(0.0, tl.minimum(1.0, g))
+    b = tl.maximum(0.0, tl.minimum(1.0, b))
     
     tl.store(output_ptr + r_offset, r, mask=spatial_mask)
     tl.store(output_ptr + g_offset, g, mask=spatial_mask)
@@ -238,6 +256,11 @@ def saturation_kernel(
     r = r * saturation_factor + gray * (1.0 - saturation_factor)
     g = g * saturation_factor + gray * (1.0 - saturation_factor)
     b = b * saturation_factor + gray * (1.0 - saturation_factor)
+    
+    # Clamp to [0, 1]
+    r = tl.maximum(0.0, tl.minimum(1.0, r))
+    g = tl.maximum(0.0, tl.minimum(1.0, g))
+    b = tl.maximum(0.0, tl.minimum(1.0, b))
     
     tl.store(output_ptr + r_offset, r, mask=spatial_mask)
     tl.store(output_ptr + g_offset, g, mask=spatial_mask)

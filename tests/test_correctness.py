@@ -47,12 +47,10 @@ class TestBrightnessCorrectness:
         # Apply triton-augment
         ta_result = F.adjust_brightness(img, brightness_factor)
         
-        # Compare results
+        # Compare results (using PyTorch default tolerances: rtol=1e-05, atol=1e-08)
         torch.testing.assert_close(
             ta_result,
             tv_result,
-            rtol=1e-5,
-            atol=1e-5,
             msg=f"Brightness mismatch for factor={brightness_factor}, shape={shape}"
         )
 
@@ -73,12 +71,10 @@ class TestContrastCorrectness:
         # Apply triton-augment
         ta_result = F.adjust_contrast(img, contrast_factor)
         
-        # Compare results
+        # Compare results (using PyTorch default tolerances: rtol=1e-05, atol=1e-08)
         torch.testing.assert_close(
             ta_result,
             tv_result,
-            rtol=1e-4,
-            atol=1e-4,
             msg=f"Contrast mismatch for factor={contrast_factor}, shape={shape}"
         )
 
@@ -99,12 +95,10 @@ class TestSaturationCorrectness:
         # Apply triton-augment
         ta_result = F.adjust_saturation(img, saturation_factor)
         
-        # Compare results
+        # Compare results (using PyTorch default tolerances: rtol=1e-05, atol=1e-08)
         torch.testing.assert_close(
             ta_result,
             tv_result,
-            rtol=1e-4,
-            atol=1e-4,
             msg=f"Saturation mismatch for factor={saturation_factor}, shape={shape}"
         )
 
@@ -143,12 +137,10 @@ class TestFusedCorrectness:
             std=std,
         )
         
-        # Compare results
+        # Compare results (using PyTorch default tolerances: rtol=1e-05, atol=1e-08)
         torch.testing.assert_close(
             ta_result,
             tv_result,
-            rtol=1e-4,
-            atol=1e-4,
             msg="Fused kernel doesn't match sequential torchvision operations"
         )
     
@@ -182,7 +174,8 @@ class TestFusedCorrectness:
             std=std,
         )
         
-        torch.testing.assert_close(ta_result, tv_result, rtol=1e-4, atol=1e-4)
+        # Compare results (using PyTorch default tolerances: rtol=1e-05, atol=1e-08)
+        torch.testing.assert_close(ta_result, tv_result)
 
 
 class TestEdgeCases:

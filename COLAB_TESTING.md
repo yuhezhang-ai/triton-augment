@@ -27,10 +27,33 @@ else:
 
 ```python
 # Cell 2: Install Triton-Augment
-!git clone https://github.com/yuhezhang-ai/triton-augment.git
-%cd triton-augment
-!pip install -q -e ".[dev]"
-print("\n✓ Installation complete!")
+
+# For PRIVATE repos: Set up GitHub authentication in colab secrets
+from google.colab import userdata
+import os
+
+# Get token from Colab secrets (safer than typing it)
+try:
+    token = userdata.get('GITHUB_TOKEN')
+    username = 'yuhezhang-ai'  # Your GitHub username
+    
+    # Clone private repo
+    !git clone https://{username}:{token}@github.com/yuhezhang-ai/triton-augment.git
+    %cd triton-augment
+    !pip install -q -e ".[dev]"
+    print("\n✓ Installation complete!")
+    
+except Exception as e:
+    print("❌ Error: Make sure you've added GITHUB_TOKEN to Colab secrets")
+    print("Click the 🔑 icon on the left sidebar to add secrets")
+    raise
+```
+
+```python
+# Alternative: For PUBLIC repos (simpler)
+# !git clone https://github.com/yuhezhang-ai/triton-augment.git
+# %cd triton-augment
+# !pip install -q -e ".[dev]"
 ```
 
 ```python
