@@ -227,6 +227,48 @@ For **exact torchvision reproduction**, use `adjust_contrast()` instead of fast 
 | Best speed + exact | Contrast + fused (#3) | Fast |
 | Maximum speed | Full fused (#4) | Fastest |
 
+## 🔄 Batch Behavior & Random Augmentation
+
+**Important**: Random augmentations apply the **same parameters to all images in a batch**.
+
+```python
+# This applies SAME random augmentation to all 32 images
+batch = torch.rand(32, 3, 224, 224, device='cuda')
+result = ta.fused_color_normalize(
+    batch, 
+    random_grayscale_p=0.5,  # Same random decision for all 32
+    ...
+)
+```
+
+### For Different Augmentations Per Image
+
+**Standard practice (recommended)**:
+```python
+class MyDataset(Dataset):
+    def __getitem__(self, idx):
+        img = load_image(idx)
+        img = self.transform(img)  # Applied to single image
+        return img
+
+# DataLoader batches AFTER transforms
+# Each image gets different random augmentations
+loader = DataLoader(dataset, batch_size=32)
+```
+
+**Alternative (if you have pre-batched tensors)**:
+```python
+# Loop over batch dimension
+results = torch.stack([
+    ta.fused_color_normalize(img.unsqueeze(0), ...)
+    for img in batch
+])
+```
+
+### Future: Per-Image Randomness
+
+If you need per-image random parameters on pre-batched tensors (like Kornia's `same_on_batch=False`), please open an issue! Implementation is straightforward - just need to pass per-image parameters to the kernel.
+
 ## 📚 API Reference
 
 ### Transform Classes
