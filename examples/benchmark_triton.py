@@ -205,7 +205,7 @@ def benchmark_without_contrast(size, batch_size, provider):
 @triton.testing.perf_report(
     triton.testing.Benchmark(
         x_names=['batch_size'],
-        x_vals=[2**i for i in range(0, 6)],  # 1, 2, 4, 8, 16, 32
+        x_vals=[2**i for i in range(0, 8)],  # 1, 2, 4, 8, 16, 32
         line_arg='provider',
         line_vals=['torchvision', 'triton-augment-fused'],
         line_names=['torchvision (v2)', 'Triton-Augment (fused)'],
@@ -383,8 +383,8 @@ def print_speedup_summary():
     )
     
     # Benchmark
-    t_tv = triton.testing.do_bench(lambda: transform_tv(test_img))[0]
-    t_fused = triton.testing.do_bench(lambda: transform_fused(test_img))[0]
+    t_tv = triton.testing.do_bench(lambda: transform_tv(test_img))
+    t_fused = triton.testing.do_bench(lambda: transform_fused(test_img))
     
     speedup = t_tv / t_fused
     
