@@ -352,6 +352,50 @@ def benchmark_training_pipeline(size, batch_size, provider):
     return ms, min_ms, max_ms
 
 
+def print_speedup_summary():
+    """Print a quick speedup comparison for real-world training usage."""
+    print("\n" + "="*80)
+    print("⚡ Quick Speedup Summary (224x224, batch=32)")
+    print("="*80)
+    print("Real-world training pipeline: ColorJitter + RandomGrayscale + Normalize")
+    print()
+    
+    # Standard ImageNet size for realistic comparison
+    test_img = torch.rand(32, 3, 224, 224, device='cuda', dtype=torch.float32)
+    mean = (0.485, 0.456, 0.406)
+    std = (0.229, 0.224, 0.225)
+    
+    # Torchvision transforms (baseline)
+    transform_tv = transforms.Compose([
+        transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
+        transforms.RandomGrayscale(p=0.1),
+        transforms.Normalize(mean=mean, std=std),
+    ])
+    
+    # Triton fused transform (our solution)
+    transform_fused = ta.TritonColorJitterNormalize(
+        brightness=0.2,
+        contrast=0.2,
+        saturation=0.2,
+        random_grayscale_p=0.1,
+        mean=mean,
+        std=std,
+    )
+    
+    # Benchmark
+    t_tv = triton.testing.do_bench(lambda: transform_tv(test_img))[0]
+    t_fused = triton.testing.do_bench(lambda: transform_fused(test_img))[0]
+    
+    speedup = t_tv / t_fused
+    
+    print(f"  torchvision Compose:          {t_tv:.3f} ms")
+    print(f"  Triton-Augment Fused:         {t_fused:.3f} ms  (uses FAST contrast)")
+    print()
+    print(f"  🚀 Speedup: {speedup:.2f}x faster")
+    print()
+    print(f"  Note: Triton uses fast contrast (centered scaling), not torchvision's blend-with-mean")
+
+
 if __name__ == '__main__':
     if not torch.cuda.is_available():
         print("Error: CUDA is not available. This benchmark requires a GPU.")
@@ -408,6 +452,9 @@ if __name__ == '__main__':
     print("  Triton Fused: TritonColorJitterNormalize (SINGLE FUSED KERNEL, maximum performance)")
     print("  Simulates actual training augmentation usage with random parameters per call")
     benchmark_training_pipeline.run(print_data=True, save_path='.')
+    
+    # Quick speedup summary
+    print_speedup_summary()
     
     print("\n" + "="*80)
     print("Benchmarks complete!")
