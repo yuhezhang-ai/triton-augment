@@ -105,25 +105,20 @@ class TestContrastFastCorrectness:
     
     def test_contrast_fast_differs_from_torchvision(self):
         """Verify that fast contrast produces different results from torchvision."""
-        img = torch.rand(2, 3, 128, 128, device='cuda', dtype=torch.float32)
+        # Use structured input (not random) to ensure consistent difference
+        img = torch.linspace(0, 1, 2*3*128*128, device='cuda').reshape(2, 3, 128, 128)
         contrast_factor = 1.5
         
         # Apply both methods
         tv_result = tvF.adjust_contrast(img, contrast_factor)
         ta_fast_result = F.adjust_contrast_fast(img, contrast_factor)
         
-        # They should NOT match (different algorithms)
-        # We expect differences, so catch the assertion error
-        try:
-            torch.testing.assert_close(ta_fast_result, tv_result, rtol=1e-3, atol=1e-3)
-            # If we get here, they matched unexpectedly
-            assert False, "Fast contrast should differ from torchvision"
-        except AssertionError as e:
-            # Expected - they should be different
-            if "should differ" in str(e):
-                raise  # Re-raise our custom assertion
-            # Otherwise it's the expected mismatch
-            pass
+        # They should NOT be identical (different formulas)
+        # Check that there's a meaningful difference
+        max_diff = torch.abs(ta_fast_result - tv_result).max().item()
+        
+        # For structured data with factor=1.5, we expect meaningful difference
+        assert max_diff > 0.01, f"Fast contrast too similar to torchvision (max_diff={max_diff})"
 
 
 class TestSaturationCorrectness:
@@ -148,6 +143,45 @@ class TestSaturationCorrectness:
             tv_result,
             msg=f"Saturation mismatch for factor={saturation_factor}, shape={shape}"
         )
+
+
+class TestNormalizeCorrectness:
+    """Test normalization correctness against torchvision."""
+    
+    @pytest.mark.parametrize("shape", [(2, 3, 64, 64), (1, 3, 224, 224), (4, 3, 128, 128)])
+    @pytest.mark.parametrize("mean,std", [
+        ((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),  # ImageNet
+        ((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),  # Simple
+        ((0.0, 0.0, 0.0), (1.0, 1.0, 1.0)),  # Identity
+    ])
+    def test_normalize_matches_torchvision(self, shape, mean, std):
+        """Test that normalization matches torchvision exactly."""
+        # Create test image
+        img = torch.rand(*shape, device='cuda', dtype=torch.float32)
+        
+        # Apply torchvision normalize
+        tv_result = tvF.normalize(img, mean=list(mean), std=list(std))
+        
+        # Apply triton-augment normalize
+        ta_result = F.normalize(img, mean=mean, std=std)
+        
+        # Compare results (using PyTorch default tolerances: rtol=1e-05, atol=1e-08)
+        torch.testing.assert_close(
+            ta_result,
+            tv_result,
+            msg=f"Normalize mismatch for mean={mean}, std={std}, shape={shape}"
+        )
+    
+    def test_normalize_deterministic(self):
+        """Test that normalize produces consistent results."""
+        img = torch.rand(2, 3, 128, 128, device='cuda', dtype=torch.float32)
+        mean = (0.485, 0.456, 0.406)
+        std = (0.229, 0.224, 0.225)
+        
+        result1 = F.normalize(img, mean=mean, std=std)
+        result2 = F.normalize(img, mean=mean, std=std)
+        
+        torch.testing.assert_close(result1, result2, msg="Normalize should be deterministic")
 
 
 class TestFusedCorrectness:
@@ -202,8 +236,8 @@ class TestFusedCorrectness:
         brightness_factor = 1.3
         contrast_factor = 0.9
         saturation_factor = 1.1
-        mean = (0.5, 0.5, 0.5)
-        std = (0.5, 0.5, 0.5)
+        mean = (0.485, 0.456, 0.406)
+        std = (0.229, 0.224, 0.225)
         
         # Sequential triton (with fast contrast)
         ta_seq = F.adjust_brightness(img, brightness_factor)

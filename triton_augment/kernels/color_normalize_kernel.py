@@ -299,12 +299,18 @@ def normalize_kernel(
     input_ptr,
     output_ptr,
     n_elements,
+    spatial_size,  # H * W
     n_channels,
     mean_ptr,
     std_ptr,
     BLOCK_SIZE: tl.constexpr,
 ):
-    """Simple normalization kernel."""
+    """
+    Normalization kernel for NCHW format.
+    
+    For NCHW format: offset = n * (C*H*W) + c * (H*W) + h * W + w
+    Channel index: c = (offset // spatial_size) % n_channels
+    """
     pid = tl.program_id(axis=0)
     block_start = pid * BLOCK_SIZE
     offsets = block_start + tl.arange(0, BLOCK_SIZE)
@@ -312,8 +318,10 @@ def normalize_kernel(
     
     pixel = tl.load(input_ptr + offsets, mask=mask, other=0.0)
     
-    # Calculate channel index
-    channel_idx = (offsets // 1) % n_channels
+    # Calculate channel index for NCHW format
+    # offset = n * (C*H*W) + c * (H*W) + spatial_pos
+    # channel = (offset // spatial_size) % n_channels
+    channel_idx = (offsets // spatial_size) % n_channels
     
     # Load mean and std for the channel
     mean = tl.load(mean_ptr + channel_idx, mask=mask)

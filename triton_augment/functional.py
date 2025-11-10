@@ -445,7 +445,8 @@ def normalize(
     
     # Calculate grid size
     n_elements = image.numel()
-    n_channels = image.shape[1]
+    _, n_channels, height, width = image.shape
+    spatial_size = height * width
     BLOCK_SIZE = 1024
     grid = lambda meta: (triton.cdiv(n_elements, meta['BLOCK_SIZE']),)
     
@@ -454,6 +455,7 @@ def normalize(
         image,
         output_tensor,
         n_elements,
+        spatial_size,
         n_channels,
         mean_tensor,
         std_tensor,
