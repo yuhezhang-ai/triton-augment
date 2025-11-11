@@ -224,7 +224,7 @@ def fused_color_normalize_kernel(
             
             # Load channel-specific normalization parameters
             norm_mean = tl.load(norm_mean_ptr + channel_idx, mask=mask, other=0.0)
-            norm_std = tl.load(norm_std_ptr + channel_idx, mask=mask, other=0.0)
+            norm_std = tl.load(norm_std_ptr + channel_idx, mask=mask, other=1.0)
             
             pixel = (pixel - norm_mean) / norm_std
         
@@ -405,8 +405,8 @@ def normalize_kernel(
     channel_idx = (offsets // spatial_size) % n_channels
     
     # Load mean and std for the channel
-    mean = tl.load(mean_ptr + channel_idx, mask=mask)
-    std = tl.load(std_ptr + channel_idx, mask=mask)
+    mean = tl.load(mean_ptr + channel_idx, mask=mask, other=0.0)
+    std = tl.load(std_ptr + channel_idx, mask=mask, other=1.0)
     
     pixel = (pixel - mean) / std
     tl.store(output_ptr + offsets, pixel, mask=mask)

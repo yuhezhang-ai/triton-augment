@@ -467,7 +467,7 @@ def ultimate_fused_kernel(
         if apply_normalize:
             channel_idx = c
             norm_mean = tl.load(norm_mean_ptr + channel_idx, mask=mask, other=0.0)
-            norm_std = tl.load(norm_std_ptr + channel_idx, mask=mask, other=0.0)
+            norm_std = tl.load(norm_std_ptr + channel_idx, mask=mask, other=1.0)
             pixel = (pixel - norm_mean) / norm_std
         
         # Single memory write

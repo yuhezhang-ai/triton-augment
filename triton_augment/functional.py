@@ -259,8 +259,9 @@ def adjust_contrast(
     else:
         grayscale_image = image
     
-    # Compute mean per image
+    # Compute mean per image (ensure dtype matches input)
     mean = torch.mean(grayscale_image, dim=(-3, -2, -1), keepdim=False)  # Shape: [N]
+    mean = mean.to(dtype=image.dtype)  # Match input dtype for Triton kernel
     
     # Allocate output tensor
     output_tensor = torch.empty_like(image)
