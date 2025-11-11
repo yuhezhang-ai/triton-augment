@@ -47,27 +47,35 @@ def print_first_run_message():
     except Exception:
         pass
     
+    from .config import ENABLE_AUTOTUNE
+    
+    autotune_status = "ENABLED" if ENABLE_AUTOTUNE else "DISABLED (default)"
+    autotune_info = ""
+    
+    if ENABLE_AUTOTUNE:
+        autotune_info = """
+            ⚠️  Auto-tuning is ENABLED. The fused kernel will auto-tune on first use (2-5 sec).
+            You'll see: "[Triton-Augment] Auto-tuning fused_color_normalize_kernel..."
+            After tuning, that specific size will be instant (cached).
+            """
+    else:
+        autotune_info = """
+            ✓  Auto-tuning is DISABLED (using fixed defaults). No tuning delays!
+            To enable auto-tuning for optimal performance:
+                import triton_augment as ta
+                ta.enable_autotune()
+            Or set environment variable: TRITON_AUGMENT_ENABLE_AUTOTUNE=1
+            """
+    
     message = f"""
-{'='*80}
-[Triton-Augment] First run detected. Optimizing fused kernel for {gpu_name}.
-
-⚠️  The fused kernel will auto-tune on first use (2-5 sec per image size).
-   You'll see: "[Triton-Augment] Auto-tuning fused_color_normalize_kernel..."
-   
-   After tuning, that specific size will be instant (cached).
-   Simple operations (brightness, saturation, normalize) use fixed settings.
-
-💡 Tip: Pre-warm the cache to avoid delays during training:
-   
-   # Use defaults (batch=32,64; size=224,256,512)
-   python -m triton_augment.warmup
-   
-   # Or specify YOUR training sizes:
-   python -m triton_augment.warmup --batch-sizes 64,128 --image-sizes 320,640
-   
-   Note: Auto-tuning is size-specific! Use your actual training dimensions.
-{'='*80}
-"""
+        {'='*80}
+        [Triton-Augment] First run on {gpu_name}.
+        Auto-tuning status: {autotune_status}
+        {autotune_info}
+        💡 Tip: Pre-warm cache to test different sizes:
+        python -m triton_augment.warmup --batch-sizes 64,128 --image-sizes 320,640
+        {'='*80}
+        """
     print(message, file=sys.stderr)
 
 

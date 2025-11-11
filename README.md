@@ -525,35 +525,56 @@ By fusing operations, we eliminate 3 round-trips to GPU memory, resulting in sig
 
 ### Auto-Tuning
 
-Triton-Augment uses **automatic kernel tuning** for the complex **fused kernel** to find the optimal configuration for your specific GPU and workload. Simple operations (brightness, saturation, normalize) use fixed, sensible defaults.
+**Auto-tuning is DISABLED by default** for faster startup and good-enough performance. Enable it only if you need the extra performance boost.
+
+#### Enabling Auto-Tuning (Optional)
+
+**Option 1: Python API**
+```python
+import triton_augment as ta
+
+# Enable auto-tuning for optimal performance
+ta.enable_autotune()
+
+# Check status
+print(ta.is_autotune_enabled())  # True
+```
+
+**Option 2: Environment Variable**
+```bash
+export TRITON_AUGMENT_ENABLE_AUTOTUNE=1
+python train.py
+```
+
+#### Auto-Tuning Details
+
+When enabled, Triton-Augment auto-tunes the **fused kernel** to find the optimal configuration for your GPU. Simple operations (brightness, saturation, normalize) always use fixed defaults.
 
 **Auto-tuned kernel** (`fused_color_normalize`):
-- **BLOCK_SIZE**: Number of elements processed per thread block (512, 1024)
-- **num_warps**: Thread group size for better parallelism (4, 8)
+- **BLOCK_SIZE**: Number of elements processed per thread block (256, 512, 1024)
+- **num_warps**: Thread group size for parallelism (4, 8)
 - **num_stages**: Memory pipeline depth for memory-compute overlap (2, 3, 4)
 
 **Fixed kernels** (simple operations): Use `BLOCK_SIZE=1024` for optimal performance on most GPUs
 
 **How it works:**
-1. **First run**: Auto-tuning tests 3 configurations and caches the best one (2-5 seconds)
+1. **First run**: Auto-tuning tests 4 configurations and caches the best one (2-5 seconds)
 2. **Subsequent runs**: Uses cached optimal configuration (zero overhead)
-3. **Per GPU + size**: Cache is specific to your GPU model and image dimensions
+3. **Per GPU + size**: Cache is specific to your GPU model and total elements
 
-**Recommended workflow:**
+**Recommended workflow (when auto-tuning is enabled):**
 ```bash
-# After installation, warm up the cache (one-time, ~30 seconds)
-# CLI method (easiest):
-python -m triton_augment.warmup --batch-sizes 64,128 --image-sizes 320,384
+# Enable auto-tuning and warm up the cache (one-time, ~30 seconds)
+TRITON_AUGMENT_ENABLE_AUTOTUNE=1 python -m triton_augment.warmup --batch-sizes 64,128 --image-sizes 320,384
 
 # Or Python API:
-python -c "import triton_augment as ta; ta.warmup_cache(batch_sizes=(64, 128), image_sizes=(320, 384))"
+python -c "import triton_augment as ta; ta.enable_autotune(); ta.warmup_cache(batch_sizes=(64, 128), image_sizes=(320, 384))"
 ```
 
-**⚠️ Critical**: Auto-tuning is **size-specific**! A cache for 224×224 won't help with 320×320 images. Always use your actual training dimensions.
-
-**Don't want to run warmup?** No problem! On first import, you'll see a helpful message. The first use of each new image size will auto-tune (5-10 seconds), then all subsequent uses are instant.
-
-This ensures maximum performance across different GPUs (A100, V100, RTX 3090, etc.) and image sizes without manual tuning!
+**⚠️ Important Notes:**
+- **Auto-tuning must be ENABLED** for warmup to test multiple configs. Without it, warmup just compiles the default config.
+- Auto-tuning is **size-specific**! A cache for 224×224 won't help with 320×320 images. Always use your actual training dimensions.
+- **When auto-tuning is disabled** (default), there's no need to warm up - the default config compiles instantly on first use.
 
 ## 🛠️ Development
 

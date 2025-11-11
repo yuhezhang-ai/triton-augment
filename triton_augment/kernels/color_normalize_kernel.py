@@ -13,23 +13,42 @@ Author: yuhezhang-ai
 import triton
 import triton.language as tl
 import torch
+from ..config import ENABLE_AUTOTUNE
+
+
+# Default configuration when auto-tuning is disabled
+DEFAULT_CONFIG = triton.Config({'BLOCK_SIZE': 512}, num_warps=4, num_stages=3)
+
+# Multiple configurations to search when auto-tuning is enabled
+# These offer robustness across different GPU architectures (T4, RTX, A100)
+AUTOTUNE_CONFIGS = [
+    # Config 1: Good for smaller, older GPUs (lower register pressure)
+    triton.Config({'BLOCK_SIZE': 256}, num_warps=4, num_stages=2), 
+    
+    # Config 2: Balanced, high occupancy, robust default
+    triton.Config({'BLOCK_SIZE': 512}, num_warps=4, num_stages=3),
+    
+    # Config 3: Higher concurrency (num_warps=8) for large data center GPUs
+    triton.Config({'BLOCK_SIZE': 1024}, num_warps=8, num_stages=3), 
+
+    # Config 4: Max block size, testing higher staging for L2 cache
+    triton.Config({'BLOCK_SIZE': 1024}, num_warps=4, num_stages=4), 
+]
+
+
+def _get_autotune_configs():
+    """Returns the appropriate list of configurations based on the global flag."""
+    if ENABLE_AUTOTUNE:
+        # If enabled, Triton searches these configs and caches the fastest one
+        return AUTOTUNE_CONFIGS
+    else:
+        # If disabled, Triton only checks the single default config (zero tuning overhead)
+        return [DEFAULT_CONFIG]
 
 
 @triton.autotune(
-    configs=[
-        # Config 1: Good for smaller, older GPUs (lower register pressure)
-        triton.Config({'BLOCK_SIZE': 256}, num_warps=4, num_stages=2), 
-        
-        # Config 2: Balanced, high occupancy, robust default
-        triton.Config({'BLOCK_SIZE': 512}, num_warps=4, num_stages=3),
-        
-        # Config 3: Higher concurrency (num_warps=8) for large data center GPUs
-        triton.Config({'BLOCK_SIZE': 1024}, num_warps=8, num_stages=3), 
-
-        # Config 4: Max block size, testing higher staging for L2 cache
-        triton.Config({'BLOCK_SIZE': 1024}, num_warps=4, num_stages=4), 
-    ],
-    key=['N'],  # Tune based on total elements (passed explicitly)
+    configs=_get_autotune_configs(),
+    key=['N'],  # Tune based on total elements
 )
 @triton.jit
 def fused_color_normalize_kernel(

@@ -22,6 +22,7 @@ from .kernels.color_normalize_kernel import (
     normalize_kernel,
 )
 from .utils import should_show_autotune_message
+from .config import ENABLE_AUTOTUNE
 
 
 def _validate_image_tensor(tensor: torch.Tensor, name: str = "tensor") -> None:
@@ -588,19 +589,19 @@ def fused_color_normalize(
     # Calculate N for auto-tuning key
     N = batch_size * channels * height * width
     
-    # Calculate grid size (BLOCK_SIZE will be auto-tuned)
+    # Calculate grid size (BLOCK_SIZE determined by auto-tune)
     grid = lambda meta: (triton.cdiv(total_spatial_elements, meta['BLOCK_SIZE']),)
     
-    # Show auto-tuning message if this kernel hasn't been tuned yet
-    if should_show_autotune_message('fused_color_normalize_kernel', (N,)):
+    # Show auto-tuning message if this kernel hasn't been tuned yet (only when enabled)
+    if ENABLE_AUTOTUNE and should_show_autotune_message('fused_color_normalize_kernel', (N,)):
         print(f"[Triton-Augment] Auto-tuning fused_color_normalize_kernel for batch={batch_size}, size={height}×{width}... (~2-5 sec)", 
               file=sys.stderr, flush=True)
     
-    # Launch the fused kernel (auto-tuned for optimal performance)
+    # Launch kernel (auto-tuned with 4 configs or fixed with 1 config based on ENABLE_AUTOTUNE)
     fused_color_normalize_kernel[grid](
         image,
         output_tensor,
-        N,  # Total elements for auto-tuning key
+        N,
         batch_size,
         channels,
         height,

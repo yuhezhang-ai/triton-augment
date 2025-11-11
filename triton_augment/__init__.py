@@ -33,9 +33,11 @@ Example:
 from . import functional
 from . import transforms
 from . import utils
+from . import config
 
 # Import utility functions
 from .utils import warmup_cache
+from .config import enable_autotune, disable_autotune, is_autotune_enabled
 
 # First-run detection and helpful message
 import os
@@ -76,9 +78,13 @@ __all__ = [
     'functional',
     'transforms',
     'utils',
+    'config',
     
     # Utilities
     'warmup_cache',
+    'enable_autotune',
+    'disable_autotune',
+    'is_autotune_enabled',
     
     # Transform classes
     'TritonColorJitter',
