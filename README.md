@@ -9,6 +9,7 @@ Triton-Augment is a high-performance image augmentation library that leverages [
 - **Kernel Fusion**: Fuse brightness, contrast, saturation, and normalization into a single GPU kernel
 - **Zero Intermediate Memory**: Eliminate DRAM reads/writes between operations
 - **Auto-Tuned Performance**: Triton automatically selects optimal kernel configurations for your GPU and image sizes
+- **Float16 Support**: Full support for half-precision (float16) with additional performance gains
 - **Drop-in Replacement**: Familiar torchvision-like API
 - **Significant Speedup**: Faster than sequential PyTorch operations
 - **PyTorch Compatible**: Works seamlessly with PyTorch data loading pipelines
@@ -160,6 +161,40 @@ for images, labels in loader:
     augmented, labels = gpu_transform((images, labels))
     # ... training code ...
 ```
+
+### Float16 (Half Precision) Support
+
+All operations fully support float16, which can provide additional speedup and reduce memory usage:
+
+```python
+import torch
+import triton_augment as ta
+
+# Create float16 images
+images = torch.rand(32, 3, 224, 224, device='cuda', dtype=torch.float16)
+
+# Apply transforms (works seamlessly with float16)
+transform = ta.TritonColorJitterNormalize(
+    brightness=0.2,
+    saturation=0.2,
+    mean=(0.485, 0.456, 0.406),
+    std=(0.229, 0.224, 0.225)
+)
+
+augmented = transform(images)  # Output is also float16
+```
+
+**Benefits:**
+- 🚀 **Additional speedup**: Float16 operations are faster on modern GPUs
+- 💾 **Half the memory**: Use 2x less VRAM
+- ✅ **Maintained accuracy**: Augmentations are robust to lower precision (~3-4 decimal digits)
+
+**When to use float16:**
+- Training with mixed precision (e.g., `torch.cuda.amp`)
+- Large batch sizes (save memory)
+- Inference pipelines
+
+**Note:** Float16 results will differ slightly from float32 (within ~0.1% relative error), which is expected and acceptable for data augmentation.
 
 ## ⚖️ Important: Contrast Difference for Speed
 

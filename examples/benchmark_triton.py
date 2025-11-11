@@ -352,6 +352,58 @@ def benchmark_training_pipeline(size, batch_size, provider):
     return ms, min_ms, max_ms
 
 
+@triton.testing.perf_report(
+    triton.testing.Benchmark(
+        x_names=['size'],
+        x_vals=[64 * i for i in range(2, 25)],
+        line_arg='provider',
+        line_vals=['float32-triton-fused', 'float16-triton-fused'],
+        line_names=['Float32 Fused', 'Float16 Fused'],
+        styles=[('blue', '-'), ('red', '--')],
+        ylabel='Runtime (ms)',
+        plot_name='float16-vs-float32-performance',
+        args={'batch_size': 32},
+    )
+)
+def benchmark_float16_vs_float32(size, batch_size, provider):
+    """
+    Compare float16 vs float32 performance for the fused kernel.
+    
+    NOTE: Both use the same operations (Brightness + Saturation + Normalize).
+    NO contrast (for consistent comparison). Includes grayscale (p=0.1).
+    """
+    # Fixed parameters
+    brightness_factor = 1.2
+    saturation_factor = 0.8
+    random_grayscale_p = 0.1
+    mean = (0.485, 0.456, 0.406)
+    std = (0.229, 0.224, 0.225)
+    
+    if provider == 'float32-triton-fused':
+        img = torch.rand(batch_size, 3, size, size, device='cuda', dtype=torch.float32)
+        fn = lambda: ta.fused_color_normalize(
+            img, 
+            brightness_factor=brightness_factor,
+            saturation_factor=saturation_factor,
+            random_grayscale_p=random_grayscale_p,
+            mean=mean, 
+            std=std
+        )
+    elif provider == 'float16-triton-fused':
+        img = torch.rand(batch_size, 3, size, size, device='cuda', dtype=torch.float16)
+        fn = lambda: ta.fused_color_normalize(
+            img, 
+            brightness_factor=brightness_factor,
+            saturation_factor=saturation_factor,
+            random_grayscale_p=random_grayscale_p,
+            mean=mean, 
+            std=std
+        )
+    
+    ms = triton.testing.do_bench(fn)
+    return ms
+
+
 def print_speedup_summary():
     """Print a quick speedup comparison for real-world training usage."""
     print("\n" + "="*80)
@@ -411,6 +463,65 @@ def print_speedup_summary():
     print(f"  Note: Triton uses fast contrast (centered scaling), not torchvision's blend-with-mean")
 
 
+def print_float16_speedup_summary():
+    """Print a quick comparison of float16 vs float32 performance."""
+    print("\n" + "="*80)
+    print("⚡ Float16 vs Float32 Speedup (224x224, batch=32)")
+    print("="*80)
+    print("Triton-Augment Fused: Brightness + Saturation + RandomGrayscale + Normalize")
+    print("(NO contrast for consistent comparison)")
+    print()
+    
+    # Standard ImageNet size for realistic comparison
+    test_img_fp32 = torch.rand(32, 3, 224, 224, device='cuda', dtype=torch.float32)
+    test_img_fp16 = torch.rand(32, 3, 224, 224, device='cuda', dtype=torch.float16)
+    
+    brightness_factor = 1.2
+    saturation_factor = 0.8
+    random_grayscale_p = 0.1
+    mean = (0.485, 0.456, 0.406)
+    std = (0.229, 0.224, 0.225)
+    
+    # Benchmark with more accurate settings
+    quantiles = [0.5, 0.2, 0.8]  # median, min, max
+    
+    t_fp32, min_fp32, max_fp32 = triton.testing.do_bench(
+        lambda: ta.fused_color_normalize(
+            test_img_fp32, 
+            brightness_factor=brightness_factor,
+            saturation_factor=saturation_factor,
+            random_grayscale_p=random_grayscale_p,
+            mean=mean, 
+            std=std
+        ),
+        warmup=25,
+        rep=100,
+        quantiles=quantiles
+    )
+    t_fp16, min_fp16, max_fp16 = triton.testing.do_bench(
+        lambda: ta.fused_color_normalize(
+            test_img_fp16, 
+            brightness_factor=brightness_factor,
+            saturation_factor=saturation_factor,
+            random_grayscale_p=random_grayscale_p,
+            mean=mean, 
+            std=std
+        ),
+        warmup=25,
+        rep=100,
+        quantiles=quantiles
+    )
+    
+    speedup = t_fp32 / t_fp16
+    
+    print(f"  Float32 (baseline):           {t_fp32:.3f} ms  (range: {min_fp32:.3f} - {max_fp32:.3f})")
+    print(f"  Float16 (half precision):     {t_fp16:.3f} ms  (range: {min_fp16:.3f} - {max_fp16:.3f})")
+    print()
+    print(f"  🚀 Speedup: {speedup:.2f}x faster")
+    print()
+    print(f"  Note: Float16 has lower precision (~3-4 decimal digits) but uses half the memory")
+
+
 if __name__ == '__main__':
     if not torch.cuda.is_available():
         print("Error: CUDA is not available. This benchmark requires a GPU.")
@@ -437,9 +548,10 @@ if __name__ == '__main__':
     print("  - Benchmarks 1-3: Use functionals with FIXED factors (pure kernel performance)")
     print("  - Benchmark 4: Uses transform classes with RANDOM factors (real training)")
     print("    * Tests 3 approaches: torchvision, triton sequential, triton FUSED")
+    print("  - Benchmark 5: Float16 vs Float32 comparison (dtype impact on performance)")
     print("  - Benchmark 1: Includes contrast (different algorithms - NOT fair comparison)")
-    print("  - Benchmarks 2-4: Exclude contrast for FAIR comparison")
-    print("  - Benchmarks 2-4: Include grayscale conversion (p=0.1)")
+    print("  - Benchmarks 2-5: Exclude contrast for FAIR comparison")
+    print("  - Benchmarks 2-5: Include grayscale conversion (p=0.1)")
     print("="*80)
     print()
     
@@ -468,8 +580,14 @@ if __name__ == '__main__':
     print("  Simulates actual training augmentation usage with random parameters per call")
     benchmark_training_pipeline.run(print_data=True, save_path='.')
     
-    # Quick speedup summary
+    print("\nBenchmark 5: Float16 vs Float32 (dtype comparison)")
+    print("  Operations: Brightness + Saturation + RandomGrayscale + Normalize (NO contrast)")
+    print("  Compares fused kernel performance with float16 vs float32")
+    benchmark_float16_vs_float32.run(print_data=True, save_path='.')
+    
+    # Quick speedup summaries
     print_speedup_summary()
+    print_float16_speedup_summary()
     
     print("\n" + "="*80)
     print("Benchmarks complete!")
@@ -478,5 +596,6 @@ if __name__ == '__main__':
     print("  - brightness-saturation-normalize-performance.png (WITHOUT contrast - FAIR)")
     print("  - batch-size-scaling.png")
     print("  - training-pipeline-performance.png")
+    print("  - float16-vs-float32-performance.png (dtype comparison)")
     print("="*80)
 

@@ -17,7 +17,7 @@ from ..config import ENABLE_AUTOTUNE
 
 
 # Default configuration when auto-tuning is disabled
-DEFAULT_CONFIG = triton.Config({'BLOCK_SIZE': 512}, num_warps=4, num_stages=3)
+DEFAULT_CONFIG = triton.Config({'BLOCK_SIZE': 512}, num_warps=8, num_stages=3)
 
 # Multiple configurations to search when auto-tuning is enabled
 # These offer robustness across different GPU architectures (T4, RTX, A100)
@@ -26,7 +26,7 @@ AUTOTUNE_CONFIGS = [
     triton.Config({'BLOCK_SIZE': 256}, num_warps=4, num_stages=2), 
     
     # Config 2: Balanced, high occupancy, robust default
-    triton.Config({'BLOCK_SIZE': 512}, num_warps=4, num_stages=3),
+    triton.Config({'BLOCK_SIZE': 512}, num_warps=8, num_stages=3),
     
     # Config 3: Higher concurrency (num_warps=8) for large data center GPUs
     triton.Config({'BLOCK_SIZE': 1024}, num_warps=8, num_stages=3), 
