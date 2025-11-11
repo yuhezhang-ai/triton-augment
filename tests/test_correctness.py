@@ -464,44 +464,83 @@ class TestGrayscaleCorrectness:
         assert torch.allclose(result[:, 0], result[:, 1])
         assert torch.allclose(result[:, 1], result[:, 2])
     
-    def test_fused_with_random_grayscale(self):
-        """Test that fused_color_normalize with random_grayscale_p=1.0 produces grayscale."""
+    def test_ultimate_fused_with_grayscale_matches_torchvision(self):
+        """Test that ultimate_fused_augment with random_grayscale matches torchvision sequential ops."""
+        img = torch.rand(2, 3, 224, 224, device='cuda', dtype=torch.float32)
+        
+        # Crop parameters
+        top, left = 20, 30
+        height, width = 112, 112
+        
+        # Color parameters
+        brightness_factor = 1.4
+        saturation_factor = 0.6
+        mean = (0.485, 0.456, 0.406)
+        std = (0.229, 0.224, 0.225)
+        
+        # Apply ultimate fused with random_grayscale_p=1.0 (always grayscale)
+        # Note: Uses FAST contrast (centered scaling), not torchvision contrast
+        ta_result = F.ultimate_fused_augment(
+            img,
+            top=top,
+            left=left,
+            height=height,
+            width=width,
+            flip_horizontal=True,
+            brightness_factor=brightness_factor,
+            contrast_factor=1.0,  # Skip contrast since we use FAST version
+            saturation_factor=saturation_factor,
+            random_grayscale_p=1.0,  # Force grayscale
+            mean=mean,
+            std=std
+        )
+        
+        # Apply torchvision sequential operations
+        # 1. Crop
+        tv_result = tvF.crop(img, top, left, height, width)
+        # 2. Horizontal flip
+        tv_result = tvF.horizontal_flip(tv_result)
+        # 3. Brightness
+        tv_result = tvF.adjust_brightness(tv_result, brightness_factor)
+        # 4. Saturation
+        tv_result = tvF.adjust_saturation(tv_result, saturation_factor)
+        # 5. Grayscale (convert to grayscale with 3 output channels)
+        tv_result = tvF.rgb_to_grayscale(tv_result, num_output_channels=3)
+        # 6. Normalize
+        tv_result = tvF.normalize(tv_result, mean=list(mean), std=list(std))
+        
+        # Should match within float32 precision
+        torch.testing.assert_close(ta_result, tv_result, rtol=1e-5, atol=1e-5)
+    
+    def test_fused_with_random_grayscale_ordering(self):
+        """Test that random grayscale is applied AFTER saturation, not as replacement."""
         img = torch.rand(2, 3, 128, 128, device='cuda', dtype=torch.float32)
         
-        # Apply with random_grayscale_p=1.0 (always grayscale)
-        result = F.fused_color_normalize(
+        # Test 1: saturation=2.0 (oversaturate) then grayscale
+        result_sat_then_gray = F.fused_color_normalize(
             img,
-            brightness_factor=1.2,
-            contrast_factor=1.1,
-            saturation_factor=0.9,  # This should be overridden
-            random_grayscale_p=1.0,  # Force grayscale
-            mean=(0.485, 0.456, 0.406),
-            std=(0.229, 0.224, 0.225)
+            saturation_factor=2.0,  # Oversaturate and clamp
+            random_grayscale_p=1.0,  # Then convert to grayscale
         )
         
-        # After normalization, check if it was grayscale before normalize
-        # Unnormalize to check
-        mean_t = torch.tensor([0.485, 0.456, 0.406], device='cuda').view(1, 3, 1, 1)
-        std_t = torch.tensor([0.229, 0.224, 0.225], device='cuda').view(1, 3, 1, 1)
-        unnormalized = result * std_t + mean_t
-        
-        # Should be grayscale (all channels should have similar values after accounting for different normalization)
-        # Actually, after normalization with different mean/std per channel, they won't be identical
-        # So let's test the saturation=0 effect directly
-        
-        # Better test: compare with explicit saturation=0
-        result_explicit = F.fused_color_normalize(
+        # Test 2: grayscale directly (no saturation)
+        result_gray_only = F.fused_color_normalize(
             img,
-            brightness_factor=1.2,
-            contrast_factor=1.1,
-            saturation_factor=0.0,  # Explicit grayscale
-            random_grayscale_p=0.0,  # No random
-            mean=(0.485, 0.456, 0.406),
-            std=(0.229, 0.224, 0.225)
+            saturation_factor=1.0,  # No saturation
+            random_grayscale_p=1.0,  # Just grayscale
         )
         
-        # The random_grayscale_p=1.0 should match saturation_factor=0.0
-        torch.testing.assert_close(result, result_explicit, rtol=1e-5, atol=1e-5)
+        # They should be DIFFERENT because saturation oversaturates/clamps first
+        max_diff = torch.abs(result_sat_then_gray - result_gray_only).max().item()
+        assert max_diff > 0.001, (
+            f"Expected difference between 'saturation→grayscale' vs 'grayscale alone', "
+            f"but max_diff={max_diff:.6f} is too small"
+        )
+        
+        # Verify grayscale conversion worked (all channels equal)
+        r, g, b = result_sat_then_gray[:, 0], result_sat_then_gray[:, 1], result_sat_then_gray[:, 2]
+        torch.testing.assert_close(r, g, rtol=1e-6, atol=1e-6)
+        torch.testing.assert_close(g, b, rtol=1e-6, atol=1e-6)
 
 
 class TestGrayscaleTransforms:
