@@ -268,11 +268,11 @@ def adjust_contrast(
     # Get tensor dimensions
     batch_size, channels, height, width = image.shape
     spatial_size = height * width
-    total_spatial_elements = batch_size * spatial_size
+    total_elements = batch_size * channels * spatial_size
     
     # Calculate grid size
     BLOCK_SIZE = 256
-    grid = lambda meta: (triton.cdiv(total_spatial_elements, meta['BLOCK_SIZE']),)
+    grid = lambda meta: (triton.cdiv(total_elements, meta['BLOCK_SIZE']),)
     
     # Launch kernel
     contrast_kernel[grid](
