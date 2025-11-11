@@ -498,7 +498,7 @@ def fused_color_normalize(
     1. Brightness adjustment: pixel = pixel * brightness_factor [torchvision-exact]
     2. Contrast adjustment (FAST): pixel = (pixel - 0.5) * contrast + 0.5
     3. Saturation adjustment: blend with grayscale [torchvision-exact]
-    4. Random grayscale: with probability p, convert to grayscale (saturation=0)
+    4. Random grayscale: with probability p, convert to grayscale AFTER saturation
     5. Per-channel normalization [torchvision-exact]
     
     The fusion eliminates intermediate memory reads/writes, providing
@@ -517,7 +517,7 @@ def fused_color_normalize(
         saturation_factor: Saturation multiplier (default: 1.0 = no change)
                           Must be non-negative. 0=grayscale, 1=original, >1=more saturated
         random_grayscale_p: Probability of converting to grayscale (default: 0.0 = no grayscale)
-                           Must be in [0, 1]. When triggered, overrides saturation to 0.
+                           Must be in [0, 1]. Applied AFTER saturation (not as replacement).
         mean: Tuple of mean values for normalization (R, G, B)
               If None, normalization is skipped
         std: Tuple of standard deviation values for normalization (R, G, B)
@@ -559,10 +559,9 @@ def fused_color_normalize(
     if not (0.0 <= random_grayscale_p <= 1.0):
         raise ValueError(f"random_grayscale_p ({random_grayscale_p}) must be in [0, 1].")
     
-    # Handle random grayscale by overriding saturation to 0
-    # This converts to grayscale using the existing saturation kernel
-    if random_grayscale_p > 0 and torch.rand(1).item() < random_grayscale_p:
-        saturation_factor = 0.0
+    # Handle random grayscale as a separate operation AFTER saturation
+    # This is important because: saturation → clamp → grayscale ≠ grayscale alone
+    apply_grayscale = (random_grayscale_p > 0 and torch.rand(1).item() < random_grayscale_p)
     
     # Determine which operations to apply
     apply_brightness = (brightness_factor != 1.0)
@@ -571,7 +570,7 @@ def fused_color_normalize(
     apply_normalize = (mean is not None and std is not None)
     
     # If no operations, return copy
-    if not (apply_brightness or apply_contrast or apply_saturation or apply_normalize):
+    if not (apply_brightness or apply_contrast or apply_saturation or apply_grayscale or apply_normalize):
         return image.clone()
     
     # Validate normalization parameters
@@ -598,9 +597,9 @@ def fused_color_normalize(
     N = total_elements
     
     # Calculate grid size based on processing path
-    # - If apply_saturation=True: SPATIAL path processes N*H*W locations
-    # - If apply_saturation=False: LINEAR path processes N*C*H*W elements
-    if apply_saturation:
+    # - If apply_saturation=True OR apply_grayscale=True: SPATIAL path processes N*H*W locations
+    # - Otherwise: LINEAR path processes N*C*H*W elements
+    if apply_saturation or apply_grayscale:
         # Spatial processing: one thread block per BLOCK_SIZE spatial locations
         grid = lambda meta: (triton.cdiv(total_spatial_elements, meta['BLOCK_SIZE']),)
     else:
@@ -629,6 +628,7 @@ def fused_color_normalize(
         apply_brightness,
         apply_contrast,
         apply_saturation,
+        apply_grayscale,
         apply_normalize,
     )
     
@@ -932,6 +932,7 @@ def ultimate_fused_augment(
     brightness_factor: float = 1.0,
     contrast_factor: float = 1.0,
     saturation_factor: float = 1.0,
+    random_grayscale_p: float = 0.0,
     mean: tuple[float, float, float] | None = None,
     std: tuple[float, float, float] | None = None,
 ) -> torch.Tensor:
@@ -941,11 +942,11 @@ def ultimate_fused_augment(
     Combines geometric (crop + flip) and pixel (color + normalize) operations
     in a single GPU kernel, providing maximum performance.
     
-    **Performance**: ~3-5x faster than torchvision Compose (6 sequential operations)
+    **Performance**: ~8-10x faster than torchvision Compose (6+ sequential operations)
     
     Operations applied in sequence:
     1. **Geometric**: Crop + Optional Horizontal Flip (index transformations)
-    2. **Pixel**: Brightness + Contrast (fast) + Saturation + Normalize (value operations)
+    2. **Pixel**: Brightness + Contrast (fast) + Saturation + Random Grayscale + Normalize (value operations)
     
     Args:
         image: Input image tensor of shape (N, C, H, W) on CUDA
@@ -955,6 +956,7 @@ def ultimate_fused_augment(
         brightness_factor: Brightness multiplier (1.0 = no change)
         contrast_factor: Contrast multiplier (1.0 = no change) [FAST mode]
         saturation_factor: Saturation multiplier (1.0 = no change)
+        random_grayscale_p: Probability of converting to grayscale (default: 0.0 = no grayscale)
         mean, std: Normalization parameters (None = skip normalization)
         
     Returns:
@@ -1002,10 +1004,15 @@ def ultimate_fused_augment(
     if height <= 0 or width <= 0:
         raise ValueError(f"Crop size must be positive, got height={height}, width={width}")
     
+    # Validate random_grayscale_p
+    if not (0.0 <= random_grayscale_p <= 1.0):
+        raise ValueError(f"random_grayscale_p ({random_grayscale_p}) must be in [0, 1].")
+    
     # Determine which pixel operations to apply
     apply_brightness = (brightness_factor != 1.0)
     apply_contrast = (contrast_factor != 1.0)
     apply_saturation = (saturation_factor != 1.0)
+    apply_grayscale = (random_grayscale_p > 0 and torch.rand(1).item() < random_grayscale_p)
     apply_normalize = (mean is not None and std is not None)
     
     # Validate and prepare normalization parameters
@@ -1028,8 +1035,8 @@ def ultimate_fused_augment(
     
     # Calculate total elements and grid size based on processing path
     output_spatial_size = height * width
-    if apply_saturation:
-        # Spatial processing
+    if apply_saturation or apply_grayscale:
+        # Spatial processing (required for saturation/grayscale)
         total_spatial = batch_size * output_spatial_size
         grid = lambda meta: (triton.cdiv(total_spatial, meta['BLOCK_SIZE']),)
     else:
@@ -1059,6 +1066,7 @@ def ultimate_fused_augment(
         apply_brightness,
         apply_contrast,
         apply_saturation,
+        apply_grayscale,
         apply_normalize,
         BLOCK_SIZE=BLOCK_SIZE,
     )

@@ -73,6 +73,7 @@ def fused_color_normalize_kernel(
     apply_brightness: tl.constexpr,
     apply_contrast: tl.constexpr,
     apply_saturation: tl.constexpr,
+    apply_grayscale: tl.constexpr,
     apply_normalize: tl.constexpr,
     # Block size
     BLOCK_SIZE: tl.constexpr,
@@ -81,16 +82,17 @@ def fused_color_normalize_kernel(
     Fused kernel for color jitter and normalization with TWO processing paths.
     
     **OPTIMIZATION**: This kernel uses compile-time branching to choose between:
-    - LINEAR processing (when saturation NOT needed): Process N*C*H*W pixels individually
+    - LINEAR processing (when saturation/grayscale NOT needed): Process N*C*H*W pixels individually
       → Simpler, faster, better memory access
-    - SPATIAL processing (when saturation IS needed): Process N*H*W locations with RGB triplets
-      → Required for saturation (needs R,G,B together for grayscale computation)
+    - SPATIAL processing (when saturation/grayscale IS needed): Process N*H*W locations with RGB triplets
+      → Required for saturation/grayscale (needs R,G,B together for grayscale computation)
     
     Operations applied in sequence:
     1. Brightness: pixel = pixel * brightness_factor (MULTIPLICATIVE)
     2. Contrast (FAST): pixel = (pixel - 0.5) * contrast_factor + 0.5
     3. Saturation: pixel = blend(pixel, grayscale, saturation_factor) [torchvision-exact]
-    4. Normalize: pixel = (pixel - mean) / std
+    4. Random Grayscale: convert to grayscale if triggered
+    5. Normalize: pixel = (pixel - mean) / std
     
     NOTE: Contrast uses FAST centered scaling, NOT torchvision's blend-with-mean.
     For torchvision-exact contrast, use adjust_contrast() separately.
@@ -108,12 +110,12 @@ def fused_color_normalize_kernel(
     """
     spatial_size = height * width
     
-    if apply_saturation:
+    if apply_saturation or apply_grayscale:
         # ========================================================================
-        # SPATIAL PROCESSING PATH (when saturation is needed)
+        # SPATIAL PROCESSING PATH (when saturation or grayscale is needed)
         # ========================================================================
         # Process N*H*W spatial positions, loading RGB triplets together.
-        # Required because saturation needs grayscale = 0.2989*R + 0.587*G + 0.114*B
+        # Required because saturation/grayscale needs: grayscale = 0.2989*R + 0.587*G + 0.114*B
         
         total_spatial = batch_size * spatial_size
         pid = tl.program_id(axis=0)
@@ -157,17 +159,28 @@ def fused_color_normalize_kernel(
         
         # Apply saturation adjustment with proper RGB to grayscale conversion
         # Uses torchvision's weights: 0.2989*R + 0.587*G + 0.114*B
-        # Convert to grayscale using exact torchvision formula
-        gray = 0.2989 * r + 0.587 * g + 0.114 * b
+        if apply_saturation:
+            # Convert to grayscale using exact torchvision formula
+            gray = 0.2989 * r + 0.587 * g + 0.114 * b
+            
+            # blend(color, gray, saturation_factor) = color * saturation_factor + gray * (1 - saturation_factor)
+            r = r * saturation_factor + gray * (1.0 - saturation_factor)
+            g = g * saturation_factor + gray * (1.0 - saturation_factor)
+            b = b * saturation_factor + gray * (1.0 - saturation_factor)
+            # Clamp to [0, 1] as torchvision does
+            r = tl.maximum(0.0, tl.minimum(1.0, r))
+            g = tl.maximum(0.0, tl.minimum(1.0, g))
+            b = tl.maximum(0.0, tl.minimum(1.0, b))
         
-        # blend(color, gray, saturation_factor) = color * saturation_factor + gray * (1 - saturation_factor)
-        r = r * saturation_factor + gray * (1.0 - saturation_factor)
-        g = g * saturation_factor + gray * (1.0 - saturation_factor)
-        b = b * saturation_factor + gray * (1.0 - saturation_factor)
-        # Clamp to [0, 1] as torchvision does
-        r = tl.maximum(0.0, tl.minimum(1.0, r))
-        g = tl.maximum(0.0, tl.minimum(1.0, g))
-        b = tl.maximum(0.0, tl.minimum(1.0, b))
+        # Apply random grayscale conversion (convert RGB to grayscale)
+        # This is applied AFTER saturation to ensure correct ordering
+        if apply_grayscale:
+            # Convert to grayscale using torchvision formula
+            gray = 0.2989 * r + 0.587 * g + 0.114 * b
+            # Set all channels to grayscale value
+            r = gray
+            g = gray
+            b = gray
         
         # Apply normalization (per-channel)
         if apply_normalize:

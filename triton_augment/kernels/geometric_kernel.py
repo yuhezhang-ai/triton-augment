@@ -269,6 +269,7 @@ def ultimate_fused_kernel(
     apply_brightness: tl.constexpr,
     apply_contrast: tl.constexpr,
     apply_saturation: tl.constexpr,
+    apply_grayscale: tl.constexpr,
     apply_normalize: tl.constexpr,
     # Block size
     BLOCK_SIZE: tl.constexpr,
@@ -278,11 +279,11 @@ def ultimate_fused_kernel(
     
     This kernel combines:
     - **Geometric Tier**: RandomCrop + RandomHorizontalFlip (index transformations)
-    - **Pixel Tier**: Brightness + Contrast + Saturation + Normalize (value operations)
+    - **Pixel Tier**: Brightness + Contrast + Saturation + Random Grayscale + Normalize (value operations)
     
-    **OPTIMIZATION**: Uses TWO processing paths based on saturation:
-    - LINEAR path (no saturation): Process N*C*H*W pixels individually → FASTEST
-    - SPATIAL path (with saturation): Process N*H*W locations with RGB triplets → Required for grayscale
+    **OPTIMIZATION**: Uses TWO processing paths based on saturation/grayscale:
+    - LINEAR path (no saturation/grayscale): Process N*C*H*W pixels individually → FASTEST
+    - SPATIAL path (with saturation/grayscale): Process N*H*W locations with RGB triplets → Required for grayscale
     
     **Processing Flow**:
     1. Calculate output position (n, c, h, w)
@@ -317,12 +318,12 @@ def ultimate_fused_kernel(
     """
     output_spatial_size = output_height * output_width
     
-    if apply_saturation:
+    if apply_saturation or apply_grayscale:
         # ========================================================================
-        # SPATIAL PROCESSING PATH (when saturation is needed)
+        # SPATIAL PROCESSING PATH (when saturation or grayscale is needed)
         # ========================================================================
         # Process N*H*W spatial positions, loading RGB triplets together
-        # Required for saturation (needs grayscale = 0.2989*R + 0.587*G + 0.114*B)
+        # Required for saturation/grayscale (needs grayscale = 0.2989*R + 0.587*G + 0.114*B)
         
         total_spatial = batch_size * output_spatial_size
         pid = tl.program_id(axis=0)
@@ -377,13 +378,21 @@ def ultimate_fused_kernel(
             b = tl.maximum(0.0, tl.minimum(1.0, b))
         
         # Saturation (grayscale blend)
-        gray = 0.2989 * r + 0.587 * g + 0.114 * b
-        r = r * saturation_factor + gray * (1.0 - saturation_factor)
-        g = g * saturation_factor + gray * (1.0 - saturation_factor)
-        b = b * saturation_factor + gray * (1.0 - saturation_factor)
-        r = tl.maximum(0.0, tl.minimum(1.0, r))
-        g = tl.maximum(0.0, tl.minimum(1.0, g))
-        b = tl.maximum(0.0, tl.minimum(1.0, b))
+        if apply_saturation:
+            gray = 0.2989 * r + 0.587 * g + 0.114 * b
+            r = r * saturation_factor + gray * (1.0 - saturation_factor)
+            g = g * saturation_factor + gray * (1.0 - saturation_factor)
+            b = b * saturation_factor + gray * (1.0 - saturation_factor)
+            r = tl.maximum(0.0, tl.minimum(1.0, r))
+            g = tl.maximum(0.0, tl.minimum(1.0, g))
+            b = tl.maximum(0.0, tl.minimum(1.0, b))
+        
+        # Random grayscale conversion (applied AFTER saturation)
+        if apply_grayscale:
+            gray = 0.2989 * r + 0.587 * g + 0.114 * b
+            r = gray
+            g = gray
+            b = gray
         
         # Normalize
         if apply_normalize:
