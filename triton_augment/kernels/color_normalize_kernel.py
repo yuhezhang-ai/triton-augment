@@ -78,9 +78,15 @@ def fused_color_normalize_kernel(
     BLOCK_SIZE: tl.constexpr,
 ):
     """
-    Fused kernel for color jitter and normalization.
+    Fused kernel for color jitter and normalization with TWO processing paths.
     
-    Operations are applied in sequence:
+    **OPTIMIZATION**: This kernel uses compile-time branching to choose between:
+    - LINEAR processing (when saturation NOT needed): Process N*C*H*W pixels individually
+      → Simpler, faster, better memory access
+    - SPATIAL processing (when saturation IS needed): Process N*H*W locations with RGB triplets
+      → Required for saturation (needs R,G,B together for grayscale computation)
+    
+    Operations applied in sequence:
     1. Brightness: pixel = pixel * brightness_factor (MULTIPLICATIVE)
     2. Contrast (FAST): pixel = (pixel - 0.5) * contrast_factor + 0.5
     3. Saturation: pixel = blend(pixel, grayscale, saturation_factor) [torchvision-exact]
@@ -98,58 +104,59 @@ def fused_color_normalize_kernel(
         norm_mean_ptr, norm_std_ptr: Normalization parameters [C]
         brightness_factor, contrast_factor, saturation_factor: Adjustment factors
         apply_* flags: Compile-time constants to enable/disable operations
-        BLOCK_SIZE: Number of spatial locations to process per thread block (auto-tuned)
+        BLOCK_SIZE: Number of elements to process per thread block (auto-tuned)
     """
-    # Calculate total spatial size
     spatial_size = height * width
-    total_elements = batch_size * spatial_size
     
-    # Get the program ID (one per spatial location across batches)
-    pid = tl.program_id(axis=0)
-    block_start = pid * BLOCK_SIZE
-    spatial_offsets = block_start + tl.arange(0, BLOCK_SIZE)
-    spatial_mask = spatial_offsets < total_elements
-    
-    # Calculate batch and spatial indices
-    batch_idx = spatial_offsets // spatial_size
-    spatial_idx = spatial_offsets % spatial_size
-    
-    # Load RGB channels for each spatial location
-    # Layout: [N, C, H, W] -> offset = n * C * H * W + c * H * W + spatial_idx
-    r_offset = batch_idx * channels * spatial_size + 0 * spatial_size + spatial_idx
-    g_offset = batch_idx * channels * spatial_size + 1 * spatial_size + spatial_idx
-    b_offset = batch_idx * channels * spatial_size + 2 * spatial_size + spatial_idx
-    
-    r = tl.load(input_ptr + r_offset, mask=spatial_mask, other=0.0)
-    g = tl.load(input_ptr + g_offset, mask=spatial_mask, other=0.0)
-    b = tl.load(input_ptr + b_offset, mask=spatial_mask, other=0.0)
-    
-    # Apply brightness adjustment (MULTIPLICATIVE per torchvision)
-    if apply_brightness:
-        r = r * brightness_factor
-        g = g * brightness_factor
-        b = b * brightness_factor
-        # Clamp to [0, 1] as torchvision does
-        r = tl.maximum(0.0, tl.minimum(1.0, r))
-        g = tl.maximum(0.0, tl.minimum(1.0, g))
-        b = tl.maximum(0.0, tl.minimum(1.0, b))
-    
-    # Apply contrast adjustment (FAST version: centered scaling)
-    # NOTE: This uses fast contrast, not torchvision's blend-with-mean approach
-    # Formula: output = (input - 0.5) * contrast_factor + 0.5
-    if apply_contrast:
-        # Center around 0.5, scale, and re-center
-        r = (r - 0.5) * contrast_factor + 0.5
-        g = (g - 0.5) * contrast_factor + 0.5
-        b = (b - 0.5) * contrast_factor + 0.5
-        # Clamp to [0, 1]
-        r = tl.maximum(0.0, tl.minimum(1.0, r))
-        g = tl.maximum(0.0, tl.minimum(1.0, g))
-        b = tl.maximum(0.0, tl.minimum(1.0, b))
-    
-    # Apply saturation adjustment with proper RGB to grayscale conversion
-    # Uses torchvision's weights: 0.2989*R + 0.587*G + 0.114*B
     if apply_saturation:
+        # ========================================================================
+        # SPATIAL PROCESSING PATH (when saturation is needed)
+        # ========================================================================
+        # Process N*H*W spatial positions, loading RGB triplets together.
+        # Required because saturation needs grayscale = 0.2989*R + 0.587*G + 0.114*B
+        
+        total_spatial = batch_size * spatial_size
+        pid = tl.program_id(axis=0)
+        block_start = pid * BLOCK_SIZE
+        spatial_offsets = block_start + tl.arange(0, BLOCK_SIZE)
+        spatial_mask = spatial_offsets < total_spatial
+        
+        # Calculate batch and spatial indices
+        batch_idx = spatial_offsets // spatial_size
+        spatial_idx = spatial_offsets % spatial_size
+        
+        # Load RGB channels for each spatial location
+        # Layout: [N, C, H, W] -> offset = n * C * H * W + c * H * W + spatial_idx
+        r_offset = batch_idx * channels * spatial_size + 0 * spatial_size + spatial_idx
+        g_offset = batch_idx * channels * spatial_size + 1 * spatial_size + spatial_idx
+        b_offset = batch_idx * channels * spatial_size + 2 * spatial_size + spatial_idx
+        
+        r = tl.load(input_ptr + r_offset, mask=spatial_mask, other=0.0)
+        g = tl.load(input_ptr + g_offset, mask=spatial_mask, other=0.0)
+        b = tl.load(input_ptr + b_offset, mask=spatial_mask, other=0.0)
+        
+        # Apply brightness adjustment (MULTIPLICATIVE per torchvision)
+        if apply_brightness:
+            r = r * brightness_factor
+            g = g * brightness_factor
+            b = b * brightness_factor
+            # Clamp to [0, 1] as torchvision does
+            r = tl.maximum(0.0, tl.minimum(1.0, r))
+            g = tl.maximum(0.0, tl.minimum(1.0, g))
+            b = tl.maximum(0.0, tl.minimum(1.0, b))
+        
+        # Apply contrast adjustment (FAST version: centered scaling)
+        if apply_contrast:
+            r = (r - 0.5) * contrast_factor + 0.5
+            g = (g - 0.5) * contrast_factor + 0.5
+            b = (b - 0.5) * contrast_factor + 0.5
+            # Clamp to [0, 1]
+            r = tl.maximum(0.0, tl.minimum(1.0, r))
+            g = tl.maximum(0.0, tl.minimum(1.0, g))
+            b = tl.maximum(0.0, tl.minimum(1.0, b))
+        
+        # Apply saturation adjustment with proper RGB to grayscale conversion
+        # Uses torchvision's weights: 0.2989*R + 0.587*G + 0.114*B
         # Convert to grayscale using exact torchvision formula
         gray = 0.2989 * r + 0.587 * g + 0.114 * b
         
@@ -161,25 +168,68 @@ def fused_color_normalize_kernel(
         r = tl.maximum(0.0, tl.minimum(1.0, r))
         g = tl.maximum(0.0, tl.minimum(1.0, g))
         b = tl.maximum(0.0, tl.minimum(1.0, b))
-    
-    # Apply normalization (per-channel)
-    if apply_normalize:
-        norm_mean_r = tl.load(norm_mean_ptr + 0)
-        norm_mean_g = tl.load(norm_mean_ptr + 1)
-        norm_mean_b = tl.load(norm_mean_ptr + 2)
         
-        norm_std_r = tl.load(norm_std_ptr + 0)
-        norm_std_g = tl.load(norm_std_ptr + 1)
-        norm_std_b = tl.load(norm_std_ptr + 2)
+        # Apply normalization (per-channel)
+        if apply_normalize:
+            norm_mean_r = tl.load(norm_mean_ptr + 0)
+            norm_mean_g = tl.load(norm_mean_ptr + 1)
+            norm_mean_b = tl.load(norm_mean_ptr + 2)
+            
+            norm_std_r = tl.load(norm_std_ptr + 0)
+            norm_std_g = tl.load(norm_std_ptr + 1)
+            norm_std_b = tl.load(norm_std_ptr + 2)
+            
+            r = (r - norm_mean_r) / norm_std_r
+            g = (g - norm_mean_g) / norm_std_g
+            b = (b - norm_mean_b) / norm_std_b
         
-        r = (r - norm_mean_r) / norm_std_r
-        g = (g - norm_mean_g) / norm_std_g
-        b = (b - norm_mean_b) / norm_std_b
+        # Store the results
+        tl.store(output_ptr + r_offset, r, mask=spatial_mask)
+        tl.store(output_ptr + g_offset, g, mask=spatial_mask)
+        tl.store(output_ptr + b_offset, b, mask=spatial_mask)
     
-    # Store the results
-    tl.store(output_ptr + r_offset, r, mask=spatial_mask)
-    tl.store(output_ptr + g_offset, g, mask=spatial_mask)
-    tl.store(output_ptr + b_offset, b, mask=spatial_mask)
+    else:
+        # ========================================================================
+        # LINEAR PROCESSING PATH (when saturation is NOT needed)
+        # ========================================================================
+        # Process N*C*H*W pixels individually. This is FASTER because:
+        # - Simpler index calculations
+        # - Better memory coalescing
+        # - Less register pressure
+        # - No need to load/store RGB triplets together
+        
+        total_elements = batch_size * channels * spatial_size
+        pid = tl.program_id(axis=0)
+        block_start = pid * BLOCK_SIZE
+        offsets = block_start + tl.arange(0, BLOCK_SIZE)
+        mask = offsets < total_elements
+        
+        # Load single pixel value
+        pixel = tl.load(input_ptr + offsets, mask=mask, other=0.0)
+        
+        # Apply brightness adjustment (MULTIPLICATIVE per torchvision)
+        if apply_brightness:
+            pixel = pixel * brightness_factor
+            pixel = tl.maximum(0.0, tl.minimum(1.0, pixel))
+        
+        # Apply contrast adjustment (FAST version: centered scaling)
+        if apply_contrast:
+            pixel = (pixel - 0.5) * contrast_factor + 0.5
+            pixel = tl.maximum(0.0, tl.minimum(1.0, pixel))
+        
+        # Apply normalization (per-channel)
+        if apply_normalize:
+            # Calculate which channel this pixel belongs to
+            channel_idx = (offsets // spatial_size) % channels
+            
+            # Load channel-specific normalization parameters
+            norm_mean = tl.load(norm_mean_ptr + channel_idx, mask=mask, other=0.0)
+            norm_std = tl.load(norm_std_ptr + channel_idx, mask=mask, other=0.0)
+            
+            pixel = (pixel - norm_mean) / norm_std
+        
+        # Store the result
+        tl.store(output_ptr + offsets, pixel, mask=mask)
 
 
 @triton.jit

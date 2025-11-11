@@ -48,15 +48,22 @@ if os.getenv('TRITON_AUGMENT_SUPPRESS_FIRST_RUN_MESSAGE') != '1':
 
 # Import commonly used transforms
 from .transforms import (
+    # Color transforms
     TritonColorJitter,
     TritonNormalize,
     TritonColorJitterNormalize,
     TritonGrayscale,
     TritonRandomGrayscale,
+    # Geometric transforms
+    TritonRandomCrop,
+    TritonCenterCrop,
+    TritonRandomHorizontalFlip,
+    TritonRandomCropFlip,
 )
 
 # Import commonly used functional operations
 from .functional import (
+    # Color operations
     adjust_brightness,
     adjust_contrast,
     adjust_contrast_fast,
@@ -69,6 +76,11 @@ from .functional import (
     apply_saturation,
     apply_normalize,
     fused_color_normalize,
+    # Geometric operations
+    crop,
+    center_crop,
+    horizontal_flip,
+    fused_crop_flip,
 )
 
 __version__ = "0.1.0"
@@ -86,14 +98,21 @@ __all__ = [
     'disable_autotune',
     'is_autotune_enabled',
     
-    # Transform classes
+    # Transform classes - Color
     'TritonColorJitter',
     'TritonNormalize',
     'TritonColorJitterNormalize',
     'TritonGrayscale',
     'TritonRandomGrayscale',
+    # Transform classes - Geometric
+    'TritonRandomCrop',
+    'TritonCenterCrop',
+    'TritonRandomHorizontalFlip',
+    'TritonRandomCropFlip',
+    # Transform classes - Ultimate Fusion
+    'TritonUltimateAugment',
     
-    # Functional API
+    # Functional API - Color operations
     'adjust_brightness',
     'adjust_contrast',
     'adjust_contrast_fast',
@@ -106,5 +125,14 @@ __all__ = [
     'apply_saturation',
     'apply_normalize',
     'fused_color_normalize',
+    
+    # Functional API - Geometric operations
+    'crop',
+    'center_crop',
+    'horizontal_flip',
+    'fused_crop_flip',
+    
+    # Functional API - Ultimate Fusion
+    'ultimate_fused_augment',
 ]
 

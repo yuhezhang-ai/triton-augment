@@ -1,214 +1,167 @@
 """
-Benchmark script comparing Triton-Augment with standard PyTorch operations.
+Simple benchmark for TritonUltimateAugment (Ultimate Fusion).
 
-This script measures the performance of fused operations versus sequential
-PyTorch operations for various batch sizes and image dimensions.
+This script compares three approaches:
+1. Torchvision Compose (baseline)
+2. Triton-Augment Sequential (individual transforms)
+3. Triton-Augment Fused (single kernel - FASTEST!)
+
+Outputs a clean markdown table you can paste into README.md.
+
+Usage:
+    python examples/benchmark.py
 """
 
 import torch
-import time
-import argparse
-from typing import Tuple
+import triton
+from triton.testing import do_bench
+import torchvision.transforms.v2 as transforms
+import torchvision.transforms.v2.functional as tvF
 
-try:
-    import triton_augment as ta
-    TRITON_AVAILABLE = True
-except ImportError:
-    print("Warning: triton_augment not installed. Install with: pip install -e .")
-    TRITON_AVAILABLE = False
+import triton_augment as ta
+import triton_augment.functional as F
 
 
-def pytorch_augment(
-    images: torch.Tensor,
-    brightness: float,
-    contrast: float,
-    saturation: float,
-    mean: Tuple[float, float, float],
-    std: Tuple[float, float, float],
-) -> torch.Tensor:
+def benchmark_ultimate(batch_size=32, image_size=224, crop_size=112):
     """
-    Sequential PyTorch implementation of color jitter and normalize.
+    Benchmark ultimate fusion vs sequential vs torchvision.
     
-    This represents the traditional approach with multiple separate operations.
-    """
-    # Brightness
-    img = images + brightness
-    
-    # Contrast
-    img = img * contrast
-    
-    # Saturation (simplified - full implementation would be more complex)
-    gray = 0.299 * img[:, 0:1] + 0.587 * img[:, 1:2] + 0.114 * img[:, 2:3]
-    img = gray + saturation * (img - gray)
-    
-    # Normalize
-    mean_t = torch.tensor(mean, device=images.device, dtype=images.dtype).view(1, 3, 1, 1)
-    std_t = torch.tensor(std, device=images.device, dtype=images.dtype).view(1, 3, 1, 1)
-    img = (img - mean_t) / std_t
-    
-    return img
-
-
-def benchmark_operation(
-    func,
-    *args,
-    warmup_runs: int = 10,
-    benchmark_runs: int = 100,
-    **kwargs
-) -> Tuple[float, float]:
-    """
-    Benchmark a function with warmup and multiple runs.
+    Args:
+        batch_size: Number of images in batch
+        image_size: Input image size (square)
+        crop_size: Output crop size (square)
     
     Returns:
-        Tuple of (mean_time_ms, std_time_ms)
+        dict: Results with time in ms and speedup
     """
-    # Warmup
-    for _ in range(warmup_runs):
-        result = func(*args, **kwargs)
-        if torch.cuda.is_available():
-            torch.cuda.synchronize()
+    img = torch.rand(batch_size, 3, image_size, image_size, device='cuda')
     
-    # Benchmark
-    times = []
-    for _ in range(benchmark_runs):
-        start = time.perf_counter()
-        result = func(*args, **kwargs)
-        if torch.cuda.is_available():
-            torch.cuda.synchronize()
-        end = time.perf_counter()
-        times.append((end - start) * 1000)  # Convert to ms
-    
-    mean_time = sum(times) / len(times)
-    std_time = (sum((t - mean_time) ** 2 for t in times) / len(times)) ** 0.5
-    
-    return mean_time, std_time
-
-
-def run_benchmark(
-    batch_size: int,
-    height: int,
-    width: int,
-    warmup_runs: int = 10,
-    benchmark_runs: int = 100,
-):
-    """Run benchmark for specific configuration."""
-    print(f"\n{'='*60}")
-    print(f"Benchmarking: Batch={batch_size}, Size={height}x{width}")
-    print(f"{'='*60}")
-    
-    # Create test data
-    images = torch.rand(batch_size, 3, height, width, device='cuda')
-    
-    # Parameters
-    brightness = 0.1
-    contrast = 1.2
-    saturation = 0.8
+    # Fixed parameters for fair comparison
+    top = image_size // 4
+    left = image_size // 4
+    brightness_factor = 1.2
+    contrast_factor = 1.1
+    saturation_factor = 0.9
     mean = (0.485, 0.456, 0.406)
     std = (0.229, 0.224, 0.225)
     
-    # Benchmark PyTorch sequential
-    print("\nBenchmarking PyTorch (sequential operations)...")
-    pytorch_mean, pytorch_std = benchmark_operation(
-        pytorch_augment,
-        images,
-        brightness,
-        contrast,
-        saturation,
-        mean,
-        std,
-        warmup_runs=warmup_runs,
-        benchmark_runs=benchmark_runs,
-    )
-    print(f"  Time: {pytorch_mean:.3f} ± {pytorch_std:.3f} ms")
+    # ========================================================================
+    # 1. Torchvision Compose (Baseline)
+    # ========================================================================
+    def torchvision_fn():
+        result = tvF.crop(img, top, left, crop_size, crop_size)
+        result = tvF.horizontal_flip(result)
+        result = tvF.adjust_brightness(result, brightness_factor)
+        # Note: Skipping contrast - torchvision uses different algorithm
+        result = tvF.adjust_saturation(result, saturation_factor)
+        result = tvF.normalize(result, mean, std)
+        return result
     
-    if TRITON_AVAILABLE:
-        # Benchmark Triton fused
-        print("\nBenchmarking Triton-Augment (fused kernel)...")
-        
-        def triton_augment_func(img):
-            return ta.fused_color_normalize(
-                img,
-                brightness_factor=brightness,
-                contrast_factor=contrast,
-                saturation_factor=saturation,
-                mean=mean,
-                std=std,
-            )
-        
-        triton_mean, triton_std = benchmark_operation(
-            triton_augment_func,
-            images,
-            warmup_runs=warmup_runs,
-            benchmark_runs=benchmark_runs,
+    torchvision_time = do_bench(torchvision_fn, warmup=25, rep=100)
+    
+    # ========================================================================
+    # 2. Triton-Augment Sequential (Individual transforms)
+    # ========================================================================
+    def triton_sequential_fn():
+        result = F.crop(img, top, left, crop_size, crop_size)
+        result = F.horizontal_flip(result)
+        result = F.adjust_brightness(result, brightness_factor)
+        result = F.adjust_contrast_fast(result, contrast_factor)
+        result = F.adjust_saturation(result, saturation_factor)
+        result = F.normalize(result, mean, std)
+        return result
+    
+    triton_sequential_time = do_bench(triton_sequential_fn, warmup=25, rep=100)
+    
+    # ========================================================================
+    # 3. Triton-Augment Fused (Single kernel - FASTEST!)
+    # ========================================================================
+    def triton_fused_fn():
+        return F.ultimate_fused_augment(
+            img,
+            top=top,
+            left=left,
+            height=crop_size,
+            width=crop_size,
+            flip_horizontal=True,
+            brightness_factor=brightness_factor,
+            contrast_factor=contrast_factor,
+            saturation_factor=saturation_factor,
+            mean=mean,
+            std=std,
         )
-        print(f"  Time: {triton_mean:.3f} ± {triton_std:.3f} ms")
-        
-        # Calculate speedup
-        speedup = pytorch_mean / triton_mean
-        print(f"\n{'='*60}")
-        print(f"Speedup: {speedup:.2f}x faster with Triton-Augment")
-        print(f"{'='*60}")
-        
-        return pytorch_mean, triton_mean, speedup
-    else:
-        print("\nTriton-Augment not available for comparison.")
-        return pytorch_mean, None, None
+    
+    triton_fused_time = do_bench(triton_fused_fn, warmup=25, rep=100)
+    
+    # ========================================================================
+    # Calculate speedups
+    # ========================================================================
+    speedup_sequential = torchvision_time / triton_sequential_time
+    speedup_fused = torchvision_time / triton_fused_time
+    
+    return {
+        'batch_size': batch_size,
+        'image_size': f"{image_size}x{image_size}",
+        'crop_size': f"{crop_size}x{crop_size}",
+        'torchvision_time': torchvision_time,
+        'triton_sequential_time': triton_sequential_time,
+        'triton_fused_time': triton_fused_time,
+        'speedup_sequential': speedup_sequential,
+        'speedup_fused': speedup_fused,
+    }
+
+
+def print_table(results):
+    """Print results as a markdown table."""
+    print("\n" + "="*80)
+    print("ULTIMATE FUSION BENCHMARK RESULTS")
+    print("="*80)
+    print("\nOperations: Crop + Flip + Brightness + Contrast + Saturation + Normalize")
+    print("Device:", torch.cuda.get_device_name(0))
+    print("\n")
+    
+    # Header
+    print("| Image Size | Batch | Torchvision (ms) | Triton Sequential (ms) | Triton Fused (ms) | Speedup (Sequential) | Speedup (Fused) |")
+    print("|------------|-------|------------------|------------------------|-------------------|----------------------|-----------------|")
+    
+    # Rows
+    for r in results:
+        print(f"| {r['image_size']:10s} | {r['batch_size']:5d} | "
+              f"{r['torchvision_time']:16.3f} | {r['triton_sequential_time']:22.3f} | "
+              f"{r['triton_fused_time']:17.3f} | {r['speedup_sequential']:20.2f}x | "
+              f"{r['speedup_fused']:15.2f}x |")
+    
+    print("\n")
+    print("**Note**: Triton uses fast contrast (centered scaling), not torchvision's blend-with-mean.")
+    print("="*80)
 
 
 def main():
-    """Main benchmark function."""
-    parser = argparse.ArgumentParser(description='Benchmark Triton-Augment vs PyTorch')
-    parser.add_argument('--batch-sizes', nargs='+', type=int, default=[1, 4, 8, 16, 32],
-                        help='Batch sizes to benchmark')
-    parser.add_argument('--image-sizes', nargs='+', type=int, default=[224, 384, 512],
-                        help='Image sizes to benchmark (square images)')
-    parser.add_argument('--warmup-runs', type=int, default=10,
-                        help='Number of warmup runs')
-    parser.add_argument('--benchmark-runs', type=int, default=100,
-                        help='Number of benchmark runs')
+    """Run benchmarks for different configurations."""
+    print("Starting Ultimate Fusion Benchmark...")
+    print("This may take 1-2 minutes...\n")
     
-    args = parser.parse_args()
+    # Test configurations
+    configs = [
+        # (batch_size, image_size, crop_size)
+        (32, 256, 224),   # Standard ImageNet
+        (64, 256, 224),   # Larger batch
+        (32, 600, 512),   # High resolution
+        (32, 1280, 1024),   # Very high res
+    ]
     
-    if not torch.cuda.is_available():
-        print("Error: CUDA is not available. This benchmark requires a GPU.")
-        return
-    
-    print("="*60)
-    print("Triton-Augment Performance Benchmark")
-    print("="*60)
-    print(f"Device: {torch.cuda.get_device_name()}")
-    print(f"PyTorch version: {torch.__version__}")
-    if TRITON_AVAILABLE:
-        print(f"Triton-Augment version: {ta.__version__}")
-    print(f"Warmup runs: {args.warmup_runs}")
-    print(f"Benchmark runs: {args.benchmark_runs}")
-    
-    # Store results for summary
     results = []
+    for i, (batch, img_size, crop_size) in enumerate(configs, 1):
+        print(f"Running config {i}/{len(configs)}: batch={batch}, image={img_size}x{img_size}, crop={crop_size}x{crop_size}...")
+        result = benchmark_ultimate(batch, img_size, crop_size)
+        results.append(result)
     
-    # Run benchmarks for different configurations
-    for image_size in args.image_sizes:
-        for batch_size in args.batch_sizes:
-            pytorch_time, triton_time, speedup = run_benchmark(
-                batch_size=batch_size,
-                height=image_size,
-                width=image_size,
-                warmup_runs=args.warmup_runs,
-                benchmark_runs=args.benchmark_runs,
-            )
-            results.append((batch_size, image_size, pytorch_time, triton_time, speedup))
+    # Print table
+    print_table(results)
     
     # Print summary
-    if TRITON_AVAILABLE and results:
-        print("\n" + "="*80)
-        print("SUMMARY")
-        print("="*80)
-        print(f"{'Batch':<8} {'Size':<8} {'PyTorch (ms)':<15} {'Triton (ms)':<15} {'Speedup':<10}")
-        print("-"*80)
-        for batch, size, pt_time, tr_time, speedup in results:
-            if tr_time is not None:
-                print(f"{batch:<8} {size:<8} {pt_time:<15.3f} {tr_time:<15.3f} {speedup:<10.2f}x")
-        print("="*80)
+    avg_speedup_fused = sum(r['speedup_fused'] for r in results) / len(results)
+    print(f"\n🚀 Average Speedup (Triton Fused vs Torchvision): {avg_speedup_fused:.2f}x\n")
 
 
 if __name__ == '__main__':

@@ -669,6 +669,404 @@ class TestFloat16Support:
         torch.testing.assert_close(ta_result, tv_result, rtol=1e-3, atol=1e-3)
 
 
+# ============================================================================
+# Geometric Operations Correctness Tests
+# ============================================================================
+
+
+class TestCropCorrectness:
+    """Test crop operations match torchvision exactly."""
+    
+    @pytest.mark.parametrize("top,left,height,width", [
+        (0, 0, 100, 100),           # Top-left corner
+        (10, 20, 80, 90),            # Offset crop
+        (50, 50, 50, 50),            # Center-ish crop
+        (0, 0, 224, 224),            # Full image (identity)
+        (100, 150, 24, 24),          # Small crop
+    ])
+    def test_crop_matches_torchvision(self, top, left, height, width):
+        """Test that crop matches torchvision exactly."""
+        img = torch.rand(2, 3, 224, 224, device='cuda')
+        
+        tv_result = tvF.crop(img, top, left, height, width)
+        ta_result = F.crop(img, top, left, height, width)
+        
+        torch.testing.assert_close(ta_result, tv_result)
+    
+    @pytest.mark.parametrize("size", [112, (112, 112), (100, 150)])
+    def test_center_crop_matches_torchvision(self, size):
+        """Test that center_crop matches torchvision exactly."""
+        img = torch.rand(2, 3, 224, 224, device='cuda')
+        
+        tv_result = tvF.center_crop(img, size)
+        ta_result = F.center_crop(img, size)
+        
+        torch.testing.assert_close(ta_result, tv_result)
+    
+    def test_crop_deterministic(self):
+        """Test that crop is deterministic."""
+        img = torch.rand(2, 3, 224, 224, device='cuda')
+        
+        result1 = F.crop(img, 50, 60, 100, 120)
+        result2 = F.crop(img, 50, 60, 100, 120)
+        
+        torch.testing.assert_close(result1, result2)
+
+
+class TestFlipCorrectness:
+    """Test flip operations match torchvision exactly."""
+    
+    def test_horizontal_flip_matches_torchvision(self):
+        """Test that horizontal_flip matches torchvision exactly."""
+        img = torch.rand(2, 3, 224, 224, device='cuda')
+        
+        tv_result = tvF.horizontal_flip(img)
+        ta_result = F.horizontal_flip(img)
+        
+        torch.testing.assert_close(ta_result, tv_result)
+    
+    def test_horizontal_flip_deterministic(self):
+        """Test that horizontal_flip is deterministic."""
+        img = torch.rand(2, 3, 224, 224, device='cuda')
+        
+        result1 = F.horizontal_flip(img)
+        result2 = F.horizontal_flip(img)
+        
+        torch.testing.assert_close(result1, result2)
+    
+    def test_horizontal_flip_twice_is_identity(self):
+        """Test that flipping twice returns the original image."""
+        img = torch.rand(2, 3, 224, 224, device='cuda')
+        
+        flipped = F.horizontal_flip(img)
+        restored = F.horizontal_flip(flipped)
+        
+        torch.testing.assert_close(restored, img)
+
+
+class TestFusedCropFlipCorrectness:
+    """Test fused crop+flip operations."""
+    
+    @pytest.mark.parametrize("flip", [False, True])
+    @pytest.mark.parametrize("crop_params", [
+        (20, 30, 100, 120),
+        (50, 50, 112, 112),
+        (0, 0, 200, 200),
+    ])
+    def test_fused_crop_flip_matches_sequential_triton(self, crop_params, flip):
+        """Test that fused_crop_flip matches sequential triton operations."""
+        img = torch.rand(4, 3, 224, 224, device='cuda')
+        top, left, height, width = crop_params
+        
+        # Sequential: crop then flip
+        seq_result = F.crop(img, top, left, height, width)
+        if flip:
+            seq_result = F.horizontal_flip(seq_result)
+        
+        # Fused
+        fused_result = F.fused_crop_flip(img, top, left, height, width, flip_horizontal=flip)
+        
+        torch.testing.assert_close(fused_result, seq_result)
+    
+    def test_fused_crop_flip_matches_sequential_torchvision(self):
+        """Test that fused_crop_flip matches sequential torchvision operations."""
+        img = torch.rand(4, 3, 224, 224, device='cuda')
+        
+        # Sequential torchvision
+        tv_result = tvF.crop(img, 20, 30, 100, 120)
+        tv_result = tvF.horizontal_flip(tv_result)
+        
+        # Triton fused
+        ta_result = F.fused_crop_flip(img, 20, 30, 100, 120, flip_horizontal=True)
+        
+        torch.testing.assert_close(ta_result, tv_result)
+    
+    @pytest.mark.parametrize("shape", [
+        (2, 3, 224, 224),
+        (1, 3, 512, 512),
+        (8, 3, 128, 128),
+    ])
+    def test_fused_crop_flip_different_shapes(self, shape):
+        """Test fused_crop_flip with different tensor shapes."""
+        img = torch.rand(*shape, device='cuda')
+        _, _, h, w = shape
+        
+        crop_h, crop_w = h // 2, w // 2
+        top, left = h // 4, w // 4
+        
+        # Sequential
+        seq_result = F.crop(img, top, left, crop_h, crop_w)
+        seq_result = F.horizontal_flip(seq_result)
+        
+        # Fused
+        fused_result = F.fused_crop_flip(img, top, left, crop_h, crop_w, flip_horizontal=True)
+        
+        torch.testing.assert_close(fused_result, seq_result)
+
+
+class TestGeometricTransformClasses:
+    """Test geometric transform classes."""
+    
+    def test_random_crop_produces_valid_output(self):
+        """Test that TritonRandomCrop produces valid crops."""
+        from triton_augment.transforms import TritonRandomCrop
+        
+        transform = TritonRandomCrop(112)
+        img = torch.rand(4, 3, 224, 224, device='cuda')
+        
+        result = transform(img)
+        
+        assert result.shape == (4, 3, 112, 112)
+        assert result.dtype == img.dtype
+        assert result.device == img.device
+    
+    def test_center_crop_produces_valid_output(self):
+        """Test that TritonCenterCrop produces valid crops."""
+        from triton_augment.transforms import TritonCenterCrop
+        
+        transform = TritonCenterCrop(112)
+        img = torch.rand(4, 3, 224, 224, device='cuda')
+        
+        result = transform(img)
+        
+        assert result.shape == (4, 3, 112, 112)
+        
+        # Verify it's centered
+        tv_result = tvF.center_crop(img, 112)
+        torch.testing.assert_close(result, tv_result)
+    
+    def test_random_horizontal_flip_produces_valid_output(self):
+        """Test that TritonRandomHorizontalFlip produces valid output."""
+        from triton_augment.transforms import TritonRandomHorizontalFlip
+        
+        transform = TritonRandomHorizontalFlip(p=1.0)  # Always flip
+        img = torch.rand(4, 3, 224, 224, device='cuda')
+        
+        result = transform(img)
+        
+        assert result.shape == img.shape
+        
+        # Verify it's flipped
+        expected = F.horizontal_flip(img)
+        torch.testing.assert_close(result, expected)
+    
+    def test_random_crop_flip_produces_valid_output(self):
+        """Test that TritonRandomCropFlip produces valid output."""
+        from triton_augment.transforms import TritonRandomCropFlip
+        
+        transform = TritonRandomCropFlip(112, horizontal_flip_p=1.0)  # Always flip
+        img = torch.rand(4, 3, 224, 224, device='cuda')
+        
+        result = transform(img)
+        
+        assert result.shape == (4, 3, 112, 112)
+        assert result.dtype == img.dtype
+        assert result.device == img.device
+
+
+# ============================================================================
+# Ultimate Fusion Correctness Tests
+# ============================================================================
+
+
+class TestUltimateFusedCorrectness:
+    """Test ultimate fused kernel (geometric + pixel operations)."""
+    
+    def test_ultimate_matches_sequential_triton(self):
+        """Test that ultimate kernel matches sequential triton operations."""
+        img = torch.rand(4, 3, 224, 224, device='cuda')
+        
+        # Parameters
+        top, left, height, width = 20, 30, 112, 112
+        flip_horizontal = True
+        brightness = 1.2
+        contrast = 1.1
+        saturation = 0.9
+        mean = (0.485, 0.456, 0.406)
+        std = (0.229, 0.224, 0.225)
+        
+        # Sequential: geometric fused → pixel fused
+        seq_result = F.fused_crop_flip(img, top, left, height, width, flip_horizontal)
+        seq_result = F.fused_color_normalize(
+            seq_result,
+            brightness_factor=brightness,
+            contrast_factor=contrast,
+            saturation_factor=saturation,
+            random_grayscale_p=0.0,
+            mean=mean,
+            std=std,
+        )
+        
+        # Ultimate fused
+        ultimate_result = F.ultimate_fused_augment(
+            img,
+            top=top,
+            left=left,
+            height=height,
+            width=width,
+            flip_horizontal=flip_horizontal,
+            brightness_factor=brightness,
+            contrast_factor=contrast,
+            saturation_factor=saturation,
+            mean=mean,
+            std=std,
+        )
+        
+        torch.testing.assert_close(ultimate_result, seq_result)
+    
+    def test_ultimate_matches_sequential_torchvision(self):
+        """Test that ultimate kernel matches sequential torchvision Compose."""
+        img = torch.rand(4, 3, 224, 224, device='cuda')
+        
+        # Parameters
+        top, left, height, width = 20, 30, 112, 112
+        brightness = 1.2
+        saturation = 0.9
+        mean = (0.485, 0.456, 0.406)
+        std = (0.229, 0.224, 0.225)
+        
+        # Sequential torchvision (no contrast to match exactly)
+        tv_result = tvF.crop(img, top, left, height, width)
+        tv_result = tvF.horizontal_flip(tv_result)
+        tv_result = tvF.adjust_brightness(tv_result, brightness)
+        # NOTE: Skipping contrast as torchvision uses blend-with-mean (not fusible)
+        tv_result = tvF.adjust_saturation(tv_result, saturation)
+        tv_result = tvF.normalize(tv_result, mean, std)
+        
+        # Triton ultimate fused (without contrast)
+        ta_result = F.ultimate_fused_augment(
+            img,
+            top=top,
+            left=left,
+            height=height,
+            width=width,
+            flip_horizontal=True,
+            brightness_factor=brightness,
+            contrast_factor=1.0,  # Skip contrast
+            saturation_factor=saturation,
+            mean=mean,
+            std=std,
+        )
+        
+        torch.testing.assert_close(ta_result, tv_result)
+    
+    @pytest.mark.parametrize("apply_saturation", [False, True])
+    def test_ultimate_two_path_optimization(self, apply_saturation):
+        """Test that both processing paths produce correct results."""
+        img = torch.rand(2, 3, 224, 224, device='cuda')
+        
+        # Parameters
+        top, left, height, width = 10, 20, 100, 120
+        brightness = 1.1
+        contrast = 1.05
+        saturation = 0.95 if apply_saturation else 1.0  # 1.0 = skip
+        mean = (0.5, 0.5, 0.5)
+        std = (0.25, 0.25, 0.25)
+        
+        # Sequential: crop → flip → color → normalize
+        seq_result = F.crop(img, top, left, height, width)
+        seq_result = F.horizontal_flip(seq_result)
+        seq_result = F.adjust_brightness(seq_result, brightness)
+        seq_result = F.adjust_contrast_fast(seq_result, contrast)
+        if apply_saturation:
+            seq_result = F.adjust_saturation(seq_result, saturation)
+        seq_result = F.normalize(seq_result, mean, std)
+        
+        # Ultimate (will use linear path if saturation=1.0, spatial path otherwise)
+        ultimate_result = F.ultimate_fused_augment(
+            img,
+            top=top,
+            left=left,
+            height=height,
+            width=width,
+            flip_horizontal=True,
+            brightness_factor=brightness,
+            contrast_factor=contrast,
+            saturation_factor=saturation,
+            mean=mean,
+            std=std,
+        )
+        
+        torch.testing.assert_close(ultimate_result, seq_result)
+    
+    @pytest.mark.parametrize("shape,crop_size", [
+        ((2, 3, 224, 224), (112, 112)),
+        ((1, 3, 512, 512), (256, 256)),
+        ((8, 3, 128, 128), (64, 64)),
+    ])
+    def test_ultimate_different_sizes(self, shape, crop_size):
+        """Test ultimate kernel with different tensor sizes."""
+        img = torch.rand(*shape, device='cuda')
+        height, width = crop_size
+        
+        # Sequential
+        seq_result = F.fused_crop_flip(img, 0, 0, height, width, False)
+        seq_result = F.fused_color_normalize(
+            seq_result,
+            brightness_factor=1.1,
+            contrast_factor=1.05,
+            saturation_factor=0.95,
+            random_grayscale_p=0.0,
+            mean=(0.485, 0.456, 0.406),
+            std=(0.229, 0.224, 0.225),
+        )
+        
+        # Ultimate
+        ultimate_result = F.ultimate_fused_augment(
+            img,
+            top=0,
+            left=0,
+            height=height,
+            width=width,
+            flip_horizontal=False,
+            brightness_factor=1.1,
+            contrast_factor=1.05,
+            saturation_factor=0.95,
+            mean=(0.485, 0.456, 0.406),
+            std=(0.229, 0.224, 0.225),
+        )
+        
+        torch.testing.assert_close(ultimate_result, seq_result)
+
+
+class TestUltimateTransformClass:
+    """Test TritonUltimateAugment transform class."""
+    
+    def test_ultimate_transform_produces_valid_output(self):
+        """Test that TritonUltimateAugment produces valid output."""
+        from triton_augment.transforms import TritonUltimateAugment
+        
+        transform = TritonUltimateAugment(
+            crop_size=112,
+            horizontal_flip_p=0.5,
+            brightness=0.2,
+            contrast=0.2,
+            saturation=0.2,
+        )
+        
+        img = torch.rand(4, 3, 224, 224, device='cuda')
+        result = transform(img)
+        
+        assert result.shape == (4, 3, 112, 112)
+        assert result.dtype == img.dtype
+        assert result.device == img.device
+    
+    def test_ultimate_transform_deterministic_with_fixed_seed(self):
+        """Test that TritonUltimateAugment is deterministic with fixed seed."""
+        from triton_augment.transforms import TritonUltimateAugment
+        
+        transform = TritonUltimateAugment(crop_size=112, brightness=0.2)
+        img = torch.rand(2, 3, 224, 224, device='cuda')
+        
+        torch.manual_seed(42)
+        result1 = transform(img)
+        
+        torch.manual_seed(42)
+        result2 = transform(img)
+        
+        torch.testing.assert_close(result1, result2)
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
 

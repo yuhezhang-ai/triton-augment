@@ -1,0 +1,109 @@
+# MkDocs configuration for Triton-Augment documentation
+
+site_name: Triton-Augment
+site_description: GPU-Accelerated Image Augmentation with Kernel Fusion
+site_author: yuhezhang-ai
+site_url: https://github.com/yuhezhang-ai/triton-augment
+
+repo_name: yuhezhang-ai/triton-augment
+repo_url: https://github.com/yuhezhang-ai/triton-augment
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    # Light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  
+  features:
+    - navigation.instant      # Instant loading
+    - navigation.tracking     # URL tracking
+    - navigation.tabs         # Top-level tabs
+    - navigation.tabs.sticky  # Sticky tabs
+    - navigation.sections     # Expandable sections
+    - navigation.top          # Back to top button
+    - search.suggest          # Search suggestions
+    - search.highlight        # Highlight search terms
+    - content.code.copy       # Copy button for code blocks
+    - content.code.annotate   # Code annotations
+  
+  icon:
+    repo: fontawesome/brands/github
+
+# Extensions
+markdown_extensions:
+  - admonition              # Call-out boxes
+  - pymdownx.details        # Collapsible admonitions
+  - pymdownx.superfences    # Code fences
+  - pymdownx.highlight:     # Syntax highlighting
+      anchor_linenums: true
+  - pymdownx.inlinehilite   # Inline code highlighting
+  - pymdownx.snippets       # Include snippets
+  - pymdownx.tabbed:        # Tabbed content
+      alternate_style: true
+  - tables                  # Markdown tables
+  - attr_list              # Add HTML attributes
+  - md_in_html             # Markdown in HTML
+  - toc:                   # Table of contents
+      permalink: true
+
+# Plugins
+plugins:
+  - search                 # Search functionality
+  - mkdocstrings:         # Auto-generate API docs from docstrings
+      handlers:
+        python:
+          paths: [.]
+          options:
+            docstring_style: google
+            show_source: false
+            show_root_heading: true
+            show_category_heading: true
+            members_order: source
+
+# Navigation structure
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation: installation.md
+      - Quick Start: quickstart.md
+  - User Guide:
+      - Float16 Support: float16.md
+      - Batch Behavior: batch-behavior.md
+      - Contrast Implementation: contrast.md
+      - Auto-Tuning: auto-tuning.md
+  - API Reference: api-reference.md
+  - GitHub: https://github.com/yuhezhang-ai/triton-augment
+
+# Extra configuration
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/yuhezhang-ai/triton-augment
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/triton-augment/
+
+# CSS customization (optional)
+extra_css:
+  - stylesheets/extra.css
+
+# Google Analytics (optional - add your ID)
+# extra:
+#   analytics:
+#     provider: google
+#     property: G-XXXXXXXXXX
+
