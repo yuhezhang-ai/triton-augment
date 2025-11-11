@@ -206,7 +206,7 @@ def brightness_kernel(
 def contrast_kernel(
     input_ptr,
     output_ptr,
-    mean_ptr,  # Pre-computed grayscale mean per image
+    mean_ptr,  # Pre-computed grayscale mean per image [batch_size]
     batch_size,
     channels,
     height,
@@ -214,43 +214,35 @@ def contrast_kernel(
     contrast_factor,
     BLOCK_SIZE: tl.constexpr,
 ):
-    """Contrast adjustment kernel matching torchvision."""
+    """Contrast adjustment kernel matching torchvision.
+    
+    Applies: pixel = pixel * contrast_factor + mean * (1 - contrast_factor)
+    Same formula for all channels, so we process all pixels uniformly.
+    """
     spatial_size = height * width
-    total_elements = batch_size * spatial_size
+    total_elements = batch_size * channels * spatial_size
     
     pid = tl.program_id(axis=0)
     block_start = pid * BLOCK_SIZE
-    spatial_offsets = block_start + tl.arange(0, BLOCK_SIZE)
-    spatial_mask = spatial_offsets < total_elements
+    offsets = block_start + tl.arange(0, BLOCK_SIZE)
+    mask = offsets < total_elements
     
-    batch_idx = spatial_offsets // spatial_size
-    spatial_idx = spatial_offsets % spatial_size
+    # Determine which batch each pixel belongs to
+    batch_idx = offsets // (channels * spatial_size)
     
-    # Load all channels
-    r_offset = batch_idx * channels * spatial_size + 0 * spatial_size + spatial_idx
-    g_offset = batch_idx * channels * spatial_size + 1 * spatial_size + spatial_idx
-    b_offset = batch_idx * channels * spatial_size + 2 * spatial_size + spatial_idx
-    
-    r = tl.load(input_ptr + r_offset, mask=spatial_mask, other=0.0)
-    g = tl.load(input_ptr + g_offset, mask=spatial_mask, other=0.0)
-    b = tl.load(input_ptr + b_offset, mask=spatial_mask, other=0.0)
+    # Load pixel value
+    pixel = tl.load(input_ptr + offsets, mask=mask, other=0.0)
     
     # Load grayscale mean for this batch
-    grayscale_mean = tl.load(mean_ptr + batch_idx, mask=spatial_mask, other=0.0)
+    grayscale_mean = tl.load(mean_ptr + batch_idx, mask=mask, other=0.0)
     
-    # Blend with mean
-    r = r * contrast_factor + grayscale_mean * (1.0 - contrast_factor)
-    g = g * contrast_factor + grayscale_mean * (1.0 - contrast_factor)
-    b = b * contrast_factor + grayscale_mean * (1.0 - contrast_factor)
+    # Blend with mean (same formula for all channels)
+    pixel = pixel * contrast_factor + grayscale_mean * (1.0 - contrast_factor)
     
     # Clamp to [0, 1]
-    r = tl.maximum(0.0, tl.minimum(1.0, r))
-    g = tl.maximum(0.0, tl.minimum(1.0, g))
-    b = tl.maximum(0.0, tl.minimum(1.0, b))
+    pixel = tl.maximum(0.0, tl.minimum(1.0, pixel))
     
-    tl.store(output_ptr + r_offset, r, mask=spatial_mask)
-    tl.store(output_ptr + g_offset, g, mask=spatial_mask)
-    tl.store(output_ptr + b_offset, b, mask=spatial_mask)
+    tl.store(output_ptr + offsets, pixel, mask=mask)
 
 
 @triton.jit
