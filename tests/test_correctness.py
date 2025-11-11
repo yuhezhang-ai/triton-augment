@@ -606,11 +606,13 @@ class TestFloat16Support:
         result_fp32 = F.normalize(img_fp32, mean, std)
         result_fp16 = F.normalize(img_fp16, mean, std)
         
+        # Normalize involves division by small std values (~0.2), which amplifies
+        # float16 precision errors. Relaxed tolerance for precision comparison.
         torch.testing.assert_close(
             result_fp16.float(), 
             result_fp32, 
-            rtol=1e-3,
-            atol=1e-3
+            rtol=0.01,   # 1% relative tolerance (relaxed from 0.1%)
+            atol=0.01    # 0.01 absolute tolerance (relaxed from 0.001)
         )
     
     def test_fused_float16_vs_float32(self):
@@ -639,31 +641,63 @@ class TestFloat16Support:
             std=(0.229, 0.224, 0.225)
         )
         
+        # Fused operation with normalize has same float16 precision issues
+        # due to division by small std values
         torch.testing.assert_close(
             result_fp16.float(), 
             result_fp32, 
-            rtol=1e-3,
-            atol=1e-3
+            rtol=0.01,   # 1% relative tolerance (relaxed from 0.1%)
+            atol=0.01    # 0.01 absolute tolerance (relaxed from 0.001)
         )
     
-    def test_float16_matches_torchvision_brightness(self):
+    @pytest.mark.parametrize("brightness_factor", [0.0, 0.5, 1.0, 1.5, 2.0])
+    def test_float16_matches_torchvision_brightness(self, brightness_factor):
         """Test that float16 brightness matches torchvision float16."""
         img = torch.rand(2, 3, 224, 224, device='cuda', dtype=torch.float16)
         
         # Apply both
-        tv_result = tvF.adjust_brightness(img, 1.2)
-        ta_result = F.adjust_brightness(img, 1.2)
+        tv_result = tvF.adjust_brightness(img, brightness_factor)
+        ta_result = F.adjust_brightness(img, brightness_factor)
         
         # Should match within float16 precision
         torch.testing.assert_close(ta_result, tv_result, rtol=1e-3, atol=1e-3)
     
-    def test_float16_matches_torchvision_saturation(self):
+    @pytest.mark.parametrize("saturation_factor", [0.0, 0.5, 1.0, 1.5, 2.0])
+    def test_float16_matches_torchvision_saturation(self, saturation_factor):
         """Test that float16 saturation matches torchvision float16."""
         img = torch.rand(2, 3, 224, 224, device='cuda', dtype=torch.float16)
         
         # Apply both
-        tv_result = tvF.adjust_saturation(img, 0.8)
-        ta_result = F.adjust_saturation(img, 0.8)
+        tv_result = tvF.adjust_saturation(img, saturation_factor)
+        ta_result = F.adjust_saturation(img, saturation_factor)
+        
+        # Should match within float16 precision
+        torch.testing.assert_close(ta_result, tv_result, rtol=1e-3, atol=1e-3)
+    
+    @pytest.mark.parametrize("contrast_factor", [0.0, 0.5, 1.0, 1.5, 2.0])
+    def test_float16_matches_torchvision_contrast(self, contrast_factor):
+        """Test that float16 contrast matches torchvision float16."""
+        img = torch.rand(2, 3, 224, 224, device='cuda', dtype=torch.float16)
+        
+        # Apply both
+        tv_result = tvF.adjust_contrast(img, contrast_factor)
+        ta_result = F.adjust_contrast(img, contrast_factor)
+        
+        # Should match within float16 precision
+        torch.testing.assert_close(ta_result, tv_result, rtol=1e-3, atol=1e-3)
+    
+    @pytest.mark.parametrize("mean,std", [
+        ((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),  # ImageNet
+        ((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),              # Simple
+        ((0.0, 0.0, 0.0), (1.0, 1.0, 1.0)),              # Identity
+    ])
+    def test_float16_matches_torchvision_normalize(self, mean, std):
+        """Test that float16 normalize matches torchvision float16."""
+        img = torch.rand(2, 3, 224, 224, device='cuda', dtype=torch.float16)
+        
+        # Apply both
+        tv_result = tvF.normalize(img, mean=list(mean), std=list(std))
+        ta_result = F.normalize(img, mean=mean, std=std)
         
         # Should match within float16 precision
         torch.testing.assert_close(ta_result, tv_result, rtol=1e-3, atol=1e-3)
