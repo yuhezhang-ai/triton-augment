@@ -323,6 +323,43 @@ class TestEdgeCases:
         # Check that result is all zeros
         torch.testing.assert_close(result, torch.zeros_like(result), rtol=1e-5, atol=1e-5)
 
+    @pytest.mark.parametrize("saturation_factor", [0.5, 1.0, 1.2, 1.5])
+    def test_fused_matches_torchvision_with_grayscale(self, saturation_factor):
+        """Test fused operation without contrast on various irregular sizes (should match torchvision exactly)."""
+        img = torch.rand(1, 3, 224, 224, device='cuda', dtype=torch.float32)
+        
+        brightness_factor = 1.2
+        mean = (0.485, 0.456, 0.406)
+        std = (0.229, 0.224, 0.225)
+        
+        # Torchvision (no contrast)
+        tv_result = tvF.adjust_brightness(img, brightness_factor)
+        tv_result = tvF.adjust_saturation(tv_result, saturation_factor)
+        tv_result = tvF.rgb_to_grayscale(tv_result, num_output_channels=3)
+        tv_result = tvF.normalize(tv_result, mean=list(mean), std=list(std))
+        
+        # Triton fused (no contrast)
+        ta_result = F.fused_color_normalize(
+            img,
+            brightness_factor=brightness_factor,
+            contrast_factor=1.0,  # Identity (no contrast)
+            saturation_factor=saturation_factor,
+            random_grayscale_p=1.0,
+            mean=mean,
+            std=std,
+        )
+
+        # Print the max difference - minor difference expected
+        # Reason: in our fused kernel, we directly set saturation_factor to 0 when apply grayscale after saturation, but grayscale formula does not have all coefficients sum to 1 (0.2989 + 0.587 + 0.114 = 0.9999, not 1.0), this will cause a small difference in the result compared to sequential operations.
+        print(f"Max difference: {torch.max(torch.abs(ta_result - tv_result))}")
+        
+        # Should match torchvision exactly (no fast contrast involved)
+        torch.testing.assert_close(
+            ta_result, 
+            tv_result,
+            msg=f"Mismatch for shape (1, 3, 224, 224) with saturation_factor={saturation_factor}"
+        )
+
 
 class TestTransformClasses:
     """Test transform classes match torchvision behavior."""
