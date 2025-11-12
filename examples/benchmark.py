@@ -37,8 +37,8 @@ def benchmark_ultimate(batch_size=32, image_size=224, crop_size=112):
     img = torch.rand(batch_size, 3, image_size, image_size, device='cuda')
     
     # Fixed parameters for fair comparison
-    top = image_size // 4
-    left = image_size // 4
+    top = (image_size - crop_size) // 3
+    left = (image_size - crop_size) // 3
     brightness_factor = 1.2
     contrast_factor = 1.1
     saturation_factor = 0.9
