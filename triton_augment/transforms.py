@@ -832,11 +832,6 @@ class TritonUltimateAugment(nn.Module):
             else 1.0
         )
         
-        # Handle random grayscale: override saturation to 0.0 if triggered
-        # (saturation_factor=0.0 converts to grayscale using torchvision formula)
-        if self.random_grayscale_p > 0 and torch.rand(1).item() < self.random_grayscale_p:
-            saturation_factor = 0.0
-        
         return top, left, flip_horizontal, brightness_factor, contrast_factor, saturation_factor
     
     def forward(self, image: torch.Tensor) -> torch.Tensor:
@@ -867,6 +862,7 @@ class TritonUltimateAugment(nn.Module):
             brightness_factor=brightness_factor,
             contrast_factor=contrast_factor,
             saturation_factor=saturation_factor,
+            random_grayscale_p=self.random_grayscale_p,
             mean=self.mean,
             std=self.std,
         )

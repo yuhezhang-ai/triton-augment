@@ -59,6 +59,8 @@ from .transforms import (
     TritonCenterCrop,
     TritonRandomHorizontalFlip,
     TritonRandomCropFlip,
+    # Ultimate fusion
+    TritonUltimateAugment,
 )
 
 # Import commonly used functional operations
@@ -81,6 +83,8 @@ from .functional import (
     center_crop,
     horizontal_flip,
     fused_crop_flip,
+    # Ultimate fusion
+    ultimate_fused_augment,
 )
 
 __version__ = "0.1.0"
