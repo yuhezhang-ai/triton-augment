@@ -23,7 +23,7 @@ class TritonColorJitter(nn.Module):
     Randomly change the brightness, contrast, and saturation of an image.
     
     This is a GPU-accelerated version of torchvision.transforms.v2.ColorJitter
-    that uses fused Triton kernels for maximum performance.
+    that applies transformations sequentially to match torchvision's behavior.
     
     Args:
         brightness: How much to jitter brightness.

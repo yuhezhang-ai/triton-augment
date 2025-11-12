@@ -361,51 +361,58 @@ def benchmark_training_pipeline(size, batch_size, provider):
 @triton.testing.perf_report(
     triton.testing.Benchmark(
         x_names=['size'],
-        x_vals=[64 * i for i in range(2, 25)],
+        x_vals=[256, 384, 512, 640, 768, 1024, 1280],
         line_arg='provider',
-        line_vals=['float32-triton-fused', 'float16-triton-fused'],
-        line_names=['Float32 Fused', 'Float16 Fused'],
+        line_vals=['float32-ultimate', 'float16-ultimate'],
+        line_names=['Float32 Ultimate Fusion', 'Float16 Ultimate Fusion'],
         styles=[('blue', '-'), ('red', '--')],
         ylabel='Runtime (ms)',
-        plot_name='float16-vs-float32-performance',
+        plot_name='float16-vs-float32-ultimate-fusion',
         args={'batch_size': 32},
     )
 )
 def benchmark_float16_vs_float32(size, batch_size, provider):
     """
-    Compare float16 vs float32 performance for the fused kernel.
+    Benchmark 7: Ultimate Fusion Float16 vs Float32 (FINALE)
     
-    NOTE: Both use the same operations (Brightness + Saturation + Normalize).
-    NO contrast (for consistent comparison). Includes grayscale (p=0.1).
+    Tests the complete ULTIMATE FUSION pipeline with different dtypes:
+    - RandomCrop + RandomHorizontalFlip
+    - Brightness + Contrast + Saturation + RandomGrayscale
+    - Normalize
+    
+    Shows that the peak performance path maintains its advantages with half precision!
     """
-    # Fixed parameters
-    brightness_factor = 1.2
-    saturation_factor = 0.8
-    random_grayscale_p = 0.1
+    # Fixed parameters (using transform classes for real scenario)
+    crop_size = size - 40  # Crop slightly smaller than input
     mean = (0.485, 0.456, 0.406)
     std = (0.229, 0.224, 0.225)
     
-    if provider == 'float32-triton-fused':
+    if provider == 'float32-ultimate':
         img = torch.rand(batch_size, 3, size, size, device='cuda', dtype=torch.float32)
-        fn = lambda: ta.fused_color_normalize(
-            img, 
-            brightness_factor=brightness_factor,
-            saturation_factor=saturation_factor,
-            random_grayscale_p=random_grayscale_p,
-            mean=mean, 
-            std=std
+        transform = ta.TritonUltimateAugment(
+            crop_size=crop_size,
+            horizontal_flip_p=0.5,
+            brightness=0.2,
+            contrast=0.2,
+            saturation=0.2,
+            random_grayscale_p=0.1,
+            mean=mean,
+            std=std,
         )
-    elif provider == 'float16-triton-fused':
+    elif provider == 'float16-ultimate':
         img = torch.rand(batch_size, 3, size, size, device='cuda', dtype=torch.float16)
-        fn = lambda: ta.fused_color_normalize(
-            img, 
-            brightness_factor=brightness_factor,
-            saturation_factor=saturation_factor,
-            random_grayscale_p=random_grayscale_p,
-            mean=mean, 
-            std=std
+        transform = ta.TritonUltimateAugment(
+            crop_size=crop_size,
+            horizontal_flip_p=0.5,
+            brightness=0.2,
+            contrast=0.2,
+            saturation=0.2,
+            random_grayscale_p=0.1,
+            mean=mean,
+            std=std,
         )
     
+    fn = lambda: transform(img)
     ms = triton.testing.do_bench(fn)
     return ms
 
@@ -414,9 +421,9 @@ def benchmark_float16_vs_float32(size, batch_size, provider):
         x_names=['size'],
         x_vals=[128, 256, 384, 512, 1024],
         line_arg='provider',
-        line_vals=['triton-sequential', 'triton-fused'],
-        line_names=['Triton Sequential (Crop → Flip)', 'Triton Fused (Crop+Flip)'],
-        styles=[('blue', '-'), ('red', '-')],
+        line_vals=['torchvision-sequential', 'triton-sequential', 'triton-fused'],
+        line_names=['Torchvision (Crop → Flip)', 'Triton Sequential (Crop → Flip)', 'Triton Fused (Crop+Flip)'],
+        styles=[('green', '--'), ('blue', '-'), ('red', '-')],
         ylabel='Time (ms)',
         plot_name='geometric-fusion-performance',
         args={'batch_size': 32},
@@ -424,11 +431,12 @@ def benchmark_float16_vs_float32(size, batch_size, provider):
 )
 def benchmark_geometric_fusion(size, batch_size, provider):
     """
-    Benchmark 6: Geometric Fusion - Crop + Flip
+    Benchmark 5: Geometric Fusion - Crop + Flip
     
     Compares:
-    - Sequential: crop() → horizontal_flip() (2 kernel launches)
-    - Fused: fused_crop_flip() (1 kernel launch)
+    - Torchvision: crop() → horizontal_flip() (2 kernel launches)
+    - Triton Sequential: crop() → horizontal_flip() (2 kernel launches)
+    - Triton Fused: fused_crop_flip() (1 kernel launch)
     
     Expected: ~1.5-2x speedup from fusion
     """
@@ -439,7 +447,12 @@ def benchmark_geometric_fusion(size, batch_size, provider):
     top = (size - crop_size) // 2
     left = (size - crop_size) // 2
     
-    if provider == 'triton-sequential':
+    if provider == 'torchvision-sequential':
+        def fn():
+            result = tvF.crop(img, top, left, crop_size, crop_size)
+            result = tvF.horizontal_flip(result)
+            return result
+    elif provider == 'triton-sequential':
         def fn():
             result = ta.crop(img, top, left, crop_size, crop_size)
             result = ta.horizontal_flip(result)
@@ -471,70 +484,67 @@ def benchmark_geometric_fusion(size, batch_size, provider):
 )
 def benchmark_ultimate_fusion(size, batch_size, provider):
     """
-    Benchmark 7: Ultimate Fusion - ALL 6 operations in ONE kernel!
+    Benchmark 6: Ultimate Fusion - ALL operations in ONE kernel!
     
-    Operations:
+    Uses TRANSFORM CLASSES with RANDOM augmentations (real training scenario):
     - RandomCrop (size-40×size-40)
-    - RandomHorizontalFlip
-    - Brightness adjustment
-    - Contrast adjustment (fast)
-    - Saturation adjustment
+    - RandomHorizontalFlip (p=0.5)
+    - ColorJitter (brightness=0.2, contrast=0.2, saturation=0.2) → 3 kernels
+    - RandomGrayscale (p=0.1)
     - Normalize
     
     Compares:
-    - Torchvision Compose: 6 sequential operations (6 kernel launches)
-    - Triton Sequential: 6 Triton operations (6 kernel launches)
+    - Torchvision Compose: 5 transforms (7 kernel launches)
+    - Triton Sequential: 5 Triton transforms (7 kernel launches)
     - Triton Ultimate: 1 fused kernel (1 kernel launch) 🚀
     
-    Expected: ~3-5x speedup vs torchvision!
+    Expected: ~8-10x speedup vs torchvision!
     """
     img = torch.rand(batch_size, 3, size, size, device='cuda')
     
-    # Fixed parameters (not random for fair comparison)
+    # Parameters for random augmentations
     crop_size = size - 40
-    top = max(0, (size - crop_size) // 2)
-    left = max(0, (size - crop_size) // 2)
-    brightness = 1.2
-    contrast = 1.1
-    saturation = 0.9
     mean = (0.485, 0.456, 0.406)
     std = (0.229, 0.224, 0.225)
     
     if provider == 'torchvision-compose':
+        # Torchvision with transform classes and random augmentations
+        transform = transforms.Compose([
+            transforms.RandomCrop(crop_size),
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
+            transforms.RandomGrayscale(p=0.1),
+            transforms.Normalize(mean=mean, std=std),
+        ])
         def fn():
-            result = tvF.crop(img, top, left, crop_size, crop_size)
-            result = tvF.horizontal_flip(result)
-            result = tvF.adjust_brightness(result, brightness)
-            result = tvF.adjust_contrast(result, contrast)
-            result = tvF.adjust_saturation(result, saturation)
-            result = tvF.normalize(result, mean, std)
-            return result
+            return transform(img)
     
     elif provider == 'triton-sequential':
+        # Triton with sequential transform classes
+        transform = transforms.Compose([
+            ta.TritonRandomCrop(crop_size),
+            ta.TritonRandomHorizontalFlip(p=0.5),
+            ta.TritonColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
+            ta.TritonRandomGrayscale(p=0.1),
+            ta.TritonNormalize(mean=mean, std=std),
+        ])
         def fn():
-            result = ta.crop(img, top, left, crop_size, crop_size)
-            result = ta.horizontal_flip(result)
-            result = ta.adjust_brightness(result, brightness)
-            result = ta.adjust_contrast_fast(result, contrast)
-            result = ta.adjust_saturation(result, saturation)
-            result = ta.normalize(result, mean, std)
-            return result
+            return transform(img)
     
     elif provider == 'triton-ultimate':
+        # Triton Ultimate: ALL in ONE fused kernel
+        transform = ta.TritonUltimateAugment(
+            crop_size=crop_size,
+            horizontal_flip_p=0.5,
+            brightness=0.2,
+            contrast=0.2,
+            saturation=0.2,
+            random_grayscale_p=0.1,
+            mean=mean,
+            std=std,
+        )
         def fn():
-            return ta.ultimate_fused_augment(
-                img,
-                top=top,
-                left=left,
-                height=crop_size,
-                width=crop_size,
-                flip_horizontal=True,
-                brightness_factor=brightness,
-                contrast_factor=contrast,
-                saturation_factor=saturation,
-                mean=mean,
-                std=std,
-            )
+            return transform(img)
     
     ms = triton.testing.do_bench(fn, warmup=25, rep=100, quantiles=[0.5, 0.2, 0.8])
     return ms
@@ -543,9 +553,10 @@ def benchmark_ultimate_fusion(size, batch_size, provider):
 def print_ultimate_speedup_summary():
     """
     Quick benchmark comparing torchvision Compose vs Triton Ultimate for a typical training scenario.
+    Uses transform classes with RANDOM augmentations.
     """
     print("\n" + "="*80)
-    print("ULTIMATE SPEEDUP SUMMARY (6 ops: Crop+Flip+Brightness+Contrast+Saturation+Norm)")
+    print("ULTIMATE SPEEDUP SUMMARY (5 transforms, 7 kernels → 1 kernel)")
     print("="*80)
     
     batch_size = 32
@@ -555,31 +566,28 @@ def print_ultimate_speedup_summary():
     # Create test tensor
     img = torch.rand(batch_size, 3, img_size, img_size, device='cuda')
     
-    # Parameters
-    brightness = 1.2
-    contrast = 1.1
-    saturation = 0.9
+    # Parameters for random augmentations
     mean = (0.485, 0.456, 0.406)
     std = (0.229, 0.224, 0.225)
     
-    # Torchvision Compose
+    # Torchvision Compose with random augmentations
     torchvision_transforms = transforms.Compose([
         transforms.RandomCrop(crop_size),
-        transforms.RandomHorizontalFlip(),
-        transforms.ColorJitter(brightness=brightness, contrast=contrast, saturation=saturation),
+        transforms.RandomHorizontalFlip(p=0.5),
+        transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
         transforms.RandomGrayscale(p=0.1),
         transforms.Normalize(mean=mean, std=std),
     ])
     def tv_fn():
         return torchvision_transforms(img)
     
-    # Triton Ultimate
+    # Triton Ultimate with random augmentations (ALL in ONE kernel!)
     triton_ultimate_transform = ta.TritonUltimateAugment(
         crop_size=crop_size,
         horizontal_flip_p=0.5,
-        brightness=brightness,
-        contrast=contrast,
-        saturation=saturation,
+        brightness=0.2,
+        contrast=0.2,
+        saturation=0.2,
         random_grayscale_p=0.1,
         mean=mean,
         std=std,
@@ -597,10 +605,14 @@ def print_ultimate_speedup_summary():
     speedup = tv_median / ta_median
     
     print(f"Image size: {img_size}×{img_size}, Batch: {batch_size}, Crop: {crop_size}×{crop_size}")
-    print(f"  Torchvision Compose (6 kernel launches):     {tv_median:.3f} ms")
-    print(f"  Triton-Augment Ultimate (1 kernel launch):   {ta_median:.3f} ms")
+    print(f"  Torchvision Compose (5 transforms, 7 kernels):   {tv_median:.3f} ms")
+    print(f"  Triton Ultimate (5 transforms, 1 kernel):        {ta_median:.3f} ms")
     print(f"  → Speedup: {speedup:.2f}x faster! 🚀")
-    print("\nNote: Triton uses FAST contrast (centered scaling), torchvision uses blend-with-mean")
+    print()
+    print("Transforms: RandomCrop + RandomHorizontalFlip + ColorJitter + RandomGrayscale + Normalize")
+    print("Kernels: Crop + Flip + Brightness + Contrast + Saturation + RandomGrayscale + Normalize")
+    print("Note: Both use transform classes with RANDOM augmentations (real training scenario)")
+    print("      Triton uses FAST contrast (centered scaling), torchvision uses blend-with-mean")
     print("="*80)
 
 
@@ -627,13 +639,30 @@ if __name__ == '__main__':
         exit(1)
     
     print("IMPORTANT NOTES:")
-    print("  - Benchmarks 1-3: Use functionals with FIXED factors (pure kernel performance)")
-    print("  - Benchmark 4: Uses transform classes with RANDOM factors (real training)")
-    print("    * Tests 3 approaches: torchvision, triton sequential, triton FUSED")
-    print("  - Benchmark 5: Float16 vs Float32 comparison (dtype impact on performance)")
-    print("  - Benchmark 1: Includes contrast (different algorithms - NOT fair comparison)")
-    print("  - Benchmarks 2-5: Exclude contrast for FAIR comparison")
-    print("  - Benchmarks 2-5: Include grayscale conversion (p=0.1)")
+    print("  Benchmark 1: Functionals + Contrast (Brightness+Contrast+Saturation+Normalize)")
+    print("    * Contrast uses different algorithms (Triton=FAST, Torchvision=blend-with-mean)")
+    print("    * NOT a fair comparison, shows Triton's fast contrast advantage")
+    print()
+    print("  Benchmarks 2-3: Functionals WITHOUT Contrast (image/batch size scaling)")
+    print("    * Operations: Brightness + Saturation + RandomGrayscale + Normalize")
+    print("    * FAIR comparison - all operations are torchvision-exact")
+    print("    * Tests scalability with image size and batch size")
+    print()
+    print("  Benchmark 4: Transform CLASSES with RANDOM factors (real training scenario)")
+    print("    * ColorJitter + RandomGrayscale + Normalize with random sampling")
+    print("    * Compares: Torchvision, Triton Sequential, Triton FUSED (single kernel)")
+    print()
+    print("  Benchmark 5: Geometric Fusion (Crop + Flip)")
+    print("    * Compares: Torchvision, Triton Sequential, Triton Fused")
+    print("    * Tests geometric operation fusion efficiency")
+    print()
+    print("  Benchmark 6: ULTIMATE FUSION 🚀 (ALL operations in ONE kernel)")
+    print("    * Crop + Flip + Brightness + Contrast + Saturation + RandomGrayscale + Normalize")
+    print("    * Peak performance - single kernel vs 7 sequential kernel launches")
+    print()
+    print("  Benchmark 7: Ultimate Fusion Float16 vs Float32 (FINALE)")
+    print("    * Tests ultimate fusion kernel with different dtypes")
+    print("    * Shows peak performance path works great with half precision")
     print("="*80)
     print()
     
@@ -662,24 +691,27 @@ if __name__ == '__main__':
     print("  Simulates actual training augmentation usage with random parameters per call")
     benchmark_training_pipeline.run(print_data=True, save_path='.')
     
-    print("\nBenchmark 5: Float16 vs Float32 (dtype comparison)")
-    print("  Operations: Brightness + Saturation + RandomGrayscale + Normalize (NO contrast)")
-    print("  Compares fused kernel performance with float16 vs float32")
-    benchmark_float16_vs_float32.run(print_data=True, save_path='.')
-    
-    print("\nBenchmark 6: Geometric Fusion (Crop + Flip)")
-    print("  Sequential: crop() → horizontal_flip() (2 kernel launches)")
-    print("  Fused: fused_crop_flip() (1 kernel launch)")
-    print("  Expected: ~1.5-2x speedup from fusion")
+    print("\nBenchmark 5: Geometric Fusion (Crop + Flip)")
+    print("  Torchvision: crop() → horizontal_flip() (2 kernel launches)")
+    print("  Triton Sequential: crop() → horizontal_flip() (2 kernel launches)")
+    print("  Triton Fused: fused_crop_flip() (1 kernel launch)")
+    print("  Expected: ~1.5-2x speedup from fusion vs sequential")
     benchmark_geometric_fusion.run(print_data=True, save_path='.')
     
-    print("\nBenchmark 7: ULTIMATE FUSION - All 6 operations in ONE kernel! 🚀")
-    print("  Operations: RandomCrop + RandomHorizontalFlip + ColorJitter + Normalize")
-    print("  Torchvision: 6 sequential operations (6 kernel launches)")
-    print("  Triton Sequential: 6 Triton operations (6 kernel launches)")
-    print("  Triton Ultimate: 1 FUSED kernel (1 kernel launch) ← PEAK PERFORMANCE!")
-    print("  Expected: ~3-5x speedup vs torchvision!")
+    print("\nBenchmark 6: ULTIMATE FUSION - All operations in ONE kernel! 🚀")
+    print("  Uses TRANSFORM CLASSES with RANDOM augmentations (real training)")
+    print("  Operations: RandomCrop + RandomHorizontalFlip + ColorJitter + RandomGrayscale + Normalize")
+    print("  Torchvision Compose: 5 transforms (7 kernels: crop, flip, bright, contrast, sat, gray, norm)")
+    print("  Triton Sequential: 5 Triton transforms (7 kernels)")
+    print("  Triton Ultimate: TritonUltimateAugment (1 FUSED kernel) ← PEAK PERFORMANCE!")
+    print("  Expected: ~8-10x speedup vs torchvision!")
     benchmark_ultimate_fusion.run(print_data=True, save_path='.')
+    
+    print("\nBenchmark 7: Ultimate Fusion Float16 vs Float32 (FINALE) 🎬")
+    print("  Operations: ULTIMATE FUSION (Crop+Flip+Brightness+Contrast+Saturation+Grayscale+Normalize)")
+    print("  Tests the complete fused pipeline with float16 vs float32")
+    print("  Shows peak performance path maintains advantages with half precision")
+    benchmark_float16_vs_float32.run(print_data=True, save_path='.')
     
     # Quick speedup summaries
     print_ultimate_speedup_summary()
@@ -687,12 +719,12 @@ if __name__ == '__main__':
     print("\n" + "="*80)
     print("Benchmarks complete!")
     print("Plots saved to:")
-    print("  - color-jitter-normalize-performance.png (WITH contrast)")
-    print("  - brightness-saturation-normalize-performance.png (WITHOUT contrast - FAIR)")
-    print("  - batch-size-scaling.png")
-    print("  - training-pipeline-performance.png")
-    print("  - float16-vs-float32-performance.png (dtype comparison)")
-    print("  - geometric-fusion-performance.png (geometric fusion)")
-    print("  - ultimate-fusion-performance.png (ULTIMATE - all 6 ops)")
+    print("  1. color-jitter-normalize-performance.png (WITH contrast)")
+    print("  2. brightness-saturation-normalize-performance.png (WITHOUT contrast - FAIR)")
+    print("  3. batch-size-scaling.png")
+    print("  4. training-pipeline-performance.png (random augmentations)")
+    print("  5. geometric-fusion-performance.png (crop + flip: torchvision vs triton sequential vs fused)")
+    print("  6. ultimate-fusion-performance.png (ULTIMATE - 5 transforms, 7 kernels → 1 kernel)")
+    print("  7. float16-vs-float32-ultimate-fusion.png (dtype comparison - FINALE)")
     print("="*80)
 

@@ -52,7 +52,7 @@ ta.TritonColorJitter(
 - `contrast` (float or tuple): Contrast jitter range (uses exact torchvision algorithm)
 - `saturation` (float or tuple): Saturation jitter range
 
-**Note**: Uses exact torchvision contrast algorithm (blend with mean).
+**Note**: Applies brightness, contrast, saturation transformations sequentially to match torchvision's behavior. Uses exact torchvision contrast algorithm (blend with mean). For fused operations with better performance, use `TritonColorJitterNormalize`.
 
 ---
 

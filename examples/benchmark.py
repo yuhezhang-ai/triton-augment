@@ -24,7 +24,14 @@ import triton_augment.functional as F
 
 def benchmark_ultimate(batch_size=32, image_size=224, crop_size=112):
     """
-    Benchmark ultimate fusion vs sequential vs torchvision.
+    Benchmark ultimate fusion vs sequential vs torchvision in REAL TRAINING scenario.
+    
+    Uses transform classes with random augmentations:
+    - RandomCrop
+    - RandomHorizontalFlip (p=0.5)
+    - ColorJitter (brightness=0.2, contrast=0.2, saturation=0.2)
+    - RandomGrayscale (p=0.1)
+    - Normalize (ImageNet mean/std)
     
     Args:
         batch_size: Number of images in batch
@@ -36,60 +43,58 @@ def benchmark_ultimate(batch_size=32, image_size=224, crop_size=112):
     """
     img = torch.rand(batch_size, 3, image_size, image_size, device='cuda')
     
-    # Fixed parameters for fair comparison
-    top = (image_size - crop_size) // 3
-    left = (image_size - crop_size) // 3
-    brightness_factor = 1.2
-    contrast_factor = 1.1
-    saturation_factor = 0.9
+    # Parameters for augmentation (random ranges and normalization)
     mean = (0.485, 0.456, 0.406)
     std = (0.229, 0.224, 0.225)
     
     # ========================================================================
-    # 1. Torchvision Compose (Baseline)
+    # 1. Torchvision Compose (Baseline) - WITH RANDOM AUGMENTATIONS
     # ========================================================================
+    torchvision_transform = transforms.Compose([
+        transforms.RandomCrop(crop_size),
+        transforms.RandomHorizontalFlip(p=0.5),
+        transforms.ColorJitter(brightness=0.2, saturation=0.2, contrast=0.2),
+        transforms.RandomGrayscale(p=0.1),
+        transforms.Normalize(mean=mean, std=std),
+    ])
+    
     def torchvision_fn():
-        result = tvF.crop(img, top, left, crop_size, crop_size)
-        result = tvF.horizontal_flip(result)
-        result = tvF.adjust_brightness(result, brightness_factor)
-        # Note: Skipping contrast - torchvision uses different algorithm
-        result = tvF.adjust_saturation(result, saturation_factor)
-        result = tvF.normalize(result, mean, std)
-        return result
+        return torchvision_transform(img)
     
     torchvision_time = do_bench(torchvision_fn, warmup=25, rep=100)
     
     # ========================================================================
-    # 2. Triton-Augment Sequential (Individual transforms)
+    # 2. Triton-Augment Sequential (Individual transform classes)
     # ========================================================================
+    triton_sequential_transform = transforms.Compose([
+        ta.TritonRandomCrop(crop_size),
+        ta.TritonRandomHorizontalFlip(p=0.5),
+        ta.TritonColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
+        ta.TritonRandomGrayscale(p=0.1),
+        ta.TritonNormalize(mean=mean, std=std),
+    ])
+    
     def triton_sequential_fn():
-        result = F.crop(img, top, left, crop_size, crop_size)
-        result = F.horizontal_flip(result)
-        result = F.adjust_brightness(result, brightness_factor)
-        result = F.adjust_contrast_fast(result, contrast_factor)
-        result = F.adjust_saturation(result, saturation_factor)
-        result = F.normalize(result, mean, std)
-        return result
+        return triton_sequential_transform(img)
     
     triton_sequential_time = do_bench(triton_sequential_fn, warmup=25, rep=100)
     
     # ========================================================================
-    # 3. Triton-Augment Fused (Single kernel - FASTEST!)
+    # 3. Triton-Augment Ultimate Fused (Single kernel - FASTEST!)
     # ========================================================================
+    triton_ultimate_transform = ta.TritonUltimateAugment(
+        crop_size=crop_size,
+        horizontal_flip_p=0.5,
+        brightness=0.2,
+        contrast=0.2,
+        saturation=0.2,
+        random_grayscale_p=0.1,
+        mean=mean,
+        std=std,
+    )
+    
     def triton_fused_fn():
-        return F.ultimate_fused_augment(
-            img,
-            top=top,
-            left=left,
-            height=crop_size,
-            width=crop_size,
-            flip_horizontal=True,
-            brightness_factor=brightness_factor,
-            contrast_factor=contrast_factor,
-            saturation_factor=saturation_factor,
-            mean=mean,
-            std=std,
-        )
+        return triton_ultimate_transform(img)
     
     triton_fused_time = do_bench(triton_fused_fn, warmup=25, rep=100)
     
@@ -114,15 +119,18 @@ def benchmark_ultimate(batch_size=32, image_size=224, crop_size=112):
 def print_table(results):
     """Print results as a markdown table."""
     print("\n" + "="*80)
-    print("ULTIMATE FUSION BENCHMARK RESULTS")
+    print("ULTIMATE FUSION BENCHMARK RESULTS - REAL TRAINING SCENARIO")
     print("="*80)
-    print("\nOperations: Crop + Flip + Brightness + Contrast + Saturation + Normalize")
-    print("Device:", torch.cuda.get_device_name(0))
+    print("\nRandom Augmentations:")
+    print("  - RandomCrop + RandomHorizontalFlip(p=0.5)")
+    print("  - ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2)")
+    print("  - RandomGrayscale(p=0.1) + Normalize(ImageNet)")
+    print("\nDevice:", torch.cuda.get_device_name(0))
     print("\n")
     
     # Header
-    print("| Image Size | Batch | Torchvision (ms) | Triton Sequential (ms) | Triton Fused (ms) | Speedup (Sequential) | Speedup (Fused) |")
-    print("|------------|-------|------------------|------------------------|-------------------|----------------------|-----------------|")
+    print("| Image Size | Batch | Crop Size | Torchvision (ms) | Triton Sequential (ms) | Triton Fused (ms) | Speedup (Sequential) | Speedup (Fused) |")
+    print("|------------|-------|-----------|------------------|------------------------|-------------------|----------------------|-----------------|")
     
     # Rows
     for r in results:
@@ -137,8 +145,9 @@ def print_table(results):
 
 
 def main():
-    """Run benchmarks for different configurations."""
-    print("Starting Ultimate Fusion Benchmark...")
+    """Run benchmarks for different configurations with RANDOM augmentations."""
+    print("Starting Ultimate Fusion Benchmark (Real Training Scenario)...")
+    print("Using transform classes with random augmentations (RandomCrop, RandomFlip, etc.)")
     print("This may take 1-2 minutes...\n")
     
     # Test configurations
