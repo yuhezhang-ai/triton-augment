@@ -116,8 +116,6 @@ def _convert_to_tensor(
         return value.to(device=device, dtype=dtype)
     else:
         # Convert scalar to tensor filled with same value
-        if isinstance(value, bool):
-            value = int(value)
         return torch.full((batch_size,), value, dtype=dtype, device=device)
 
 
@@ -166,33 +164,33 @@ def _sample_bernoulli_tensor(
     same_on_batch: bool = False
 ) -> torch.Tensor:
     """
-    Sample Bernoulli random values as uint8 (0 or 1), supporting both per-sample and batch-wide randomness.
+    Sample Bernoulli random values as boolean, supporting both per-sample and batch-wide randomness.
     
     Args:
         batch_size: Number of samples to generate
-        p: Probability of 1 (success)
+        p: Probability of True
         device: Device to create tensor on
         same_on_batch: If True, same decision for all samples. If False, different decision per sample (default).
     
     Returns:
-        Tensor of shape (batch_size,) with uint8 values (0 or 1)
+        Tensor of shape (batch_size,) with bool dtype
     
     Example:
         >>> # Different per sample (default)
         >>> t = _sample_bernoulli_tensor(4, 0.5, 'cuda', same_on_batch=False)
-        >>> # t = tensor([1, 0, 1, 1], device='cuda', dtype=torch.uint8)
+        >>> # t = tensor([True, False, True, True], device='cuda', dtype=torch.bool)
         >>> 
         >>> # Same for all samples
         >>> t = _sample_bernoulli_tensor(4, 0.5, 'cuda', same_on_batch=True)
-        >>> # t = tensor([0, 0, 0, 0], device='cuda', dtype=torch.uint8)
+        >>> # t = tensor([False, False, False, False], device='cuda', dtype=torch.bool)
     """
     if same_on_batch:
         # Same decision for all samples
-        single_decision = 1 if torch.rand(1).item() < p else 0
-        return torch.full((batch_size,), single_decision, device=device, dtype=torch.uint8)
+        single_decision = torch.rand(1).item() < p
+        return torch.full((batch_size,), single_decision, device=device, dtype=torch.bool)
     else:
         # Different decision per sample
-        return (torch.rand(batch_size, device=device) < p).to(torch.uint8)
+        return torch.rand(batch_size, device=device) < p
 
 
 def rgb_to_grayscale(
@@ -225,7 +223,7 @@ def rgb_to_grayscale(
         >>> gray = rgb_to_grayscale(img, num_output_channels=3)
         >>> 
         >>> # Convert only some images (per-image mask)
-        >>> mask = torch.tensor([1, 0, 1, 0], dtype=torch.uint8, device='cuda')
+        >>> mask = torch.tensor([1, 0, 1, 0], dtype=torch.bool, device='cuda')
         >>> gray = rgb_to_grayscale(img, num_output_channels=3, grayscale_mask=mask)
     """
     _validate_image_tensor(image, "image")
@@ -245,10 +243,10 @@ def rgb_to_grayscale(
     # Prepare grayscale mask
     if grayscale_mask is None:
         # Convert all images - create an all-ones mask
-        grayscale_mask_tensor = torch.ones(batch_size, dtype=torch.uint8, device=image.device)
+        grayscale_mask_tensor = torch.ones(batch_size, dtype=torch.bool, device=image.device)
         apply_per_image = False
     else:
-        grayscale_mask_tensor = _convert_to_tensor(grayscale_mask, batch_size, torch.uint8, image.device, "grayscale_mask")
+        grayscale_mask_tensor = _convert_to_tensor(grayscale_mask, batch_size, torch.bool, image.device, "grayscale_mask")
         apply_per_image = True
     
     # Calculate grid size (spatial processing: N*H*W)
@@ -763,7 +761,7 @@ def horizontal_flip(
         >>> flipped = horizontal_flip(img)
         >>> 
         >>> # Flip only first image
-        >>> flip_mask = torch.tensor([1, 0], device='cuda', dtype=torch.uint8)
+        >>> flip_mask = torch.tensor([1, 0], device='cuda', dtype=torch.bool)
         >>> flipped = horizontal_flip(img, flip_mask)
     
     Note:
@@ -779,11 +777,11 @@ def horizontal_flip(
     if flip_mask is None:
         # Flip all images - use simple path
         apply_per_image = False
-        flip_mask_tensor = torch.ones(batch_size, device=image.device, dtype=torch.uint8)
+        flip_mask_tensor = torch.ones(batch_size, device=image.device, dtype=torch.bool)
     else:
         # Per-image flip control
         apply_per_image = True
-        flip_mask_tensor = _convert_to_tensor(flip_mask, batch_size, torch.uint8, image.device, "flip_mask")
+        flip_mask_tensor = _convert_to_tensor(flip_mask, batch_size, torch.bool, image.device, "flip_mask")
         # Early exit if no images need flipping
         if not torch.any(flip_mask_tensor).item():
             return image.clone()
@@ -891,13 +889,13 @@ def fused_augment(
     # Convert geometric parameters to tensors of shape (N,)
     top_offsets = _convert_to_tensor(top, batch_size, torch.int32, image.device, "top")
     left_offsets = _convert_to_tensor(left, batch_size, torch.int32, image.device, "left")
-    flip_mask = _convert_to_tensor(flip_horizontal, batch_size, torch.uint8, image.device, "flip_horizontal")
+    flip_mask = _convert_to_tensor(flip_horizontal, batch_size, torch.bool, image.device, "flip_horizontal")
     
     # Convert color factors to tensors of shape (N,)
     brightness_factors = _convert_to_tensor(brightness_factor, batch_size, image.dtype, image.device, "brightness_factor")
     contrast_factors = _convert_to_tensor(contrast_factor, batch_size, image.dtype, image.device, "contrast_factor")
     saturation_factors = _convert_to_tensor(saturation_factor, batch_size, image.dtype, image.device, "saturation_factor")
-    grayscale_mask = _convert_to_tensor(grayscale, batch_size, torch.uint8, image.device, "grayscale")
+    grayscale_mask = _convert_to_tensor(grayscale, batch_size, torch.bool, image.device, "grayscale")
     
     # Determine which pixel operations to apply
     # Check if ANY image needs the operation

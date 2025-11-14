@@ -174,7 +174,7 @@ def ultimate_fused_kernel(
         # Load per-image geometric parameters
         top_offset = tl.load(top_offsets_ptr + batch_idx, mask=spatial_mask, other=0)
         left_offset = tl.load(left_offsets_ptr + batch_idx, mask=spatial_mask, other=0)
-        do_flip = tl.load(flip_mask_ptr + batch_idx, mask=spatial_mask, other=0)
+        do_flip = tl.load(flip_mask_ptr + batch_idx, mask=spatial_mask, other=False)
         
         # Apply flip conditionally
         w_out_transformed = tl.where(do_flip, output_width - 1 - w_out, w_out)
@@ -230,8 +230,8 @@ def ultimate_fused_kernel(
         
         # Random grayscale conversion (applied AFTER saturation, per-image)
         if apply_grayscale:
-            # Load per-image grayscale decision
-            do_grayscale = tl.load(grayscale_mask_ptr + batch_idx, mask=spatial_mask, other=0)
+            # Load per-image grayscale decision (bool tensor)
+            do_grayscale = tl.load(grayscale_mask_ptr + batch_idx, mask=spatial_mask, other=False)
             gray = 0.2989 * r + 0.587 * g + 0.114 * b
             r = tl.where(do_grayscale, gray, r)
             g = tl.where(do_grayscale, gray, g)
@@ -286,7 +286,7 @@ def ultimate_fused_kernel(
         # Load per-image geometric parameters
         top_offset = tl.load(top_offsets_ptr + n, mask=mask, other=0)
         left_offset = tl.load(left_offsets_ptr + n, mask=mask, other=0)
-        do_flip = tl.load(flip_mask_ptr + n, mask=mask, other=0)
+        do_flip = tl.load(flip_mask_ptr + n, mask=mask, other=False)
         
         # Apply flip conditionally
         w_out_transformed = tl.where(do_flip, output_width - 1 - w_out, w_out)

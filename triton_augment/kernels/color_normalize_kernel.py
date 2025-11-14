@@ -253,8 +253,8 @@ def rgb_to_grayscale_kernel(
     
     # Conditionally apply grayscale based on mask
     if apply_per_image:
-        # Load per-image decision
-        do_grayscale = tl.load(grayscale_mask_ptr + batch_idx, mask=spatial_mask, other=0)
+        # Load per-image decision (bool tensor)
+        do_grayscale = tl.load(grayscale_mask_ptr + batch_idx, mask=spatial_mask, other=False)
         # Use tl.where to select gray or original per image
         r_out = tl.where(do_grayscale, gray, r)
         g_out = tl.where(do_grayscale, gray, g)

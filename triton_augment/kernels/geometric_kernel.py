@@ -154,8 +154,8 @@ def horizontal_flip_kernel(
     
     # Determine input width coordinate (flip or not)
     if apply_per_image:
-        # Load per-image flip decision
-        do_flip = tl.load(flip_mask_ptr + n, mask=mask, other=0)
+        # Load per-image flip decision (bool tensor)
+        do_flip = tl.load(flip_mask_ptr + n, mask=mask, other=False)
         # Conditionally flip: w_in = flip ? (width-1-w_out) : w_out
         w_in = tl.where(do_flip, width - 1 - w_out, w_out)
     else:
