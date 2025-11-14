@@ -440,7 +440,7 @@ def benchmark_geometric_fusion(size, batch_size, provider):
     Compares:
     - Torchvision: crop() → horizontal_flip() (2 kernel launches)
     - Triton Sequential: crop() → horizontal_flip() (2 kernel launches)
-    - Triton Fused: fused_crop_flip() (1 kernel launch)
+    - Triton Fused: fused_augment() with crop+flip (1 kernel launch)
     
     Expected: ~1.5-2x speedup from fusion
     """
@@ -463,7 +463,17 @@ def benchmark_geometric_fusion(size, batch_size, provider):
             return result
     elif provider == 'triton-fused':
         def fn():
-            return ta.fused_crop_flip(img, top, left, crop_size, crop_size, flip_horizontal=True)
+            return ta.fused_augment(
+                img,
+                top=top, left=left, height=crop_size, width=crop_size,
+                flip_horizontal=True,
+                brightness_factor=1.0,  # No-op
+                contrast_factor=1.0,    # No-op
+                saturation_factor=1.0,  # No-op
+                grayscale=False,        # No-op
+                mean=None,              # No-op
+                std=None                # No-op
+            )
     
     ms = triton.testing.do_bench(fn, warmup=25, rep=100, quantiles=[0.5, 0.2, 0.8])
     return ms
@@ -714,7 +724,7 @@ if __name__ == '__main__':
     print("\nBenchmark 5: Geometric Fusion (Crop + Flip)")
     print("  Torchvision: crop() → horizontal_flip() (2 kernel launches)")
     print("  Triton Sequential: crop() → horizontal_flip() (2 kernel launches)")
-    print("  Triton Fused: fused_crop_flip() (1 kernel launch)")
+    print("  Triton Fused: fused_augment() with crop+flip (1 kernel launch)")
     print("  Expected: ~1.5-2x speedup from fusion vs sequential")
     benchmark_geometric_fusion.run(print_data=True, save_path='.')
     

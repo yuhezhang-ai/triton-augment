@@ -123,6 +123,23 @@ Triton:       GPU ←→ [Crop + Flip + Brightness + Contrast + Saturation + Nor
                      ✅ Fast (single memory transfer)
 ```
 
+### Benchmark Results (NVIDIA A100)
+
+Real training scenario with random augmentations:
+
+| Image Size | Batch | Torchvision | Triton Fused | Speedup |
+|------------|-------|-------------|--------------|---------|
+| 256×256    | 32    | 0.61 ms     | 0.44 ms      | **1.4x** |
+| 256×256    | 64    | 0.93 ms     | 0.43 ms      | **2.1x** |
+| 600×600    | 32    | 2.19 ms     | 0.50 ms      | **4.4x** |
+| 1280×1280  | 32    | 8.23 ms     | 0.94 ms      | **8.7x** |
+
+**Average Speedup: 4.1x** 🚀
+
+> Operations: RandomCrop + RandomHorizontalFlip + ColorJitter + RandomGrayscale + Normalize
+
+### Run Your Own Benchmarks
+
 **Quick Benchmark** (Ultimate Fusion only):
 ```bash
 # Simple, clean table output - easy to run!
