@@ -18,6 +18,7 @@ Author: yuhezhang-ai
 """
 
 import argparse
+import os
 import torch
 import triton
 from triton.testing import perf_report
@@ -486,9 +487,9 @@ def benchmark_geometric_fusion(size, batch_size, provider):
         line_arg='provider',
         line_vals=['torchvision-compose', 'triton-sequential', 'triton-ultimate'],
         line_names=[
-            'Torchvision Compose (6 ops)',
-            'Triton Sequential (6 ops)', 
-            'Triton Ultimate Fused (6 ops)'
+            'Torchvision Compose (7 ops)',
+            'Triton Sequential (7 ops)', 
+            'Triton Ultimate Fused (7 ops)'
         ],
         styles=[('green', '-'), ('blue', '--'), ('red', '-')],
         ylabel='Time (ms)',
@@ -699,34 +700,38 @@ if __name__ == '__main__':
     print("Running benchmarks... (this may take a few minutes)")
     print()
     
+    # Create benchmark results directory
+    os.makedirs('benchmark_results', exist_ok=True)
+    print("📊 Saving plots to: ./benchmark_results/\n")
+    
     # Run benchmarks - these will generate plots automatically
     print("Benchmark 1: Functionals with FIXED factors + Contrast (NO grayscale)")
     print("  Operations: Brightness + Contrast + Saturation + Normalize")
     print("  Note: Triton uses FAST contrast, torchvision uses blend-with-mean (different algorithms)")
-    benchmark_color_jitter_normalize.run(print_data=True, save_path='.')
+    benchmark_color_jitter_normalize.run(print_data=True, save_path='benchmark_results')
     
     print("\nBenchmark 2: Functionals with FIXED factors WITHOUT contrast (image size scaling)")
     print("  Operations: Brightness + Saturation + Grayscale + Normalize")
     print("  Fair comparison - all operations are torchvision-exact")
-    benchmark_without_contrast.run(print_data=True, save_path='.')
+    benchmark_without_contrast.run(print_data=True, save_path='benchmark_results')
     
     print("\nBenchmark 3: Functionals with FIXED factors WITHOUT contrast (batch size scaling)")
     print("  Operations: Brightness + Saturation + Grayscale + Normalize")
-    benchmark_batch_scaling.run(print_data=True, save_path='.')
+    benchmark_batch_scaling.run(print_data=True, save_path='benchmark_results')
     
     print("\nBenchmark 4: Transform CLASSES with RANDOM factors (real-world training pipeline)")
     print("  Torchvision: ColorJitter + RandomGrayscale + Normalize (Compose, sequential)")
     print("  Triton Sequential: TritonColorJitter + TritonRandomGrayscale + TritonNormalize (3 kernels)")
     print("  Triton Fused: TritonColorJitterNormalize (SINGLE FUSED KERNEL, maximum performance)")
     print("  Simulates actual training augmentation usage with random parameters per call")
-    benchmark_training_pipeline.run(print_data=True, save_path='.')
+    benchmark_training_pipeline.run(print_data=True, save_path='benchmark_results')
     
     print("\nBenchmark 5: Geometric Fusion (Crop + Flip)")
     print("  Torchvision: crop() → horizontal_flip() (2 kernel launches)")
     print("  Triton Sequential: crop() → horizontal_flip() (2 kernel launches)")
     print("  Triton Fused: fused_augment() with crop+flip (1 kernel launch)")
     print("  Expected: ~1.5-2x speedup from fusion vs sequential")
-    benchmark_geometric_fusion.run(print_data=True, save_path='.')
+    benchmark_geometric_fusion.run(print_data=True, save_path='benchmark_results')
     
     print("\nBenchmark 6: ULTIMATE FUSION - All operations in ONE kernel! 🚀")
     print("  Uses TRANSFORM CLASSES with RANDOM augmentations (real training)")
@@ -735,20 +740,20 @@ if __name__ == '__main__':
     print("  Triton Sequential: 5 Triton transforms (7 kernels)")
     print("  Triton Fused: TritonFusedAugment (1 FUSED kernel) ← PEAK PERFORMANCE!")
     print("  Expected: ~8-10x speedup vs torchvision!")
-    benchmark_ultimate_fusion.run(print_data=True, save_path='.')
+    benchmark_ultimate_fusion.run(print_data=True, save_path='benchmark_results')
     
     print("\nBenchmark 7: Ultimate Fusion Float16 vs Float32 (FINALE) 🎬")
     print("  Operations: ULTIMATE FUSION (Crop+Flip+Brightness+Contrast+Saturation+Grayscale+Normalize)")
     print("  Tests the complete fused pipeline with float16 vs float32")
     print("  Shows peak performance path maintains advantages with half precision")
-    benchmark_float16_vs_float32.run(print_data=True, save_path='.')
+    benchmark_float16_vs_float32.run(print_data=True, save_path='benchmark_results')
     
     # Quick speedup summaries
     print_ultimate_speedup_summary()
     
     print("\n" + "="*80)
-    print("Benchmarks complete!")
-    print("Plots saved to:")
+    print("✅ Benchmarks complete!")
+    print("\n📊 Plots saved to: ./benchmark_results/")
     print("  1. color-jitter-normalize-performance.png (WITH contrast)")
     print("  2. brightness-saturation-normalize-performance.png (WITHOUT contrast - FAIR)")
     print("  3. batch-size-scaling.png")
