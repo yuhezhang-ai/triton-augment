@@ -1,5 +1,5 @@
 """
-Simple benchmark for TritonUltimateAugment (Ultimate Fusion).
+Simple benchmark for TritonFusedAugment (Fused Augmentation).
 
 This script compares three approaches:
 1. Torchvision Compose (baseline)
@@ -82,7 +82,7 @@ def benchmark_ultimate(batch_size=32, image_size=224, crop_size=112):
     # ========================================================================
     # 3. Triton-Augment Ultimate Fused (Single kernel - FASTEST!)
     # ========================================================================
-    triton_ultimate_transform = ta.TritonUltimateAugment(
+    triton_fused_transform = ta.TritonFusedAugment(
         crop_size=crop_size,
         horizontal_flip_p=0.5,
         brightness=0.2,
@@ -94,7 +94,7 @@ def benchmark_ultimate(batch_size=32, image_size=224, crop_size=112):
     )
     
     def triton_fused_fn():
-        return triton_ultimate_transform(img)
+        return triton_fused_transform(img)
     
     triton_fused_time = do_bench(triton_fused_fn, warmup=25, rep=100)
     
@@ -134,7 +134,7 @@ def print_table(results):
     
     # Rows
     for r in results:
-        print(f"| {r['image_size']:10s} | {r['batch_size']:5d} | "
+        print(f"| {r['image_size']:10s} | {r['batch_size']:5d} | {r['crop_size']:10s} | "
               f"{r['torchvision_time']:16.3f} | {r['triton_sequential_time']:22.3f} | "
               f"{r['triton_fused_time']:17.3f} | {r['speedup_sequential']:20.2f}x | "
               f"{r['speedup_fused']:15.2f}x |")

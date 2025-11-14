@@ -13,7 +13,7 @@ images = torch.rand(32, 3, 224, 224, device='cuda')
 
 # Replace torchvision Compose (6 kernel launches)
 # With Triton-Augment (1 kernel launch - 3-5x faster!)
-transform = ta.TritonUltimateAugment(
+transform = ta.TritonFusedAugment(
     crop_size=112,
     horizontal_flip_p=0.5,
     brightness=0.2,
@@ -112,7 +112,7 @@ import triton_augment as ta
 class GPUTransform:
     """Apply Triton augmentations on GPU."""
     def __init__(self):
-        self.transform = ta.TritonUltimateAugment(
+        self.transform = ta.TritonFusedAugment(
             crop_size=112,
             horizontal_flip_p=0.5,
             brightness=0.2,
@@ -149,7 +149,7 @@ Choose the right level for your use case:
 | **Specialized** | Geometric OR Pixel | 1-2 | ~1.5-3x ⚡ | Need flexibility in pipeline |
 | **Individual** | One at a time | 6+ | ~1.2-1.5x | Maximum control over each step |
 
-**Recommendation**: Use **Ultimate Fusion** (`TritonUltimateAugment`) for production training.
+**Recommendation**: Use **Ultimate Fusion** (`TritonFusedAugment`) for production training.
 
 ---
 

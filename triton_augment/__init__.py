@@ -59,8 +59,8 @@ from .transforms import (
     TritonCenterCrop,
     TritonRandomHorizontalFlip,
     TritonRandomCropFlip,
-    # Ultimate fusion
-    TritonUltimateAugment,
+    # Fused augmentation
+    TritonFusedAugment,
 )
 
 # Import commonly used functional operations
@@ -72,19 +72,16 @@ from .functional import (
     adjust_saturation,
     normalize,
     rgb_to_grayscale,
-    random_grayscale,
     apply_brightness,
     apply_contrast,
     apply_saturation,
     apply_normalize,
-    fused_color_normalize,
     # Geometric operations
     crop,
     center_crop,
     horizontal_flip,
-    fused_crop_flip,
-    # Ultimate fusion
-    ultimate_fused_augment,
+    # Fused operations
+    fused_augment,
 )
 
 __version__ = "0.1.0"
@@ -113,8 +110,8 @@ __all__ = [
     'TritonCenterCrop',
     'TritonRandomHorizontalFlip',
     'TritonRandomCropFlip',
-    # Transform classes - Ultimate Fusion
-    'TritonUltimateAugment',
+    # Transform classes - Fused Augmentation
+    'TritonFusedAugment',
     
     # Functional API - Color operations
     'adjust_brightness',
@@ -123,20 +120,17 @@ __all__ = [
     'adjust_saturation',
     'normalize',
     'rgb_to_grayscale',
-    'random_grayscale',
     'apply_brightness',
     'apply_contrast',
     'apply_saturation',
     'apply_normalize',
-    'fused_color_normalize',
     
     # Functional API - Geometric operations
     'crop',
     'center_crop',
     'horizontal_flip',
-    'fused_crop_flip',
     
-    # Functional API - Ultimate Fusion
-    'ultimate_fused_augment',
+    # Functional API - Fused operations
+    'fused_augment',
 ]
 

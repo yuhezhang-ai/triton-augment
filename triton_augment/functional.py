@@ -14,19 +14,18 @@ import torch
 import triton
 import sys
 from .kernels.color_normalize_kernel import (
-    fused_color_normalize_kernel,
     brightness_kernel,
     contrast_kernel,
     contrast_fast_kernel,
     saturation_kernel,
     normalize_kernel,
+    rgb_to_grayscale_kernel,
 )
 from .kernels.geometric_kernel import (
     crop_kernel,
     horizontal_flip_kernel,
-    fused_crop_flip_kernel,
-    ultimate_fused_kernel,
 )
+from .kernels.fused_kernel import ultimate_fused_kernel
 from .utils import should_show_autotune_message
 from .config import ENABLE_AUTOTUNE
 
@@ -67,34 +66,152 @@ def _validate_image_tensor(tensor: torch.Tensor, name: str = "tensor") -> None:
         raise TypeError(f"Input image tensor permitted channel values are 1 or 3, but found {c}")
 
 
-def _rgb_to_grayscale(image: torch.Tensor) -> torch.Tensor:
+# ============================================================================
+# Parameter conversion helpers for per-image randomness
+# ============================================================================
+
+def _convert_to_tensor(
+    value: int | float | bool | torch.Tensor,
+    batch_size: int,
+    dtype: torch.dtype,
+    device: torch.device,
+    name: str = "parameter"
+) -> torch.Tensor:
     """
-    Convert RGB to grayscale using torchvision's formula.
+    Convert scalar or tensor to a tensor of shape (batch_size,) with proper dtype and device.
     
-    Reference: torchvision/transforms/v2/functional/_color.py line 42
-    Formula: 0.2989*R + 0.587*G + 0.114*B
+    This helper is used to support both scalar parameters (applied to all images in batch)
+    and tensor parameters (per-image values).
+    
+    Args:
+        value: Scalar value or tensor to convert
+        batch_size: Expected batch size
+        dtype: Target dtype for the output tensor
+        device: Target device for the output tensor
+        name: Parameter name for error messages
+    
+    Returns:
+        Tensor of shape (batch_size,) with the given dtype and device
+    
+    Raises:
+        ValueError: If tensor shape doesn't match (batch_size,)
+    
+    Example:
+        >>> # Scalar -> broadcast to all images
+        >>> t = _convert_to_tensor(1.5, batch_size=4, dtype=torch.float32, device='cuda')
+        >>> # t = tensor([1.5, 1.5, 1.5, 1.5], device='cuda')
+        >>> 
+        >>> # Tensor -> validate and convert
+        >>> per_image = torch.tensor([1.0, 1.2, 0.8, 1.5], device='cuda')
+        >>> t = _convert_to_tensor(per_image, batch_size=4, dtype=torch.float32, device='cuda')
+        >>> # t = tensor([1.0, 1.2, 0.8, 1.5], device='cuda')
     """
-    r, g, b = image.unbind(dim=-3)
-    # Exact formula from torchvision: r.mul(0.2989).add_(g, alpha=0.587).add_(b, alpha=0.114)
-    l_img = r.mul(0.2989).add_(g, alpha=0.587).add_(b, alpha=0.114)
-    return l_img.unsqueeze(dim=-3)
+    if isinstance(value, torch.Tensor):
+        # Validate shape
+        if value.shape != (batch_size,):
+            raise ValueError(
+                f"{name} tensor must have shape ({batch_size},), got {value.shape}"
+            )
+        # Convert dtype and device
+        return value.to(device=device, dtype=dtype)
+    else:
+        # Convert scalar to tensor filled with same value
+        if isinstance(value, bool):
+            value = int(value)
+        return torch.full((batch_size,), value, dtype=dtype, device=device)
+
+
+def _sample_uniform_tensor(
+    batch_size: int,
+    min_val: float,
+    max_val: float,
+    device: torch.device,
+    per_image: bool = True
+) -> torch.Tensor:
+    """
+    Sample uniform random values, supporting both per-image and batch-wide randomness.
+    
+    Args:
+        batch_size: Number of samples to generate
+        min_val: Minimum value (inclusive)
+        max_val: Maximum value (exclusive)
+        device: Device to create tensor on
+        per_image: If True, different value for each image. If False, same value for all.
+    
+    Returns:
+        Tensor of shape (batch_size,) with uniform random values
+    
+    Example:
+        >>> # Per-image randomness
+        >>> t = _sample_uniform_tensor(4, 0.8, 1.2, 'cuda', per_image=True)
+        >>> # t = tensor([0.95, 1.1, 0.82, 1.18], device='cuda')
+        >>> 
+        >>> # Same for all images
+        >>> t = _sample_uniform_tensor(4, 0.8, 1.2, 'cuda', per_image=False)
+        >>> # t = tensor([1.05, 1.05, 1.05, 1.05], device='cuda')
+    """
+    if per_image:
+        # Different value for each image
+        return torch.empty(batch_size, device=device).uniform_(min_val, max_val)
+    else:
+        # Same value for all images
+        single_val = torch.empty(1).uniform_(min_val, max_val).item()
+        return torch.full((batch_size,), single_val, device=device)
+
+
+def _sample_bernoulli_tensor(
+    batch_size: int,
+    p: float,
+    device: torch.device,
+    per_image: bool = True
+) -> torch.Tensor:
+    """
+    Sample Bernoulli random values as uint8 (0 or 1), supporting both per-image and batch-wide randomness.
+    
+    Args:
+        batch_size: Number of samples to generate
+        p: Probability of 1 (success)
+        device: Device to create tensor on
+        per_image: If True, different decision for each image. If False, same decision for all.
+    
+    Returns:
+        Tensor of shape (batch_size,) with uint8 values (0 or 1)
+    
+    Example:
+        >>> # Per-image randomness
+        >>> t = _sample_bernoulli_tensor(4, 0.5, 'cuda', per_image=True)
+        >>> # t = tensor([1, 0, 1, 1], device='cuda', dtype=torch.uint8)
+        >>> 
+        >>> # Same for all images
+        >>> t = _sample_bernoulli_tensor(4, 0.5, 'cuda', per_image=False)
+        >>> # t = tensor([0, 0, 0, 0], device='cuda', dtype=torch.uint8)
+    """
+    if per_image:
+        # Different decision for each image
+        return (torch.rand(batch_size, device=device) < p).to(torch.uint8)
+    else:
+        # Same decision for all images
+        single_decision = 1 if torch.rand(1).item() < p else 0
+        return torch.full((batch_size,), single_decision, device=device, dtype=torch.uint8)
 
 
 def rgb_to_grayscale(
     image: torch.Tensor,
     num_output_channels: int = 1,
+    grayscale_mask: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """
-    Convert RGB image to grayscale.
+    Convert RGB image to grayscale with optional per-image masking.
     
     Matches torchvision.transforms.v2.functional.rgb_to_grayscale exactly.
     Uses weights: 0.2989*R + 0.587*G + 0.114*B
     
     Args:
-        image: Input image tensor of shape (N, C, H, W) on CUDA
-               where C must be 3 (RGB)
+        image: Input image tensor of shape (N, 3, H, W) on CUDA
         num_output_channels: Number of output channels (1 or 3)
                             If 3, grayscale is replicated across channels
+        grayscale_mask: Optional per-image mask [N] (uint8: 0=keep original, 1=convert to gray)
+                       If None, converts all images
                             
     Returns:
         Grayscale tensor of shape (N, num_output_channels, H, W)
@@ -103,9 +220,13 @@ def rgb_to_grayscale(
         ValueError: If num_output_channels not in {1, 3} or if input not RGB
         
     Example:
-        >>> img = torch.rand(1, 3, 224, 224, device='cuda')
-        >>> gray_1ch = rgb_to_grayscale(img, num_output_channels=1)   # Shape: (1, 1, 224, 224)
-        >>> gray_3ch = rgb_to_grayscale(img, num_output_channels=3)   # Shape: (1, 3, 224, 224)
+        >>> img = torch.rand(4, 3, 224, 224, device='cuda')
+        >>> # Convert all images
+        >>> gray = rgb_to_grayscale(img, num_output_channels=3)
+        >>> 
+        >>> # Convert only some images (per-image mask)
+        >>> mask = torch.tensor([1, 0, 1, 0], dtype=torch.uint8, device='cuda')
+        >>> gray = rgb_to_grayscale(img, num_output_channels=3, grayscale_mask=mask)
     """
     _validate_image_tensor(image, "image")
     
@@ -115,52 +236,45 @@ def rgb_to_grayscale(
     if image.shape[1] != 3:
         raise ValueError(f"Expected 3 channels (RGB), got {image.shape[1]}")
     
-    # Compute grayscale using helper
-    grayscale = _rgb_to_grayscale(image)  # Shape: (N, 1, H, W)
+    batch_size, channels, height, width = image.shape
     
-    # Replicate to 3 channels if requested
-    if num_output_channels == 3:
-        grayscale = grayscale.expand(-1, 3, -1, -1).contiguous()
+    # For 1-channel output, we still need to process all 3 channels internally
+    # So we'll always use the kernel with 3-channel output, then select channel 0 if needed
+    output = torch.empty_like(image)  # Always (N, 3, H, W)
     
-    return grayscale
-
-
-def random_grayscale(
-    image: torch.Tensor,
-    p: float = 0.1,
-    num_output_channels: int = 3,
-) -> torch.Tensor:
-    """
-    Randomly convert image to grayscale with probability p.
-    
-    Matches torchvision.transforms.v2.RandomGrayscale behavior.
-    
-    Args:
-        image: Input image tensor of shape (N, 3, H, W) on CUDA
-        p: Probability of converting to grayscale (default: 0.1)
-        num_output_channels: Number of output channels (1 or 3, default: 3)
-                            Usually 3 to maintain compatibility with RGB pipelines
-                            
-    Returns:
-        Image tensor, either original or grayscale based on probability
-        
-    Raises:
-        ValueError: If p not in [0, 1]
-        
-    Example:
-        >>> img = torch.rand(4, 3, 224, 224, device='cuda')
-        >>> result = random_grayscale(img, p=0.5)  # 50% chance of grayscale
-    """
-    _validate_image_tensor(image, "image")
-    
-    if not (0.0 <= p <= 1.0):
-        raise ValueError(f"p ({p}) must be in [0, 1]")
-    
-    # Decide randomly whether to apply grayscale
-    if p > 0 and torch.rand(1).item() < p:
-        return rgb_to_grayscale(image, num_output_channels=num_output_channels)
+    # Prepare grayscale mask
+    if grayscale_mask is None:
+        # Convert all images - create an all-ones mask
+        grayscale_mask_tensor = torch.ones(batch_size, dtype=torch.uint8, device=image.device)
+        apply_per_image = False
     else:
-        return image
+        grayscale_mask_tensor = _convert_to_tensor(grayscale_mask, batch_size, torch.uint8, image.device, "grayscale_mask")
+        apply_per_image = True
+    
+    # Calculate grid size (spatial processing: N*H*W)
+    spatial_size = height * width
+    total_spatial = batch_size * spatial_size
+    BLOCK_SIZE = 1024
+    grid = lambda meta: (triton.cdiv(total_spatial, meta['BLOCK_SIZE']),)
+    
+    # Launch kernel
+    rgb_to_grayscale_kernel[grid](
+        image,
+        output,
+        grayscale_mask_tensor,
+        batch_size,
+        channels,
+        height,
+        width,
+        apply_per_image,
+        BLOCK_SIZE=BLOCK_SIZE,
+    )
+    
+    # Return 1-channel if requested
+    if num_output_channels == 1:
+        return output[:, 0:1, :, :]  # Select first channel only
+    else:
+        return output
 
 
 def adjust_brightness(
@@ -255,7 +369,8 @@ def adjust_contrast(
     # Compute grayscale mean for contrast (per-image)
     c = image.shape[1]
     if c == 3:
-        grayscale_image = _rgb_to_grayscale(image)
+        # Use rgb_to_grayscale with num_output_channels=1 to get (N, 1, H, W)
+        grayscale_image = rgb_to_grayscale(image, num_output_channels=1)
     else:
         grayscale_image = image
     
@@ -482,159 +597,6 @@ def normalize(
     return output_tensor
 
 
-def fused_color_normalize(
-    image: torch.Tensor,
-    brightness_factor: float = 1.0,
-    contrast_factor: float = 1.0,
-    saturation_factor: float = 1.0,
-    random_grayscale_p: float = 0.0,
-    mean: tuple[float, float, float] | None = None,
-    std: tuple[float, float, float] | None = None,
-) -> torch.Tensor:
-    """
-    Apply fused color jitter and normalization in a single kernel.
-    
-    This function fuses multiple operations:
-    1. Brightness adjustment: pixel = pixel * brightness_factor [torchvision-exact]
-    2. Contrast adjustment (FAST): pixel = (pixel - 0.5) * contrast + 0.5
-    3. Saturation adjustment: blend with grayscale [torchvision-exact]
-    4. Random grayscale: with probability p, convert to grayscale AFTER saturation
-    5. Per-channel normalization [torchvision-exact]
-    
-    The fusion eliminates intermediate memory reads/writes, providing
-    2-5x performance improvements over sequential operations.
-    
-    **IMPORTANT**: Contrast uses FAST centered scaling, NOT torchvision's blend-with-mean.
-    For exact torchvision reproduction, use individual functions:
-        adjust_brightness() + adjust_contrast() + adjust_saturation() + normalize()
-    
-    Args:
-        image: Input image tensor of shape (N, C, H, W) on CUDA
-        brightness_factor: Brightness multiplier (default: 1.0 = no change)
-                          Must be non-negative. 0=black, 1=original, >1=brighter
-        contrast_factor: Contrast multiplier (default: 1.0 = no change) [FAST mode]
-                        Must be non-negative. 0.5=low, 1=original, >1=high contrast
-        saturation_factor: Saturation multiplier (default: 1.0 = no change)
-                          Must be non-negative. 0=grayscale, 1=original, >1=more saturated
-        random_grayscale_p: Probability of converting to grayscale (default: 0.0 = no grayscale)
-                           Must be in [0, 1]. Applied AFTER saturation (not as replacement).
-        mean: Tuple of mean values for normalization (R, G, B)
-              If None, normalization is skipped
-        std: Tuple of standard deviation values for normalization (R, G, B)
-             If None, normalization is skipped
-                          
-    Returns:
-        Transformed tensor of the same shape and dtype
-        
-    Raises:
-        ValueError: If any factor is negative
-        
-    Example:
-        >>> img = torch.rand(2, 3, 224, 224, device='cuda')
-        >>> # Fast fused pipeline
-        >>> augmented = fused_color_normalize(
-        ...     img,
-        ...     brightness_factor=1.2,
-        ...     contrast_factor=1.1,      # Uses FAST contrast
-        ...     saturation_factor=0.9,
-        ...     mean=(0.485, 0.456, 0.406),
-        ...     std=(0.229, 0.224, 0.225)
-        ... )
-        
-    Notes:
-        - Brightness and saturation match torchvision exactly
-        - Contrast uses FAST method for fusion efficiency
-        - Operations are performed in a single GPU kernel
-        - For torchvision-exact contrast, use adjust_contrast() separately
-    """
-    _validate_image_tensor(image, "image")
-    
-    # Validate factors
-    if brightness_factor < 0:
-        raise ValueError(f"brightness_factor ({brightness_factor}) is not non-negative.")
-    if contrast_factor < 0:
-        raise ValueError(f"contrast_factor ({contrast_factor}) is not non-negative.")
-    if saturation_factor < 0:
-        raise ValueError(f"saturation_factor ({saturation_factor}) is not non-negative.")
-    if not (0.0 <= random_grayscale_p <= 1.0):
-        raise ValueError(f"random_grayscale_p ({random_grayscale_p}) must be in [0, 1].")
-    
-    # Handle random grayscale as a separate operation AFTER saturation
-    # This is important because: saturation → clamp → grayscale ≠ grayscale alone
-    apply_grayscale = (random_grayscale_p > 0 and torch.rand(1).item() < random_grayscale_p)
-    
-    # Determine which operations to apply
-    apply_brightness = (brightness_factor != 1.0)
-    apply_contrast = (contrast_factor != 1.0)
-    apply_saturation = (saturation_factor != 1.0)
-    apply_normalize = (mean is not None and std is not None)
-    
-    # If no operations, return copy
-    if not (apply_brightness or apply_contrast or apply_saturation or apply_grayscale or apply_normalize):
-        return image.clone()
-    
-    # Validate normalization parameters
-    if apply_normalize:
-        if len(mean) != 3 or len(std) != 3:
-            raise ValueError("mean and std must have 3 values for RGB channels")
-        norm_mean_tensor = torch.tensor(mean, device=image.device, dtype=image.dtype)
-        norm_std_tensor = torch.tensor(std, device=image.device, dtype=image.dtype)
-    else:
-        # Create dummy tensors (won't be used due to compile-time flag)
-        norm_mean_tensor = torch.zeros(3, device=image.device, dtype=image.dtype)
-        norm_std_tensor = torch.ones(3, device=image.device, dtype=image.dtype)
-    
-    # Allocate output tensor
-    output_tensor = torch.empty_like(image)
-    
-    # Get tensor dimensions
-    batch_size, channels, height, width = image.shape
-    spatial_size = height * width
-    total_spatial_elements = batch_size * spatial_size
-    total_elements = batch_size * channels * spatial_size
-    
-    # Calculate N for auto-tuning key
-    N = total_elements
-    
-    # Calculate grid size based on processing path
-    # - If apply_saturation=True OR apply_grayscale=True: SPATIAL path processes N*H*W locations
-    # - Otherwise: LINEAR path processes N*C*H*W elements
-    if apply_saturation or apply_grayscale:
-        # Spatial processing: one thread block per BLOCK_SIZE spatial locations
-        grid = lambda meta: (triton.cdiv(total_spatial_elements, meta['BLOCK_SIZE']),)
-    else:
-        # Linear processing: one thread block per BLOCK_SIZE pixels
-        grid = lambda meta: (triton.cdiv(total_elements, meta['BLOCK_SIZE']),)
-    
-    # Show auto-tuning message if this kernel hasn't been tuned yet (only when enabled)
-    if ENABLE_AUTOTUNE and should_show_autotune_message('fused_color_normalize_kernel', (N,)):
-        print(f"[Triton-Augment] Auto-tuning fused_color_normalize_kernel for batch={batch_size}, size={height}×{width}... (~2-5 sec)", 
-              file=sys.stderr, flush=True)
-    
-    # Launch kernel (auto-tuned with 4 configs or fixed with 1 config based on ENABLE_AUTOTUNE)
-    fused_color_normalize_kernel[grid](
-        image,
-        output_tensor,
-        N,
-        batch_size,
-        channels,
-        height,
-        width,
-        norm_mean_tensor,
-        norm_std_tensor,
-        brightness_factor,
-        contrast_factor,
-        saturation_factor,
-        apply_brightness,
-        apply_contrast,
-        apply_saturation,
-        apply_grayscale,
-        apply_normalize,
-    )
-    
-    return output_tensor
-
-
 # ============================================================================
 # Geometric Transformations
 # ============================================================================
@@ -642,36 +604,36 @@ def fused_color_normalize(
 
 def crop(
     image: torch.Tensor,
-    top: int,
-    left: int,
+    top: int | torch.Tensor,
+    left: int | torch.Tensor,
     height: int,
     width: int,
 ) -> torch.Tensor:
     """
-    Crop a rectangular region from the input image.
+    Crop a rectangular region from the input image, with optional per-image crop positions.
     
-    Matches torchvision.transforms.v2.functional.crop exactly.
+    Matches torchvision.transforms.v2.functional.crop exactly when using scalar top/left.
     Reference: torchvision/transforms/v2/functional/_geometry.py line 1787
     
     Args:
         image: Input image tensor of shape (N, C, H, W) on CUDA
-        top: Top pixel coordinate for cropping (vertical offset)
-        left: Left pixel coordinate for cropping (horizontal offset)
+        top: Top pixel coordinate for cropping (int or int32 tensor of shape (N,) for per-image)
+        left: Left pixel coordinate for cropping (int or int32 tensor of shape (N,) for per-image)
         height: Height of the cropped image
         width: Width of the cropped image
         
     Returns:
         Cropped tensor of shape (N, C, height, width)
         
-    Raises:
-        ValueError: If crop region is invalid (out of bounds)
-        
     Example:
         >>> img = torch.rand(2, 3, 224, 224, device='cuda')
-        >>> # Crop center 112x112 region
+        >>> # Crop all images at same position
         >>> cropped = crop(img, top=56, left=56, height=112, width=112)
-        >>> cropped.shape
-        torch.Size([2, 3, 112, 112])
+        >>> 
+        >>> # Crop each image at different position
+        >>> tops = torch.tensor([56, 100], device='cuda', dtype=torch.int32)
+        >>> lefts = torch.tensor([56, 80], device='cuda', dtype=torch.int32)
+        >>> cropped = crop(img, top=tops, left=lefts, height=112, width=112)
     
     Note:
         For MVP, this requires valid crop coordinates (no padding).
@@ -681,16 +643,15 @@ def crop(
     
     batch_size, channels, img_height, img_width = image.shape
     
-    # Validate crop region
-    if top < 0 or left < 0:
-        raise ValueError(f"Crop coordinates must be non-negative, got top={top}, left={left}")
-    if top + height > img_height or left + width > img_width:
-        raise ValueError(
-            f"Crop region ({top}:{top+height}, {left}:{left+width}) "
-            f"exceeds image dimensions ({img_height}, {img_width})"
-        )
     if height <= 0 or width <= 0:
         raise ValueError(f"Crop size must be positive, got height={height}, width={width}")
+    
+    # Convert crop offsets to tensors
+    top_offsets = _convert_to_tensor(top, batch_size, torch.int32, image.device, "top")
+    left_offsets = _convert_to_tensor(left, batch_size, torch.int32, image.device, "left")
+    
+    # Determine if per-image
+    apply_per_image = isinstance(top, torch.Tensor) or isinstance(left, torch.Tensor)
     
     # Allocate output tensor
     output = torch.empty(
@@ -714,8 +675,9 @@ def crop(
         img_width,
         height,
         width,
-        top,
-        left,
+        top_offsets,
+        left_offsets,
+        apply_per_image,
         BLOCK_SIZE=BLOCK_SIZE,
     )
     
@@ -777,23 +739,32 @@ def center_crop(
     return crop(image, crop_top, crop_left, crop_height, crop_width)
 
 
-def horizontal_flip(image: torch.Tensor) -> torch.Tensor:
+def horizontal_flip(
+    image: torch.Tensor,
+    flip_mask: torch.Tensor | None = None
+) -> torch.Tensor:
     """
-    Flip the image horizontally (left to right).
+    Flip the image horizontally (left to right), with optional per-image control.
     
-    Matches torchvision.transforms.v2.functional.horizontal_flip exactly.
+    Matches torchvision.transforms.v2.functional.horizontal_flip exactly when flip_mask=None.
     Reference: torchvision/transforms/v2/functional/_geometry.py line 56
     
     Args:
         image: Input image tensor of shape (N, C, H, W) on CUDA
+        flip_mask: Optional uint8 tensor of shape (N,) indicating which images to flip (0=no flip, 1=flip).
+                  If None, flips all images (default behavior).
         
     Returns:
         Horizontally flipped tensor of the same shape
         
     Example:
         >>> img = torch.rand(2, 3, 224, 224, device='cuda')
+        >>> # Flip all images
         >>> flipped = horizontal_flip(img)
-        >>> # Verify flip: img[:, :, :, 0] == flipped[:, :, :, -1]
+        >>> 
+        >>> # Flip only first image
+        >>> flip_mask = torch.tensor([1, 0], device='cuda', dtype=torch.uint8)
+        >>> flipped = horizontal_flip(img, flip_mask)
     
     Note:
         This uses a custom Triton kernel. For standalone flip operations,
@@ -803,6 +774,19 @@ def horizontal_flip(image: torch.Tensor) -> torch.Tensor:
     _validate_image_tensor(image, "image")
     
     batch_size, channels, height, width = image.shape
+    
+    # Handle flip_mask
+    if flip_mask is None:
+        # Flip all images - use simple path
+        apply_per_image = False
+        flip_mask_tensor = torch.ones(batch_size, device=image.device, dtype=torch.uint8)
+    else:
+        # Per-image flip control
+        apply_per_image = True
+        flip_mask_tensor = _convert_to_tensor(flip_mask, batch_size, torch.uint8, image.device, "flip_mask")
+        # Early exit if no images need flipping
+        if not torch.any(flip_mask_tensor).item():
+            return image.clone()
     
     # Allocate output tensor
     output = torch.empty_like(image)
@@ -820,124 +804,32 @@ def horizontal_flip(image: torch.Tensor) -> torch.Tensor:
         channels,
         height,
         width,
+        flip_mask_tensor,
+        apply_per_image,
         BLOCK_SIZE=BLOCK_SIZE,
     )
     
     return output
 
 
-def fused_crop_flip(
+def fused_augment(
     image: torch.Tensor,
-    top: int,
-    left: int,
+    # Geometric parameters (can be scalars or tensors of shape (N,))
+    top: int | torch.Tensor,
+    left: int | torch.Tensor,
     height: int,
     width: int,
-    flip_horizontal: bool = False,
-) -> torch.Tensor:
-    """
-    Fused crop + horizontal flip in a single kernel.
-    
-    This function combines crop and horizontal flip operations, eliminating
-    intermediate memory transfers. Provides ~1.5-2x speedup over sequential operations.
-    
-    **OPTIMIZATION**: Uses compile-time branching (tl.constexpr):
-    - When flip_horizontal=False: Only crop code is compiled (no flip overhead)
-    - When flip_horizontal=True: Both crop and flip are fused
-    
-    Args:
-        image: Input image tensor of shape (N, C, H, W) on CUDA
-        top: Top pixel coordinate for cropping
-        left: Left pixel coordinate for cropping
-        height: Height of the cropped image
-        width: Width of the cropped image
-        flip_horizontal: Whether to flip horizontally after cropping
-        
-    Returns:
-        Cropped (and optionally flipped) tensor of shape (N, C, height, width)
-        
-    Raises:
-        ValueError: If crop region is invalid
-        
-    Example:
-        >>> img = torch.rand(2, 3, 224, 224, device='cuda')
-        >>> # Crop and flip in one kernel
-        >>> result = fused_crop_flip(img, 56, 56, 112, 112, flip_horizontal=True)
-        >>> result.shape
-        torch.Size([2, 3, 112, 112])
-        
-        >>> # Equivalent sequential operations (slower):
-        >>> cropped = crop(img, 56, 56, 112, 112)
-        >>> result_seq = horizontal_flip(cropped)
-    
-    Performance:
-        - ~1.5-2x faster than crop() + horizontal_flip()
-        - No intermediate memory buffer needed
-        - Zero overhead when flip_horizontal=False (compile-time optimization)
-    """
-    _validate_image_tensor(image, "image")
-    
-    batch_size, channels, img_height, img_width = image.shape
-    
-    # Validate crop region
-    if top < 0 or left < 0:
-        raise ValueError(f"Crop coordinates must be non-negative, got top={top}, left={left}")
-    if top + height > img_height or left + width > img_width:
-        raise ValueError(
-            f"Crop region ({top}:{top+height}, {left}:{left+width}) "
-            f"exceeds image dimensions ({img_height}, {img_width})"
-        )
-    if height <= 0 or width <= 0:
-        raise ValueError(f"Crop size must be positive, got height={height}, width={width}")
-    
-    # Allocate output tensor
-    output = torch.empty(
-        batch_size, channels, height, width,
-        dtype=image.dtype,
-        device=image.device
-    )
-    
-    # Calculate total elements and grid size
-    total_elements = batch_size * channels * height * width
-    BLOCK_SIZE = 1024
-    grid = lambda meta: (triton.cdiv(total_elements, meta['BLOCK_SIZE']),)
-    
-    # Launch fused kernel
-    fused_crop_flip_kernel[grid](
-        image,
-        output,
-        batch_size,
-        channels,
-        img_height,
-        img_width,
-        height,
-        width,
-        top,
-        left,
-        int(flip_horizontal),  # Convert bool to int for tl.constexpr
-        BLOCK_SIZE=BLOCK_SIZE,
-    )
-    
-    return output
-
-
-def ultimate_fused_augment(
-    image: torch.Tensor,
-    # Geometric parameters
-    top: int,
-    left: int,
-    height: int,
-    width: int,
-    flip_horizontal: bool = False,
-    # Pixel operation parameters
-    brightness_factor: float = 1.0,
-    contrast_factor: float = 1.0,
-    saturation_factor: float = 1.0,
-    random_grayscale_p: float = 0.0,
+    flip_horizontal: bool | torch.Tensor = False,
+    # Pixel operation parameters (can be scalars or tensors of shape (N,))
+    brightness_factor: float | torch.Tensor = 1.0,
+    contrast_factor: float | torch.Tensor = 1.0,
+    saturation_factor: float | torch.Tensor = 1.0,
+    grayscale: bool | torch.Tensor = False,
     mean: tuple[float, float, float] | None = None,
     std: tuple[float, float, float] | None = None,
 ) -> torch.Tensor:
     """
-    THE ULTIMATE FUSED AUGMENTATION: ALL operations in ONE kernel.
+    Fused augmentation: ALL operations in ONE kernel.
     
     Combines geometric (crop + flip) and pixel (color + normalize) operations
     in a single GPU kernel, providing maximum performance.
@@ -945,18 +837,18 @@ def ultimate_fused_augment(
     **Performance**: ~8-10x faster than torchvision Compose (6+ sequential operations)
     
     Operations applied in sequence:
-    1. **Geometric**: Crop + Optional Horizontal Flip (index transformations)
-    2. **Pixel**: Brightness + Contrast (fast) + Saturation + Random Grayscale + Normalize (value operations)
+    1. **Geometric**: Crop + Optional Horizontal Flip (index transformations, per-image)
+    2. **Pixel**: Brightness + Contrast (fast) + Saturation + Random Grayscale + Normalize (value operations, per-image)
     
     Args:
         image: Input image tensor of shape (N, C, H, W) on CUDA
-        top, left: Crop offsets
+        top, left: Crop offsets (int or int32 tensor of shape (N,) for per-image)
         height, width: Crop dimensions
-        flip_horizontal: Whether to flip horizontally after crop
-        brightness_factor: Brightness multiplier (1.0 = no change)
-        contrast_factor: Contrast multiplier (1.0 = no change) [FAST mode]
-        saturation_factor: Saturation multiplier (1.0 = no change)
-        random_grayscale_p: Probability of converting to grayscale (default: 0.0 = no grayscale)
+        flip_horizontal: Whether to flip horizontally (bool or uint8 tensor of shape (N,) for per-image, default: False)
+        brightness_factor: Brightness multiplier (float or tensor of shape (N,) for per-image, 1.0 = no change)
+        contrast_factor: Contrast multiplier (float or tensor of shape (N,) for per-image, 1.0 = no change) [FAST mode]
+        saturation_factor: Saturation multiplier (float or tensor of shape (N,) for per-image, 1.0 = no change)
+        grayscale: Whether to convert to grayscale (bool or uint8 tensor of shape (N,) for per-image, default: False)
         mean, std: Normalization parameters (None = skip normalization)
         
     Returns:
@@ -965,7 +857,7 @@ def ultimate_fused_augment(
     Example:
         >>> img = torch.rand(4, 3, 224, 224, device='cuda')
         >>> # Single kernel launch for ALL operations!
-        >>> result = ultimate_fused_augment(
+        >>> result = fused_augment(
         ...     img,
         ...     top=20, left=30, height=112, width=112,
         ...     flip_horizontal=True,
@@ -993,26 +885,25 @@ def ultimate_fused_augment(
     
     batch_size, channels, img_height, img_width = image.shape
     
-    # Validate crop region
-    if top < 0 or left < 0:
-        raise ValueError(f"Crop coordinates must be non-negative, got top={top}, left={left}")
-    if top + height > img_height or left + width > img_width:
-        raise ValueError(
-            f"Crop region ({top}:{top+height}, {left}:{left+width}) "
-            f"exceeds image dimensions ({img_height}, {img_width})"
-        )
     if height <= 0 or width <= 0:
         raise ValueError(f"Crop size must be positive, got height={height}, width={width}")
     
-    # Validate random_grayscale_p
-    if not (0.0 <= random_grayscale_p <= 1.0):
-        raise ValueError(f"random_grayscale_p ({random_grayscale_p}) must be in [0, 1].")
+    # Convert geometric parameters to tensors of shape (N,)
+    top_offsets = _convert_to_tensor(top, batch_size, torch.int32, image.device, "top")
+    left_offsets = _convert_to_tensor(left, batch_size, torch.int32, image.device, "left")
+    flip_mask = _convert_to_tensor(flip_horizontal, batch_size, torch.uint8, image.device, "flip_horizontal")
+    
+    # Convert color factors to tensors of shape (N,)
+    brightness_factors = _convert_to_tensor(brightness_factor, batch_size, image.dtype, image.device, "brightness_factor")
+    contrast_factors = _convert_to_tensor(contrast_factor, batch_size, image.dtype, image.device, "contrast_factor")
+    saturation_factors = _convert_to_tensor(saturation_factor, batch_size, image.dtype, image.device, "saturation_factor")
+    grayscale_mask = _convert_to_tensor(grayscale, batch_size, torch.uint8, image.device, "grayscale")
     
     # Determine which pixel operations to apply
-    apply_brightness = (brightness_factor != 1.0)
-    apply_contrast = (contrast_factor != 1.0)
-    apply_saturation = (saturation_factor != 1.0)
-    apply_grayscale = (random_grayscale_p > 0 and torch.rand(1).item() < random_grayscale_p)
+    # Check if ANY image needs the operation
+    apply_brightness = not torch.all(brightness_factors == 1.0).item()
+    apply_contrast = not torch.all(contrast_factors == 1.0).item()
+    apply_saturation = not torch.all(saturation_factors == 1.0).item()
     apply_normalize = (mean is not None and std is not None)
     
     # Validate and prepare normalization parameters
@@ -1033,42 +924,54 @@ def ultimate_fused_augment(
         device=image.device
     )
     
+    # Check if any image needs grayscale
+    apply_grayscale = torch.any(grayscale_mask).item()
+    
     # Calculate total elements and grid size based on processing path
     output_spatial_size = height * width
+    total_elements = batch_size * channels * output_spatial_size
+    
+    # N for auto-tuning key
+    N = total_elements
+    
     if apply_saturation or apply_grayscale:
         # Spatial processing (required for saturation/grayscale)
         total_spatial = batch_size * output_spatial_size
         grid = lambda meta: (triton.cdiv(total_spatial, meta['BLOCK_SIZE']),)
     else:
         # Linear processing (faster)
-        total_elements = batch_size * channels * output_spatial_size
         grid = lambda meta: (triton.cdiv(total_elements, meta['BLOCK_SIZE']),)
     
-    # Launch the ultimate fused kernel!
-    BLOCK_SIZE = 1024
+    # Show auto-tuning message if this kernel hasn't been tuned yet (only when enabled)
+    if ENABLE_AUTOTUNE and should_show_autotune_message('ultimate_fused_kernel', (N,)):
+        print(f"[Triton-Augment] Auto-tuning ultimate_fused_kernel for batch={batch_size}, size={height}×{width}... (~2-5 sec)", 
+              file=sys.stderr, flush=True)
+    
+    # Launch the ultimate fused kernel (auto-tuned with 4 configs or fixed with 1 config based on ENABLE_AUTOTUNE)
     ultimate_fused_kernel[grid](
         image,
         output,
+        N,                     # Auto-tuning key
         batch_size,
         channels,
         img_height,
         img_width,
         height,
         width,
-        top,
-        left,
-        int(flip_horizontal),
+        top_offsets,           # Per-image tensors!
+        left_offsets,
+        flip_mask,
         norm_mean_tensor,
         norm_std_tensor,
-        brightness_factor,
-        contrast_factor,
-        saturation_factor,
+        brightness_factors,
+        contrast_factors,
+        saturation_factors,
+        grayscale_mask,        # Per-image tensor!
         apply_brightness,
         apply_contrast,
         apply_saturation,
-        apply_grayscale,
+        apply_grayscale,       # Whether to check grayscale mask at all
         apply_normalize,
-        BLOCK_SIZE=BLOCK_SIZE,
     )
     
     return output
@@ -1095,15 +998,11 @@ __all__ = [
     'apply_contrast',
     'apply_saturation',
     'apply_normalize',
-    'fused_color_normalize',
-    # Grayscale operations
     'rgb_to_grayscale',
-    'random_grayscale',
     # Geometric operations
     'crop',
     'center_crop',
     'horizontal_flip',
-    'fused_crop_flip',
-    # Ultimate fusion
-    'ultimate_fused_augment',
+    # Fused operations
+    'fused_augment',
 ]

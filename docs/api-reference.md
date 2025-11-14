@@ -362,12 +362,12 @@ result = ta.horizontal_flip(result)
 
 ---
 
-### ultimate_fused_augment
+### fused_augment
 
 **THE ULTIMATE**: Fuse ALL augmentations (geometric + pixel) in ONE kernel! 🚀
 
 ```python
-ta.ultimate_fused_augment(
+ta.fused_augment(
     image,
     top, left, height, width,
     flip_horizontal=False,
@@ -401,7 +401,7 @@ ta.ultimate_fused_augment(
 
 ```python
 # Single kernel launch for ALL operations!
-result = ta.ultimate_fused_augment(
+result = ta.fused_augment(
     img,
     top=20, left=30, height=112, width=112,
     flip_horizontal=True,
@@ -523,12 +523,12 @@ transform = transforms.Compose([
 
 ---
 
-### TritonUltimateAugment
+### TritonFusedAugment
 
 **THE ULTIMATE TRANSFORM**: All augmentations in ONE kernel! 🚀
 
 ```python
-ta.TritonUltimateAugment(
+ta.TritonFusedAugment(
     crop_size,
     horizontal_flip_p=0.0,
     brightness=0,
@@ -563,8 +563,8 @@ old_transform = transforms.Compose([
     transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
 ])
 
-# With TritonUltimateAugment (1 kernel launch - 3-5x faster!)
-new_transform = ta.TritonUltimateAugment(
+# With TritonFusedAugment (1 kernel launch - 3-5x faster!)
+new_transform = ta.TritonFusedAugment(
     crop_size=112,
     horizontal_flip_p=0.5,
     brightness=0.2,
@@ -674,7 +674,7 @@ Triton-Augment provides **three levels of kernel fusion**:
 
 ```python
 # 1 kernel launch - ~3-5x faster than torchvision
-result = ta.ultimate_fused_augment(
+result = ta.fused_augment(
     img, top, left, h, w, flip_horizontal=True,
     brightness_factor=1.2, saturation_factor=0.9,
     mean=(...), std=(...)
@@ -736,5 +736,5 @@ img = tvF.normalize(img, mean=(...), std=(...))
 | **Individual Triton** | 6 | ~1.2-1.5x | Maximum control |
 | **Torchvision** | 6 | 1.0x | Baseline / CPU support |
 
-**Recommendation**: Use **Ultimate Fusion** (`TritonUltimateAugment`) for maximum performance in production training.
+**Recommendation**: Use **Ultimate Fusion** (`TritonFusedAugment`) for maximum performance in production training.
 

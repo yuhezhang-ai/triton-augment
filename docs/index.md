@@ -65,7 +65,7 @@ images = torch.rand(32, 3, 224, 224, device='cuda')
 
 # Replace torchvision Compose (6 kernel launches)
 # With Triton-Augment (1 kernel launch - 3-5x faster!)
-transform = ta.TritonUltimateAugment(
+transform = ta.TritonFusedAugment(
     crop_size=112,
     horizontal_flip_p=0.5,
     brightness=0.2,

@@ -63,7 +63,7 @@ images = torch.rand(32, 3, 224, 224, device='cuda')
 
 # Replace torchvision Compose (6 kernel launches)
 # With Triton-Augment (1 kernel launch - 3-5x faster!)
-transform = ta.TritonUltimateAugment(
+transform = ta.TritonFusedAugment(
     crop_size=112,
     horizontal_flip_p=0.5,
     brightness=0.2,
@@ -147,6 +147,88 @@ python examples/benchmark_triton.py
 
 ---
 
+## 🎓 Training Examples
+
+Clean, focused examples showing Triton-Augment integration in real training pipelines:
+
+```bash
+# MNIST training example (grayscale images, simple)
+python examples/train_mnist.py
+
+# CIFAR-10 training example (RGB images, recommended)
+python examples/train_cifar10.py
+```
+
+These examples demonstrate:
+- ✅ Fast async data loading with `num_workers > 0`
+- ✅ GPU batch augmentation in training loop
+- ✅ All operations fused in 1 kernel per batch
+- ✅ Best of both worlds: CPU for I/O, GPU for compute
+- ✅ Real production training setup
+
+**Key Integration Points:**
+
+| Operation | Use | Why |
+|-----------|-----|-----|
+| Data Loading | torchvision.datasets | Standard data loading |
+| Resize | torchvision.transforms | Not covered by Triton-Augment |
+| ToTensor | torchvision.transforms | PIL Image → Tensor conversion |
+| Crop, Flip, ColorJitter, Normalize | Triton-Augment | GPU-accelerated, fusible |
+
+**Example Integration:**
+
+```python
+import torch
+import triton_augment as ta
+from torchvision import datasets, transforms
+from torch.utils.data import DataLoader
+
+# Step 1: Data loading on CPU with workers (fast async I/O!)
+train_dataset = datasets.CIFAR10(
+    './data', train=True,
+    transform=transforms.ToTensor()  # Only ToTensor on CPU
+)
+
+train_loader = DataLoader(
+    train_dataset, 
+    batch_size=128,
+    num_workers=4,  # ✅ Use workers for fast async loading!
+    pin_memory=True
+)
+
+# Step 2: Create GPU augmentation transform (define once, reuse)
+augment = ta.TritonFusedAugment(
+    crop_size=28,
+    horizontal_flip_p=0.5,
+    brightness=0.2, contrast=0.2, saturation=0.2,
+    mean=(0.4914, 0.4822, 0.4465),
+    std=(0.2470, 0.2435, 0.2616),
+    per_image_randomness=True  # Each image gets different random params (default)
+)
+
+# Step 3: Apply in training loop on GPU batches
+for images, labels in train_loader:
+    images, labels = images.cuda(), labels.cuda()
+    images = augment(images)  # All ops in 1 kernel per batch! 🚀
+    
+    outputs = model(images)
+    # ... rest of training ...
+```
+
+**Why This Pattern:**
+- ✅ **Fast async data loading**: `num_workers > 0` for CPU parallelism
+- ✅ **Fast GPU batch processing**: All augmentations in 1 fused kernel
+- ✅ **Per-image randomness**: Each image gets different random parameters (default)
+- ✅ **Best of both worlds**: CPU for I/O, GPU for compute
+- ✅ **Kernel fusion**: No intermediate memory allocations
+- ✅ **Large batch advantage**: Speedup increases with batch size
+
+**Note**: Set `per_image_randomness=False` if you want all images to share the same random parameters (slightly faster, but less useful for training).
+
+💡 **Pro Tip**: Apply Triton-Augment transforms AFTER moving tensors to GPU for maximum performance!
+
+---
+
 ## 🛠️ API Overview
 
 ### Transform Classes (Recommended)
@@ -155,7 +237,7 @@ python examples/benchmark_triton.py
 import triton_augment as ta
 
 # Ultimate fusion - ALL operations in ONE kernel (fastest!) 🚀
-ultimate = ta.TritonUltimateAugment(
+ultimate = ta.TritonFusedAugment(
     crop_size=112, horizontal_flip_p=0.5,
     brightness=0.2, contrast=0.2, saturation=0.2,
     mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)

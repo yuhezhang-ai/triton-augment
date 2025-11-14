@@ -389,7 +389,7 @@ def benchmark_float16_vs_float32(size, batch_size, provider):
     
     if provider == 'float32-ultimate':
         img = torch.rand(batch_size, 3, size, size, device='cuda', dtype=torch.float32)
-        transform = ta.TritonUltimateAugment(
+        transform = ta.TritonFusedAugment(
             crop_size=crop_size,
             horizontal_flip_p=0.5,
             brightness=0.2,
@@ -401,7 +401,7 @@ def benchmark_float16_vs_float32(size, batch_size, provider):
         )
     elif provider == 'float16-ultimate':
         img = torch.rand(batch_size, 3, size, size, device='cuda', dtype=torch.float16)
-        transform = ta.TritonUltimateAugment(
+        transform = ta.TritonFusedAugment(
             crop_size=crop_size,
             horizontal_flip_p=0.5,
             brightness=0.2,
@@ -533,7 +533,7 @@ def benchmark_ultimate_fusion(size, batch_size, provider):
     
     elif provider == 'triton-ultimate':
         # Triton Ultimate: ALL in ONE fused kernel
-        transform = ta.TritonUltimateAugment(
+        transform = ta.TritonFusedAugment(
             crop_size=crop_size,
             horizontal_flip_p=0.5,
             brightness=0.2,
@@ -582,7 +582,7 @@ def print_ultimate_speedup_summary():
         return torchvision_transforms(img)
     
     # Triton Ultimate with random augmentations (ALL in ONE kernel!)
-    triton_ultimate_transform = ta.TritonUltimateAugment(
+    triton_ultimate_transform = ta.TritonFusedAugment(
         crop_size=crop_size,
         horizontal_flip_p=0.5,
         brightness=0.2,
@@ -703,7 +703,7 @@ if __name__ == '__main__':
     print("  Operations: RandomCrop + RandomHorizontalFlip + ColorJitter + RandomGrayscale + Normalize")
     print("  Torchvision Compose: 5 transforms (7 kernels: crop, flip, bright, contrast, sat, gray, norm)")
     print("  Triton Sequential: 5 Triton transforms (7 kernels)")
-    print("  Triton Ultimate: TritonUltimateAugment (1 FUSED kernel) ← PEAK PERFORMANCE!")
+    print("  Triton Fused: TritonFusedAugment (1 FUSED kernel) ← PEAK PERFORMANCE!")
     print("  Expected: ~8-10x speedup vs torchvision!")
     benchmark_ultimate_fusion.run(print_data=True, save_path='.')
     
