@@ -8,20 +8,25 @@ Author: yuhezhang-ai
 """
 
 from .color_normalize_kernel import (
-    fused_color_normalize_kernel,
     brightness_kernel,
     contrast_kernel,
     contrast_fast_kernel,
     saturation_kernel,
     normalize_kernel,
+    rgb_to_grayscale_kernel,
+)
+
+from .fused_kernel import (
+    ultimate_fused_kernel,
 )
 
 __all__ = [
-    'fused_color_normalize_kernel',
     'brightness_kernel',
     'contrast_kernel',
     'contrast_fast_kernel',
     'saturation_kernel',
     'normalize_kernel',
+    'rgb_to_grayscale_kernel',
+    'ultimate_fused_kernel',
 ]
 
