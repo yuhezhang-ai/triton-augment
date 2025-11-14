@@ -43,15 +43,15 @@ class TritonColorJitter(nn.Module):
         saturation: How much to jitter saturation.
                    saturation_factor is chosen uniformly from [max(0, 1 - saturation), 1 + saturation]
                    or the given [min, max]. Should be non negative numbers.
-        per_image_randomness: If True, each image in batch gets different random parameters (default: True)
-                             If False, all images in batch share the same random parameters
+        same_on_batch: If True, all images in batch share the same random parameters
+                             If False (default), each image in batch gets different random parameters
         
     Example:
         >>> transform = TritonColorJitter(
         ...     brightness=0.2,  # Range: [0.8, 1.2]
         ...     contrast=0.2,    # Range: [0.8, 1.2] (FAST contrast)
         ...     saturation=0.2,  # Range: [0.8, 1.2]
-        ...     per_image_randomness=True
+        ...     same_on_batch=False
         ... )
         >>> img = torch.rand(4, 3, 224, 224, device='cuda')
         >>> augmented = transform(img)  # Each image gets different augmentation
@@ -74,7 +74,7 @@ class TritonColorJitter(nn.Module):
         brightness: Optional[Union[float, Sequence[float]]] = None,
         contrast: Optional[Union[float, Sequence[float]]] = None,
         saturation: Optional[Union[float, Sequence[float]]] = None,
-        per_image_randomness: bool = True,
+        same_on_batch: bool = False,
     ):
         super().__init__()
         
@@ -82,7 +82,7 @@ class TritonColorJitter(nn.Module):
         self.brightness = self._check_input(brightness, "brightness")
         self.contrast = self._check_input(contrast, "contrast")
         self.saturation = self._check_input(saturation, "saturation")
-        self.per_image_randomness = per_image_randomness
+        self.same_on_batch = same_on_batch
     
     def _check_input(
         self,
@@ -125,7 +125,7 @@ class TritonColorJitter(nn.Module):
         # Generate brightness factors
         if self.brightness is not None:
             brightness_factors = F._sample_uniform_tensor(
-                batch_size, self.brightness[0], self.brightness[1], device, per_image=self.per_image_randomness
+                batch_size, self.brightness[0], self.brightness[1], device, same_on_batch=self.same_on_batch
             )
         else:
             brightness_factors = torch.ones(batch_size, device=device)
@@ -133,7 +133,7 @@ class TritonColorJitter(nn.Module):
         # Generate contrast factors
         if self.contrast is not None:
             contrast_factors = F._sample_uniform_tensor(
-                batch_size, self.contrast[0], self.contrast[1], device, per_image=self.per_image_randomness
+                batch_size, self.contrast[0], self.contrast[1], device, same_on_batch=self.same_on_batch
             )
         else:
             contrast_factors = torch.ones(batch_size, device=device)
@@ -141,7 +141,7 @@ class TritonColorJitter(nn.Module):
         # Generate saturation factors
         if self.saturation is not None:
             saturation_factors = F._sample_uniform_tensor(
-                batch_size, self.saturation[0], self.saturation[1], device, per_image=self.per_image_randomness
+                batch_size, self.saturation[0], self.saturation[1], device, same_on_batch=self.same_on_batch
             )
         else:
             saturation_factors = torch.ones(batch_size, device=device)
@@ -188,7 +188,7 @@ class TritonColorJitter(nn.Module):
             f"brightness={self.brightness}, "
             f"contrast={self.contrast}, "
             f"saturation={self.saturation}, "
-            f"per_image_randomness={self.per_image_randomness})"
+            f"same_on_batch={self.same_on_batch})"
         )
 
 
@@ -281,8 +281,8 @@ class TritonColorJitterNormalize(nn.Module):
         random_grayscale_p: Probability of converting to grayscale (default: 0.0)
         mean: Sequence of means for normalization (R, G, B)
         std: Sequence of standard deviations for normalization (R, G, B)
-        per_image_randomness: If True, each image in batch gets different random parameters (default: True)
-                             If False, all images in batch share the same random parameters
+        same_on_batch: If True, all images in batch share the same random parameters
+                             If False (default), each image in batch gets different random parameters
         
     Example:
         >>> # Full augmentation pipeline in one transform (per-image randomness)
@@ -293,7 +293,7 @@ class TritonColorJitterNormalize(nn.Module):
         ...     random_grayscale_p=0.1,  # 10% chance of grayscale (per-image)
         ...     mean=(0.485, 0.456, 0.406),
         ...     std=(0.229, 0.224, 0.225),
-        ...     per_image_randomness=True
+        ...     same_on_batch=False
         ... )
         >>> img = torch.rand(4, 3, 224, 224, device='cuda')
         >>> augmented = transform(img)  # Each image gets different augmentation
@@ -307,7 +307,7 @@ class TritonColorJitterNormalize(nn.Module):
         random_grayscale_p: float = 0.0,
         mean: Tuple[float, float, float] = (0.485, 0.456, 0.406),
         std: Tuple[float, float, float] = (0.229, 0.224, 0.225),
-        per_image_randomness: bool = True,
+        same_on_batch: bool = False,
     ):
         super().__init__()
         
@@ -316,7 +316,7 @@ class TritonColorJitterNormalize(nn.Module):
         self.contrast = self._check_input(contrast, "contrast")
         self.saturation = self._check_input(saturation, "saturation")
         self.random_grayscale_p = random_grayscale_p
-        self.per_image_randomness = per_image_randomness
+        self.same_on_batch = same_on_batch
         
         if not (0.0 <= random_grayscale_p <= 1.0):
             raise ValueError(f"random_grayscale_p must be in [0, 1], got {random_grayscale_p}")
@@ -361,7 +361,7 @@ class TritonColorJitterNormalize(nn.Module):
         # Generate brightness factors
         if self.brightness is not None:
             brightness_factors = F._sample_uniform_tensor(
-                batch_size, self.brightness[0], self.brightness[1], device, per_image=self.per_image_randomness
+                batch_size, self.brightness[0], self.brightness[1], device, same_on_batch=self.same_on_batch
             )
         else:
             brightness_factors = torch.ones(batch_size, device=device)
@@ -369,7 +369,7 @@ class TritonColorJitterNormalize(nn.Module):
         # Generate contrast factors
         if self.contrast is not None:
             contrast_factors = F._sample_uniform_tensor(
-                batch_size, self.contrast[0], self.contrast[1], device, per_image=self.per_image_randomness
+                batch_size, self.contrast[0], self.contrast[1], device, same_on_batch=self.same_on_batch
             )
         else:
             contrast_factors = torch.ones(batch_size, device=device)
@@ -377,14 +377,14 @@ class TritonColorJitterNormalize(nn.Module):
         # Generate saturation factors
         if self.saturation is not None:
             saturation_factors = F._sample_uniform_tensor(
-                batch_size, self.saturation[0], self.saturation[1], device, per_image=self.per_image_randomness
+                batch_size, self.saturation[0], self.saturation[1], device, same_on_batch=self.same_on_batch
             )
         else:
             saturation_factors = torch.ones(batch_size, device=device)
         
         # Generate grayscale mask
         grayscale_mask = F._sample_bernoulli_tensor(
-            batch_size, self.random_grayscale_p, device, per_image=self.per_image_randomness
+            batch_size, self.random_grayscale_p, device, same_on_batch=self.same_on_batch
         )
         
         return brightness_factors, contrast_factors, saturation_factors, grayscale_mask
@@ -451,7 +451,7 @@ class TritonColorJitterNormalize(nn.Module):
             f"random_grayscale_p={self.random_grayscale_p}, "
             f"mean={self.mean}, "
             f"std={self.std}, "
-            f"per_image_randomness={self.per_image_randomness})"
+            f"same_on_batch={self.same_on_batch})"
         )
 
 
@@ -503,17 +503,17 @@ class TritonRandomGrayscale(nn.Module):
         p: Probability of converting to grayscale (default: 0.1)
         num_output_channels: Number of output channels (1 or 3, default: 3)
                             Usually 3 to maintain compatibility with RGB pipelines
-        per_image_randomness: If True, each image in batch independently decides grayscale conversion (default: True)
-                             If False, all images in batch make the same decision
+        same_on_batch: If True, all images in batch make the same grayscale decision
+                             If False (default), each image in batch independently decides grayscale conversion
                             
     Example:
         >>> # Per-image randomness: each image independently converted
-        >>> transform = TritonRandomGrayscale(p=0.5, num_output_channels=3, per_image_randomness=True)
+        >>> transform = TritonRandomGrayscale(p=0.5, num_output_channels=3, same_on_batch=False)
         >>> img = torch.rand(4, 3, 224, 224, device='cuda')
         >>> result = transform(img)  # Each image has 50% chance of being grayscale
         
         >>> # Batch-wide: all images converted or none
-        >>> transform = TritonRandomGrayscale(p=0.5, num_output_channels=3, per_image_randomness=False)
+        >>> transform = TritonRandomGrayscale(p=0.5, num_output_channels=3, same_on_batch=False)
         >>> result = transform(img)  # Either all 4 images are grayscale or none are
     """
     
@@ -521,7 +521,7 @@ class TritonRandomGrayscale(nn.Module):
         self,
         p: float = 0.1,
         num_output_channels: int = 3,
-        per_image_randomness: bool = True
+        same_on_batch: bool = False
     ):
         super().__init__()
         if not (0.0 <= p <= 1.0):
@@ -530,7 +530,7 @@ class TritonRandomGrayscale(nn.Module):
             raise ValueError(f"num_output_channels must be 1 or 3, got {num_output_channels}")
         self.p = p
         self.num_output_channels = num_output_channels
-        self.per_image_randomness = per_image_randomness
+        self.same_on_batch = same_on_batch
     
     def forward(self, image: torch.Tensor) -> torch.Tensor:
         """
@@ -547,7 +547,7 @@ class TritonRandomGrayscale(nn.Module):
         
         # Generate grayscale mask (deterministic functional API)
         grayscale_mask = F._sample_bernoulli_tensor(
-            batch_size, self.p, image.device, per_image=self.per_image_randomness
+            batch_size, self.p, image.device, same_on_batch=self.same_on_batch
         )
         
         # Early exit if no images need grayscale
@@ -566,7 +566,7 @@ class TritonRandomGrayscale(nn.Module):
             f"{self.__class__.__name__}("
             f"p={self.p}, "
             f"num_output_channels={self.num_output_channels}, "
-            f"per_image_randomness={self.per_image_randomness})"
+            f"same_on_batch={self.same_on_batch})"
         )
 
 
@@ -583,8 +583,8 @@ class TritonRandomCrop(nn.Module):
     
     Args:
         size: Desired output size (height, width) or int for square crop
-        per_image_randomness: If True (default), each image in batch gets different random crop position.
-                             If False, all images in batch crop at the same position.
+        same_on_batch: If True, all images in batch crop at the same position.
+                             If False (default), each image in batch gets different random crop position.
         
     Example:
         >>> transform = TritonRandomCrop(112)
@@ -598,7 +598,7 @@ class TritonRandomCrop(nn.Module):
         Future versions will support padding, pad_if_needed, fill, padding_mode.
     """
     
-    def __init__(self, size: Union[int, Sequence[int]], per_image_randomness: bool = True):
+    def __init__(self, size: Union[int, Sequence[int]], same_on_batch: bool = False):
         super().__init__()
         if isinstance(size, int):
             self.size = (size, size)
@@ -610,7 +610,7 @@ class TritonRandomCrop(nn.Module):
         if len(self.size) != 2:
             raise ValueError(f"size must have 2 elements, got {len(self.size)}")
         
-        self.per_image_randomness = per_image_randomness
+        self.same_on_batch = same_on_batch
     
     @staticmethod
     def get_params(image: torch.Tensor, output_size: Tuple[int, int]) -> Tuple[int, int, int, int]:
@@ -670,7 +670,7 @@ class TritonRandomCrop(nn.Module):
             )
         
         # Generate crop positions
-        if self.per_image_randomness:
+        if self.same_on_batch:
             # Per-image random crop positions
             top_offsets = torch.randint(0, h - th + 1, (batch_size,), device=image.device, dtype=torch.int32)
             left_offsets = torch.randint(0, w - tw + 1, (batch_size,), device=image.device, dtype=torch.int32)
@@ -689,7 +689,7 @@ class TritonRandomCrop(nn.Module):
         return result
     
     def __repr__(self):
-        return f"{self.__class__.__name__}(size={self.size}, per_image_randomness={self.per_image_randomness})"
+        return f"{self.__class__.__name__}(size={self.size}, same_on_batch={self.same_on_batch})"
 
 
 class TritonCenterCrop(nn.Module):
@@ -743,8 +743,8 @@ class TritonRandomHorizontalFlip(nn.Module):
     
     Args:
         p: Probability of flipping (default: 0.5)
-        per_image_randomness: If True (default), each image in batch gets different random decision.
-                             If False, all images in batch share the same decision.
+        same_on_batch: If True, all images in batch share the same decision.
+                             If False (default), each image in batch gets different random decision.
         
     Example:
         >>> transform = TritonRandomHorizontalFlip(p=0.5)
@@ -752,12 +752,12 @@ class TritonRandomHorizontalFlip(nn.Module):
         >>> flipped = transform(img)  # Each image has 50% chance of being flipped
     """
     
-    def __init__(self, p: float = 0.5, per_image_randomness: bool = True):
+    def __init__(self, p: float = 0.5, same_on_batch: bool = False):
         super().__init__()
         if not (0.0 <= p <= 1.0):
             raise ValueError(f"p ({p}) must be in [0, 1]")
         self.p = p
-        self.per_image_randomness = per_image_randomness
+        self.same_on_batch = same_on_batch
     
     def forward(self, image: torch.Tensor) -> torch.Tensor:
         """
@@ -784,7 +784,7 @@ class TritonRandomHorizontalFlip(nn.Module):
         batch_size = image.shape[0]
         
         # Generate per-image or batch-wide flip decisions
-        flip_mask = F._sample_bernoulli_tensor(batch_size, self.p, image.device, self.per_image_randomness)
+        flip_mask = F._sample_bernoulli_tensor(batch_size, self.p, image.device, self.same_on_batch)
         
         # Use kernel-based per-image flipping
         result = F.horizontal_flip(image, flip_mask=flip_mask)
@@ -795,7 +795,7 @@ class TritonRandomHorizontalFlip(nn.Module):
         return result
     
     def __repr__(self):
-        return f"{self.__class__.__name__}(p={self.p}, per_image_randomness={self.per_image_randomness})"
+        return f"{self.__class__.__name__}(p={self.p}, same_on_batch={self.same_on_batch})"
 
 
 class TritonRandomCropFlip(nn.Module):
@@ -810,19 +810,19 @@ class TritonRandomCropFlip(nn.Module):
     Args:
         size: Desired output size (height, width) or int for square crop
         horizontal_flip_p: Probability of horizontal flip (default: 0.5)
-        per_image_randomness: If True, each image in batch gets different random parameters (default: True)
-                             If False, all images in batch share the same random parameters
+        same_on_batch: If True, all images in batch share the same random parameters
+                             If False (default), each image in batch gets different random parameters
         
     Example:
         >>> # Fused version (FAST - single kernel, per-image randomness)
-        >>> transform_fused = TritonRandomCropFlip(112, horizontal_flip_p=0.5, per_image_randomness=True)
+        >>> transform_fused = TritonRandomCropFlip(112, horizontal_flip_p=0.5, same_on_batch=False)
         >>> img = torch.rand(4, 3, 224, 224, device='cuda')
         >>> result = transform_fused(img)  # Each image gets different crop & flip
         >>> 
         >>> # Equivalent sequential version (SLOWER - 2 kernels)
         >>> transform_seq = nn.Sequential(
-        ...     TritonRandomCrop(112, per_image_randomness=True),
-        ...     TritonRandomHorizontalFlip(p=0.5, per_image_randomness=True)
+        ...     TritonRandomCrop(112, same_on_batch=False),
+        ...     TritonRandomHorizontalFlip(p=0.5, same_on_batch=False)
         ... )
         >>> result_seq = transform_seq(img)
     
@@ -835,7 +835,7 @@ class TritonRandomCropFlip(nn.Module):
         self,
         size: Union[int, Sequence[int]],
         horizontal_flip_p: float = 0.5,
-        per_image_randomness: bool = True
+        same_on_batch: bool = False
     ):
         super().__init__()
         if isinstance(size, int):
@@ -852,7 +852,7 @@ class TritonRandomCropFlip(nn.Module):
             raise ValueError(f"horizontal_flip_p ({horizontal_flip_p}) must be in [0, 1]")
         
         self.horizontal_flip_p = horizontal_flip_p
-        self.per_image_randomness = per_image_randomness
+        self.same_on_batch = same_on_batch
     
     def forward(self, image: torch.Tensor) -> torch.Tensor:
         """
@@ -873,7 +873,7 @@ class TritonRandomCropFlip(nn.Module):
             )
         
         # Generate per-image or batch-wide crop offsets
-        if self.per_image_randomness:
+        if self.same_on_batch:
             top_offsets = torch.randint(0, img_height - th + 1, (batch_size,), device=image.device, dtype=torch.int32)
             left_offsets = torch.randint(0, img_width - tw + 1, (batch_size,), device=image.device, dtype=torch.int32)
         else:
@@ -884,7 +884,7 @@ class TritonRandomCropFlip(nn.Module):
         
         # Generate per-image or batch-wide flip decisions
         flip_mask = F._sample_bernoulli_tensor(
-            batch_size, self.horizontal_flip_p, image.device, per_image=self.per_image_randomness
+            batch_size, self.horizontal_flip_p, image.device, same_on_batch=self.same_on_batch
         )
         
         # Single fused kernel launch (using fused_augment with no-op color operations)
@@ -904,7 +904,7 @@ class TritonRandomCropFlip(nn.Module):
         )
     
     def __repr__(self):
-        return f"{self.__class__.__name__}(size={self.size}, horizontal_flip_p={self.horizontal_flip_p}, per_image_randomness={self.per_image_randomness})"
+        return f"{self.__class__.__name__}(size={self.size}, horizontal_flip_p={self.horizontal_flip_p}, same_on_batch={self.same_on_batch})"
 
 
 class TritonFusedAugment(nn.Module):
@@ -930,8 +930,8 @@ class TritonFusedAugment(nn.Module):
         random_grayscale_p: Probability of converting to grayscale (default: 0.0, no grayscale)
         mean: Sequence of means for R, G, B channels
         std: Sequence of stds for R, G, B channels
-        per_image_randomness: If True (default), each image in the batch gets different random parameters.
-                             If False, all images in the batch share the same parameters (slightly faster).
+        same_on_batch: If True, all images in the batch share the same parameters.
+                             If False (default), each image in the batch gets different random parameters.
         
     Example:
         >>> # Replace torchvision Compose with single transform:
@@ -960,7 +960,7 @@ class TritonFusedAugment(nn.Module):
     
     Note:
         - Uses FAST contrast (centered scaling), not torchvision's blend-with-mean
-        - By default, each image gets different random parameters (set per_image_randomness=False for same params)
+        - By default, each image gets different random parameters (set same_on_batch=False for same params)
         - Input must be (N, 3, H, W) float tensor on CUDA in [0, 1] range
     """
     
@@ -974,7 +974,7 @@ class TritonFusedAugment(nn.Module):
         random_grayscale_p: float = 0.0,
         mean: tuple[float, float, float] = (0.485, 0.456, 0.406),
         std: tuple[float, float, float] = (0.229, 0.224, 0.225),
-        per_image_randomness: bool = True,
+        same_on_batch: bool = False,
     ):
         super().__init__()
         
@@ -996,7 +996,7 @@ class TritonFusedAugment(nn.Module):
         self.mean = mean
         self.std = std
         
-        self.per_image_randomness = per_image_randomness
+        self.same_on_batch = same_on_batch
     
     def _check_input(
         self,
@@ -1039,7 +1039,7 @@ class TritonFusedAugment(nn.Module):
         Returns:
             Tuple of (top_offsets, left_offsets, flip_mask, brightness_factors, contrast_factors, saturation_factors, grayscale_mask)
             - All are tensors of shape (N,)
-            - If per_image_randomness=False, tensors are filled with the same value for all images
+            - If same_on_batch=False, tensors are filled with the same value for all images
         """
         # Validate crop size
         if self.crop_height > image_height or self.crop_width > image_width:
@@ -1049,7 +1049,7 @@ class TritonFusedAugment(nn.Module):
             )
         
         # Sample crop parameters (integer offsets)
-        if self.per_image_randomness:
+        if self.same_on_batch:
             top_offsets = torch.randint(0, image_height - self.crop_height + 1, (batch_size,), device=device, dtype=torch.int32)
             left_offsets = torch.randint(0, image_width - self.crop_width + 1, (batch_size,), device=device, dtype=torch.int32)
         else:
@@ -1060,31 +1060,31 @@ class TritonFusedAugment(nn.Module):
         
         # Sample flip decisions
         flip_mask = (
-            F._sample_bernoulli_tensor(batch_size, self.horizontal_flip_p, device, self.per_image_randomness)
+            F._sample_bernoulli_tensor(batch_size, self.horizontal_flip_p, device, self.same_on_batch)
             if self.horizontal_flip_p > 0
             else torch.zeros(batch_size, device=device, dtype=torch.uint8)
         )
         
         # Sample color jitter parameters
         brightness_factors = (
-            F._sample_uniform_tensor(batch_size, self.brightness[0], self.brightness[1], device, self.per_image_randomness)
+            F._sample_uniform_tensor(batch_size, self.brightness[0], self.brightness[1], device, self.same_on_batch)
             if self.brightness is not None
             else torch.ones(batch_size, device=device)
         )
         contrast_factors = (
-            F._sample_uniform_tensor(batch_size, self.contrast[0], self.contrast[1], device, self.per_image_randomness)
+            F._sample_uniform_tensor(batch_size, self.contrast[0], self.contrast[1], device, self.same_on_batch)
             if self.contrast is not None
             else torch.ones(batch_size, device=device)
         )
         saturation_factors = (
-            F._sample_uniform_tensor(batch_size, self.saturation[0], self.saturation[1], device, self.per_image_randomness)
+            F._sample_uniform_tensor(batch_size, self.saturation[0], self.saturation[1], device, self.same_on_batch)
             if self.saturation is not None
             else torch.ones(batch_size, device=device)
         )
         
         # Sample grayscale decisions
         grayscale_mask = (
-            F._sample_bernoulli_tensor(batch_size, self.random_grayscale_p, device, self.per_image_randomness)
+            F._sample_bernoulli_tensor(batch_size, self.random_grayscale_p, device, self.same_on_batch)
             if self.random_grayscale_p > 0
             else torch.zeros(batch_size, device=device, dtype=torch.uint8)
         )
@@ -1118,7 +1118,7 @@ class TritonFusedAugment(nn.Module):
         
         batch_size, _, img_height, img_width = image.shape
         
-        # Sample all random parameters (per-image if per_image_randomness=True)
+        # Sample all random parameters (per-image if same_on_batch=False)
         top_offsets, left_offsets, flip_mask, brightness_factors, contrast_factors, saturation_factors, grayscale_mask = self._get_params(
             batch_size, img_height, img_width, image.device
         )

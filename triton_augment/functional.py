@@ -126,73 +126,73 @@ def _sample_uniform_tensor(
     min_val: float,
     max_val: float,
     device: torch.device,
-    per_image: bool = True
+    same_on_batch: bool = False
 ) -> torch.Tensor:
     """
-    Sample uniform random values, supporting both per-image and batch-wide randomness.
+    Sample uniform random values, supporting both per-sample and batch-wide randomness.
     
     Args:
         batch_size: Number of samples to generate
         min_val: Minimum value (inclusive)
         max_val: Maximum value (exclusive)
         device: Device to create tensor on
-        per_image: If True, different value for each image. If False, same value for all.
+        same_on_batch: If True, same value for all samples. If False, different value per sample (default).
     
     Returns:
         Tensor of shape (batch_size,) with uniform random values
     
     Example:
-        >>> # Per-image randomness
-        >>> t = _sample_uniform_tensor(4, 0.8, 1.2, 'cuda', per_image=True)
+        >>> # Different per sample (default)
+        >>> t = _sample_uniform_tensor(4, 0.8, 1.2, 'cuda', same_on_batch=False)
         >>> # t = tensor([0.95, 1.1, 0.82, 1.18], device='cuda')
         >>> 
-        >>> # Same for all images
-        >>> t = _sample_uniform_tensor(4, 0.8, 1.2, 'cuda', per_image=False)
+        >>> # Same for all samples
+        >>> t = _sample_uniform_tensor(4, 0.8, 1.2, 'cuda', same_on_batch=True)
         >>> # t = tensor([1.05, 1.05, 1.05, 1.05], device='cuda')
     """
-    if per_image:
-        # Different value for each image
-        return torch.empty(batch_size, device=device).uniform_(min_val, max_val)
-    else:
-        # Same value for all images
+    if same_on_batch:
+        # Same value for all samples
         single_val = torch.empty(1).uniform_(min_val, max_val).item()
         return torch.full((batch_size,), single_val, device=device)
+    else:
+        # Different value per sample
+        return torch.empty(batch_size, device=device).uniform_(min_val, max_val)
 
 
 def _sample_bernoulli_tensor(
     batch_size: int,
     p: float,
     device: torch.device,
-    per_image: bool = True
+    same_on_batch: bool = False
 ) -> torch.Tensor:
     """
-    Sample Bernoulli random values as uint8 (0 or 1), supporting both per-image and batch-wide randomness.
+    Sample Bernoulli random values as uint8 (0 or 1), supporting both per-sample and batch-wide randomness.
     
     Args:
         batch_size: Number of samples to generate
         p: Probability of 1 (success)
         device: Device to create tensor on
-        per_image: If True, different decision for each image. If False, same decision for all.
+        same_on_batch: If True, same decision for all samples. If False, different decision per sample (default).
     
     Returns:
         Tensor of shape (batch_size,) with uint8 values (0 or 1)
     
     Example:
-        >>> # Per-image randomness
-        >>> t = _sample_bernoulli_tensor(4, 0.5, 'cuda', per_image=True)
+        >>> # Different per sample (default)
+        >>> t = _sample_bernoulli_tensor(4, 0.5, 'cuda', same_on_batch=False)
         >>> # t = tensor([1, 0, 1, 1], device='cuda', dtype=torch.uint8)
         >>> 
-        >>> # Same for all images
-        >>> t = _sample_bernoulli_tensor(4, 0.5, 'cuda', per_image=False)
+        >>> # Same for all samples
+        >>> t = _sample_bernoulli_tensor(4, 0.5, 'cuda', same_on_batch=True)
         >>> # t = tensor([0, 0, 0, 0], device='cuda', dtype=torch.uint8)
     """
-    if per_image:
-        # Different decision for each image
-        return (torch.rand(batch_size, device=device) < p).to(torch.uint8)
-    else:
-        # Same decision for all images
+    if same_on_batch:
+        # Same decision for all samples
         single_decision = 1 if torch.rand(1).item() < p else 0
         return torch.full((batch_size,), single_decision, device=device, dtype=torch.uint8)
+    else:
+        # Different decision per sample
+        return (torch.rand(batch_size, device=device) < p).to(torch.uint8)
 
 
 def rgb_to_grayscale(

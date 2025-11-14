@@ -190,7 +190,7 @@ def main():
         random_grayscale_p=0.1,          # 10% chance of grayscale
         mean=(0.4914, 0.4822, 0.4465),   # CIFAR-10 mean
         std=(0.2470, 0.2435, 0.2616),    # CIFAR-10 std
-        per_image_randomness=True        # Each image gets different random params
+        same_on_batch=False        # Each image gets different random params
     )
     
     test_transform = ta.TritonNormalize(

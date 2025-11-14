@@ -1,6 +1,6 @@
 # Welcome to Triton-Augment
 
-<div align="center">
+<div class="hero-section" markdown>
 
 **GPU-Accelerated Image Augmentation with Kernel Fusion**
 
@@ -18,21 +18,21 @@
 
 ## What is Triton-Augment?
 
-Triton-Augment is a high-performance image augmentation library that leverages [OpenAI Triton](https://github.com/openai/triton) to **fuse common per-pixel operations**, providing significant speedups over standard PyTorch implementations.
+Triton-Augment is a high-performance image augmentation library that leverages [OpenAI Triton](https://github.com/openai/triton) to **fuse common transform operations**, providing significant speedups over standard PyTorch implementations.
 
 ### Key Idea
 
 Instead of launching separate GPU kernels for each operation:
 
 ```
-Traditional: GPU ←→ Brightness ←→ GPU ←→ Contrast ←→ GPU ←→ Normalize ←→ GPU
+Traditional: GPU ←→ Crop ←→ GPU ←→ Flip ←→ GPU ←→ Brightness ←→ GPU ←→ Contrast ←→ GPU ←→ Saturation ←→ GPU ←→ Normalize ←→ GPU
                     ❌ Slow (multiple memory transfers)
 ```
 
 Triton-Augment fuses operations into a single kernel:
 
 ```
-Triton-Augment: GPU ←→ [Brightness + Contrast + Saturation + Normalize] ←→ GPU
+Triton-Augment: GPU ←→ [Crop + Flip + Brightness + Contrast + Saturation + Normalize] ←→ GPU
                        ✅ Fast (single memory transfer)
 ```
 
@@ -42,13 +42,13 @@ Triton-Augment: GPU ←→ [Brightness + Contrast + Saturation + Normalize] ←�
 
 ## 🚀 Key Features
 
-- **Ultimate Fusion**: Combine ALL augmentations (crop, flip, color jitter, normalize) in a **single GPU kernel** - ~3-5x faster! 🚀
-- **Three Fusion Levels**: Choose between ultimate (all ops), specialized (geometric/pixel), or individual operations
-- **Zero Intermediate Memory**: Eliminate DRAM reads/writes between operations
-- **Float16 Support**: Full support for half-precision with additional performance gains
-- **Auto-Tuned Performance**: Optional auto-tuning for optimal kernel configurations
-- **Drop-in Replacement**: Familiar torchvision-like API
-- **PyTorch Compatible**: Works seamlessly with PyTorch data loading pipelines
+- **One Kernel, All Operations**: Fuse crop, flip, color jitter, grayscale, and normalize in a single kernel - ~3-5x faster! 🚀
+- **Per-Image Randomness**: Each image in batch gets different random augmentations (not just batch-wide)
+- **Transform & Functional APIs**: Random parameters (transforms) or fixed parameters (functional) - your choice
+- **Zero Memory Overhead**: No intermediate buffers between operations
+- **Float16 Ready**: Additional 1.3-2x speedup with half-precision
+- **Drop-in Replacement**: torchvision-like API, easy migration
+- **Auto-Tuning**: Optional performance optimization for your GPU
 
 ---
 

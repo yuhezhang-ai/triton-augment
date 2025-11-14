@@ -201,7 +201,7 @@ def main():
         random_grayscale_p=0.0,
         mean=(0.1307,),
         std=(0.3081,),
-        per_image_randomness=True  # Each image gets different random params
+        same_on_batch=False  # Each image gets different random params
     )
     
     test_transform = ta.TritonNormalize(

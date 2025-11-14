@@ -6,28 +6,29 @@
 [![PyTorch 2.0+](https://img.shields.io/badge/pytorch-2.0+-ee4c2c.svg)](https://pytorch.org/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
 
-Triton-Augment is a high-performance image augmentation library that leverages [OpenAI Triton](https://github.com/openai/triton) to fuse common per-pixel operations, providing significant speedups over standard PyTorch implementations.
+Triton-Augment is a high-performance image augmentation library that leverages [OpenAI Triton](https://github.com/openai/triton) to fuse common transform operations, providing significant speedups over standard PyTorch implementations.
 
 **Key Idea**: Fuse multiple GPU operations into a single kernel → eliminate intermediate memory transfers → faster augmentation.
 
 ```python
-# Traditional (torchvision Compose): 6 kernel launches
-crop → flip → brightness → contrast → saturation → normalize
+# Traditional (torchvision Compose): 7 kernel launches
+crop → flip → brightness → contrast → saturation → grayscale (optional) → normalize
 
 # Triton-Augment Ultimate Fusion: 1 kernel launch 🚀
-[crop + flip + brightness + contrast + saturation + normalize]
+[crop + flip + brightness + contrast + saturation + grayscale + normalize]
 ```
 
 ---
 
 ## 🚀 Features
 
-- **Ultimate Fusion**: ALL augmentations (crop, flip, color jitter, normalize) in ONE kernel - ~3-5x faster! 🚀
-- **Three Fusion Levels**: Ultimate (all ops), specialized (geometric/pixel), or individual operations
-- **Zero Intermediate Memory**: No temporary buffers between operations
-- **Float16 Support**: Additional 1.3-2x speedup on modern GPUs
-- **torchvision-like API**: Familiar interface
-- **Auto-Tuning**: Optional performance optimization
+- **One Kernel, All Operations**: Fuse crop, flip, color jitter, grayscale, and normalize in a single kernel - ~3-5x faster! 🚀
+- **Different Parameters Per Sample**: Each image in batch gets different random augmentations (not just batch-wide)
+- **Transform & Functional APIs**: Random parameters (transforms) or fixed parameters (functional) - your choice
+- **Zero Memory Overhead**: No intermediate buffers between operations
+- **Float16 Ready**: Additional 1.3-2x speedup with half-precision
+- **Drop-in Replacement**: torchvision-like API, easy migration
+- **Auto-Tuning**: Optional performance optimization for your GPU
 
 ---
 
@@ -105,8 +106,8 @@ augmented = transform(images)  # Single kernel for color + normalize
 | [API Reference](docs/api-reference.md) | Complete API documentation for all functions and classes |
 | [Float16 Support](docs/float16.md) | Use half-precision for 1.3-2x speedup and 50% memory savings |
 | [Contrast Notes](docs/contrast.md) | **Important**: Fused kernel uses fast contrast (different from torchvision). See how to get exact torchvision results |
-| [Auto-Tuning](docs/auto-tuning.md) | Optional performance optimization (disabled by default). Includes cache warm-up guide |
-| [Batch Behavior](docs/batch-behavior.md) | **Important**: Random augmentations use same parameters for all images in batch. Learn how to get per-image randomness |
+| [Auto-Tuning](docs/auto-tuning.md) | Optional performance optimization for your GPU and data size (disabled by default). Includes cache warm-up guide |
+| [Batch Behavior](docs/batch-behavior.md) | Different parameters per sample (default) vs batch-wide parameters. Understanding `same_on_batch` flag |
 
 ---
 
@@ -115,11 +116,11 @@ augmented = transform(images)  # Single kernel for color + normalize
 By fusing operations, Triton-Augment eliminates intermediate memory transfers:
 
 ```
-Traditional:  GPU ←→ Op1 ←→ GPU ←→ Op2 ←→ GPU ←→ Op3 ←→ GPU
-                     ❌ Multiple memory transfers
+Traditional:  GPU ←→ Crop ←→ GPU ←→ Flip ←→ GPU ←→ Brightness ←→ GPU ←→ Contrast ←→ GPU ←→ Saturation ←→ GPU ←→ Normalize ←→ GPU
+                     ❌ Slow (multiple memory transfers)
 
-Triton:       GPU ←→ [Op1 + Op2 + Op3] ←→ GPU
-                     ✅ Single memory transfer
+Triton:       GPU ←→ [Crop + Flip + Brightness + Contrast + Saturation + Normalize] ←→ GPU
+                     ✅ Fast (single memory transfer)
 ```
 
 **Quick Benchmark** (Ultimate Fusion only):
@@ -128,7 +129,7 @@ Triton:       GPU ←→ [Op1 + Op2 + Op3] ←→ GPU
 python examples/benchmark.py
 ```
 
-> **Note**: Benchmarks use `torchvision.transforms.v2` (not the legacy v1 API).
+> **Note**: Benchmarks use `torchvision.transforms.v2` (not the legacy v1 API) for comparison.
 
 **Detailed Benchmark** (All operations):
 ```bash
@@ -203,7 +204,7 @@ augment = ta.TritonFusedAugment(
     brightness=0.2, contrast=0.2, saturation=0.2,
     mean=(0.4914, 0.4822, 0.4465),
     std=(0.2470, 0.2435, 0.2616),
-    per_image_randomness=True  # Each image gets different random params (default)
+    same_on_batch=False  # Each image gets different random params (default)
 )
 
 # Step 3: Apply in training loop on GPU batches
@@ -218,12 +219,12 @@ for images, labels in train_loader:
 **Why This Pattern:**
 - ✅ **Fast async data loading**: `num_workers > 0` for CPU parallelism
 - ✅ **Fast GPU batch processing**: All augmentations in 1 fused kernel
-- ✅ **Per-image randomness**: Each image gets different random parameters (default)
+- ✅ **Different parameters per sample**: Each image gets different random parameters (default)
 - ✅ **Best of both worlds**: CPU for I/O, GPU for compute
 - ✅ **Kernel fusion**: No intermediate memory allocations
 - ✅ **Large batch advantage**: Speedup increases with batch size
 
-**Note**: Set `per_image_randomness=False` if you want all images to share the same random parameters (slightly faster, but less useful for training).
+**Note**: Set `same_on_batch=True` if you want all images to share the same random parameters (slightly faster, but less useful for training).
 
 💡 **Pro Tip**: Apply Triton-Augment transforms AFTER moving tensors to GPU for maximum performance!
 

@@ -1,7 +1,7 @@
 """
 Tests for per-image randomness feature.
 
-Tests that per_image_randomness parameter works correctly in transform classes
+Tests that same_on_batch parameter works correctly in transform classes
 and that functional API accepts per-image tensor parameters.
 """
 
@@ -20,13 +20,13 @@ class TestPerImageRandomnessTransforms:
     """Test per-image randomness in transform classes."""
     
     def test_fused_augment_per_image_produces_different_results(self):
-        """Test that per_image_randomness=True produces different augmentations per image."""
+        """Test that same_on_batch=False produces different augmentations per image."""
         transform = ta.TritonFusedAugment(
             crop_size=112,
             horizontal_flip_p=0.5,
             brightness=(0.5, 1.5),
             saturation=(0.5, 1.5),
-            per_image_randomness=True
+            same_on_batch=False
         )
         
         # Create identical images in batch
@@ -45,16 +45,16 @@ class TestPerImageRandomnessTransforms:
                 break
         else:
             # If we get here, all images are identical (should not happen)
-            pytest.fail("All images in batch are identical despite per_image_randomness=True")
+            pytest.fail("All images in batch are identical despite same_on_batch=False")
     
     def test_fused_augment_per_image_false_produces_same_results(self):
-        """Test that per_image_randomness=False produces identical augmentations."""
+        """Test that same_on_batch=True produces identical augmentations."""
         transform = ta.TritonFusedAugment(
             crop_size=112,
             horizontal_flip_p=0.5,
             brightness=(0.5, 1.5),
             saturation=(0.5, 1.5),
-            per_image_randomness=False
+            same_on_batch=True
         )
         
         # Create identical images in batch
@@ -69,8 +69,8 @@ class TestPerImageRandomnessTransforms:
             torch.testing.assert_close(result[0], result[i])
     
     def test_random_crop_per_image_produces_different_crops(self):
-        """Test that TritonRandomCrop with per_image_randomness produces different crops."""
-        transform = ta.TritonRandomCrop(112, per_image_randomness=True)
+        """Test that TritonRandomCrop with same_on_batch produces different crops."""
+        transform = ta.TritonRandomCrop(112, same_on_batch=False)
         
         # Create identical images
         img = torch.ones(4, 3, 224, 224, device='cuda')
@@ -91,8 +91,8 @@ class TestPerImageRandomnessTransforms:
         assert len(set(marker_counts)) > 1, "All crops are identical (unlikely with random cropping)"
     
     def test_random_horizontal_flip_per_image(self):
-        """Test that TritonRandomHorizontalFlip with per_image_randomness flips differently."""
-        transform = ta.TritonRandomHorizontalFlip(p=0.5, per_image_randomness=True)
+        """Test that TritonRandomHorizontalFlip with same_on_batch flips differently."""
+        transform = ta.TritonRandomHorizontalFlip(p=0.5, same_on_batch=False)
         
         # Create batch with asymmetric pattern (detectable flip)
         img = torch.zeros(8, 3, 64, 64, device='cuda')
@@ -110,8 +110,8 @@ class TestPerImageRandomnessTransforms:
         assert left_bright != 8 and right_bright != 8, "All images treated identically"
     
     def test_random_grayscale_per_image(self):
-        """Test that TritonRandomGrayscale with per_image_randomness works per-image."""
-        transform = ta.TritonRandomGrayscale(p=0.5, per_image_randomness=True)
+        """Test that TritonRandomGrayscale with same_on_batch works per-image."""
+        transform = ta.TritonRandomGrayscale(p=0.5, same_on_batch=False)
         
         img = torch.rand(8, 3, 128, 128, device='cuda', dtype=torch.float32)
         

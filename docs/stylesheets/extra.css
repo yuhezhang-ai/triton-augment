@@ -53,9 +53,21 @@ table td, table th {
 }
 
 /* Center align for hero sections */
-div[align="center"] {
+div[align="center"],
+.hero-section {
     text-align: center;
     margin: 2rem 0;
+}
+
+.hero-section img {
+    display: inline-block;
+    margin: 0.25rem;
+    vertical-align: middle;
+}
+
+.hero-section .md-button {
+    display: inline-block;
+    margin: 0.5rem;
 }
 
 /* API reference improvements */
