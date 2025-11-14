@@ -671,15 +671,15 @@ class TritonRandomCrop(nn.Module):
         
         # Generate crop positions
         if self.same_on_batch:
-            # Per-image random crop positions
-            top_offsets = torch.randint(0, h - th + 1, (batch_size,), device=image.device, dtype=torch.int32)
-            left_offsets = torch.randint(0, w - tw + 1, (batch_size,), device=image.device, dtype=torch.int32)
-        else:
             # Same crop position for all images
             top = torch.randint(0, h - th + 1, (1,)).item()
             left = torch.randint(0, w - tw + 1, (1,)).item()
             top_offsets = torch.full((batch_size,), top, device=image.device, dtype=torch.int32)
             left_offsets = torch.full((batch_size,), left, device=image.device, dtype=torch.int32)
+        else:
+            # Per-image random crop positions
+            top_offsets = torch.randint(0, h - th + 1, (batch_size,), device=image.device, dtype=torch.int32)
+            left_offsets = torch.randint(0, w - tw + 1, (batch_size,), device=image.device, dtype=torch.int32)
         
         result = F.crop(image, top_offsets, left_offsets, th, tw)
         
@@ -874,13 +874,15 @@ class TritonRandomCropFlip(nn.Module):
         
         # Generate per-image or batch-wide crop offsets
         if self.same_on_batch:
-            top_offsets = torch.randint(0, img_height - th + 1, (batch_size,), device=image.device, dtype=torch.int32)
-            left_offsets = torch.randint(0, img_width - tw + 1, (batch_size,), device=image.device, dtype=torch.int32)
-        else:
+            # Same offsets for all images
             top = torch.randint(0, img_height - th + 1, (1,), device=image.device, dtype=torch.int32).item()
             left = torch.randint(0, img_width - tw + 1, (1,), device=image.device, dtype=torch.int32).item()
             top_offsets = torch.full((batch_size,), top, device=image.device, dtype=torch.int32)
             left_offsets = torch.full((batch_size,), left, device=image.device, dtype=torch.int32)
+        else:
+            # Different offsets per image
+            top_offsets = torch.randint(0, img_height - th + 1, (batch_size,), device=image.device, dtype=torch.int32)
+            left_offsets = torch.randint(0, img_width - tw + 1, (batch_size,), device=image.device, dtype=torch.int32)
         
         # Generate per-image or batch-wide flip decisions
         flip_mask = F._sample_bernoulli_tensor(
@@ -1050,13 +1052,15 @@ class TritonFusedAugment(nn.Module):
         
         # Sample crop parameters (integer offsets)
         if self.same_on_batch:
-            top_offsets = torch.randint(0, image_height - self.crop_height + 1, (batch_size,), device=device, dtype=torch.int32)
-            left_offsets = torch.randint(0, image_width - self.crop_width + 1, (batch_size,), device=device, dtype=torch.int32)
-        else:
+            # Same offsets for all images
             top = torch.randint(0, image_height - self.crop_height + 1, (1,)).item()
             left = torch.randint(0, image_width - self.crop_width + 1, (1,)).item()
             top_offsets = torch.full((batch_size,), top, device=device, dtype=torch.int32)
             left_offsets = torch.full((batch_size,), left, device=device, dtype=torch.int32)
+        else:
+            # Different offsets per image
+            top_offsets = torch.randint(0, image_height - self.crop_height + 1, (batch_size,), device=device, dtype=torch.int32)
+            left_offsets = torch.randint(0, image_width - self.crop_width + 1, (batch_size,), device=device, dtype=torch.int32)
         
         # Sample flip decisions
         flip_mask = (
