@@ -75,9 +75,9 @@ def crop_kernel(
         top_offset = tl.load(top_offsets_ptr + n, mask=mask, other=0)
         left_offset = tl.load(left_offsets_ptr + n, mask=mask, other=0)
     else:
-        # All images use the same offset (load from first element)
-        top_offset = tl.load(top_offsets_ptr, mask=mask, other=0)
-        left_offset = tl.load(left_offsets_ptr, mask=mask, other=0)
+        # All images use the same offset (load scalar from first element, no mask needed)
+        top_offset = tl.load(top_offsets_ptr)
+        left_offset = tl.load(left_offsets_ptr)
     
     # Calculate corresponding input position (apply crop offset)
     h_in = h_out + top_offset
