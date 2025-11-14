@@ -107,11 +107,14 @@ def benchmark_color_jitter_normalize(size, batch_size, provider):
             return 0, 0, 0
         
         def fn():
-            return ta.fused_color_normalize(
+            return ta.fused_augment(
                 images,
+                top=0, left=0, height=size, width=size,  # No-op crop
+                flip_horizontal=False,  # No flip
                 brightness_factor=brightness_factor,
                 contrast_factor=contrast_factor,  # Uses FAST contrast
                 saturation_factor=saturation_factor,
+                grayscale=False,  # No grayscale
                 mean=mean,
                 std=std,
             )
@@ -139,7 +142,7 @@ def benchmark_color_jitter_normalize(size, batch_size, provider):
 )
 def benchmark_without_contrast(size, batch_size, provider):
     """
-    Fair comparison with FIXED factors: Brightness + Saturation + Grayscale + Normalize (NO contrast).
+    Fair comparison with FIXED factors: Brightness + Saturation + Normalize (NO contrast, NO grayscale).
     
     This benchmark excludes contrast to provide a fair comparison since:
     - Torchvision uses blend-with-mean (slower, exact)
@@ -156,7 +159,6 @@ def benchmark_without_contrast(size, batch_size, provider):
     # Fixed parameters
     brightness_factor = 1.2
     saturation_factor = 0.9
-    random_grayscale_p = 0.1
     mean = (0.485, 0.456, 0.406)
     std = (0.229, 0.224, 0.225)
     
@@ -169,9 +171,6 @@ def benchmark_without_contrast(size, batch_size, provider):
         def fn():
             img = tvF.adjust_brightness(images, brightness_factor)
             img = tvF.adjust_saturation(img, saturation_factor)
-            # Random grayscale with p=0.1
-            if torch.rand(1).item() < random_grayscale_p:
-                img = tvF.rgb_to_grayscale(img, num_output_channels=3)
             img = tvF.normalize(img, mean=list(mean), std=list(std))
             return img
         
@@ -184,7 +183,6 @@ def benchmark_without_contrast(size, batch_size, provider):
         def fn():
             img = ta.adjust_brightness(images, brightness_factor)
             img = ta.adjust_saturation(img, saturation_factor)
-            img = ta.random_grayscale(img, p=random_grayscale_p)
             img = ta.normalize(img, mean, std)
             return img
         
@@ -195,12 +193,14 @@ def benchmark_without_contrast(size, batch_size, provider):
             return 0, 0, 0
         
         def fn():
-            return ta.fused_color_normalize(
+            return ta.fused_augment(
                 images,
+                top=0, left=0, height=size, width=size,  # No-op crop
+                flip_horizontal=False,  # No flip
                 brightness_factor=brightness_factor,
                 contrast_factor=1.0,  # No contrast adjustment
                 saturation_factor=saturation_factor,
-                random_grayscale_p=random_grayscale_p,
+                grayscale=False,  # No grayscale
                 mean=mean,
                 std=std,
             )
@@ -227,13 +227,12 @@ def benchmark_without_contrast(size, batch_size, provider):
     )
 )
 def benchmark_batch_scaling(batch_size, size, provider):
-    """Benchmark how performance scales with batch size using FIXED factors (no contrast for fairness)."""
+    """Benchmark how performance scales with batch size using FIXED factors (no contrast, no grayscale for fairness)."""
     images = torch.rand(batch_size, 3, size, size, device='cuda', dtype=torch.float32)
     
     # Fixed parameters
     brightness_factor = 1.2
     saturation_factor = 0.9
-    random_grayscale_p = 0.1
     mean = (0.485, 0.456, 0.406)
     std = (0.229, 0.224, 0.225)
     
@@ -246,8 +245,6 @@ def benchmark_batch_scaling(batch_size, size, provider):
         def fn():
             img = tvF.adjust_brightness(images, brightness_factor)
             img = tvF.adjust_saturation(img, saturation_factor)
-            if torch.rand(1).item() < random_grayscale_p:
-                img = tvF.rgb_to_grayscale(img, num_output_channels=3)
             img = tvF.normalize(img, mean=list(mean), std=list(std))
             return img
         
@@ -258,12 +255,14 @@ def benchmark_batch_scaling(batch_size, size, provider):
             return 0, 0, 0
         
         def fn():
-            return ta.fused_color_normalize(
+            return ta.fused_augment(
                 images,
+                top=0, left=0, height=size, width=size,  # No-op crop
+                flip_horizontal=False,  # No flip
                 brightness_factor=brightness_factor,
                 contrast_factor=1.0,  # No contrast
                 saturation_factor=saturation_factor,
-                random_grayscale_p=random_grayscale_p,
+                grayscale=False,  # No grayscale
                 mean=mean,
                 std=std,
             )
