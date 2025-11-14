@@ -10,8 +10,10 @@ Outputs a clean markdown table you can paste into README.md.
 
 Usage:
     python examples/benchmark.py
+    python examples/benchmark.py --autotune  # Enable auto-tuning for optimal performance
 """
 
+import argparse
 import torch
 import triton
 from triton.testing import do_bench
@@ -174,5 +176,21 @@ def main():
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(
+        description='Benchmark Triton-Augment vs Torchvision'
+    )
+    parser.add_argument(
+        '--autotune',
+        action='store_true',
+        help='Enable auto-tuning for optimal performance (takes 5-10s on first run)'
+    )
+    args = parser.parse_args()
+    
+    if args.autotune:
+        ta.enable_autotune()
+        print("🔧 Auto-tuning ENABLED - will test 12 configs on first run (~5-10 seconds)\n")
+    else:
+        print("ℹ️  Auto-tuning DISABLED (default config). Use --autotune for optimal performance.\n")
+    
     main()
 

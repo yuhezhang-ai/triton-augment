@@ -17,19 +17,27 @@ from ..config import ENABLE_AUTOTUNE
 DEFAULT_CONFIG = triton.Config({'BLOCK_SIZE': 1024}, num_warps=4, num_stages=3)
 
 # Multiple configurations to search when auto-tuning is enabled
-# These offer robustness across different GPU architectures (T4, RTX, A100)
+# Expanded search space for better stability across workloads and GPUs
 AUTOTUNE_CONFIGS = [
-    # Config 1: Good for smaller, older GPUs (lower register pressure)
-    triton.Config({'BLOCK_SIZE': 256}, num_warps=4, num_stages=2), 
+    # Small block sizes - Good for smaller images/batches, lower register pressure
+    triton.Config({'BLOCK_SIZE': 256}, num_warps=2, num_stages=2),
+    triton.Config({'BLOCK_SIZE': 256}, num_warps=4, num_stages=2),
     
-    # Config 2: Balanced, high occupancy, robust default
-    triton.Config({'BLOCK_SIZE': 1024}, num_warps=4, num_stages=3),
+    # Medium block sizes - Balanced approach
+    triton.Config({'BLOCK_SIZE': 512}, num_warps=4, num_stages=2),
+    triton.Config({'BLOCK_SIZE': 512}, num_warps=4, num_stages=3),
+    triton.Config({'BLOCK_SIZE': 512}, num_warps=8, num_stages=3),
     
-    # Config 3: Higher concurrency (num_warps=8) for large data center GPUs
-    triton.Config({'BLOCK_SIZE': 1024}, num_warps=8, num_stages=3), 
-
-    # Config 4: Max block size, testing higher staging for L2 cache
-    triton.Config({'BLOCK_SIZE': 1024}, num_warps=4, num_stages=4), 
+    # Large block sizes - Good for large images/batches
+    triton.Config({'BLOCK_SIZE': 1024}, num_warps=4, num_stages=2),
+    triton.Config({'BLOCK_SIZE': 1024}, num_warps=4, num_stages=3),  # Robust default
+    triton.Config({'BLOCK_SIZE': 1024}, num_warps=4, num_stages=4),
+    triton.Config({'BLOCK_SIZE': 1024}, num_warps=8, num_stages=3),
+    triton.Config({'BLOCK_SIZE': 1024}, num_warps=8, num_stages=4),
+    
+    # Very large block sizes - For maximum throughput on big workloads
+    triton.Config({'BLOCK_SIZE': 2048}, num_warps=8, num_stages=3),
+    triton.Config({'BLOCK_SIZE': 2048}, num_warps=8, num_stages=4),
 ]
 
 

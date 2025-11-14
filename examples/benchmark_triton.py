@@ -10,9 +10,14 @@ For a simpler, quick benchmark of just the Ultimate Fusion kernel, use:
 This comprehensive script uses triton.testing.perf_report to compare Triton-Augment
 performance with torchvision.transforms.v2 across multiple scenarios.
 
+Usage:
+    python examples/benchmark_triton.py
+    python examples/benchmark_triton.py --autotune  # Enable auto-tuning
+
 Author: yuhezhang-ai
 """
 
+import argparse
 import torch
 import triton
 from triton.testing import perf_report
@@ -617,9 +622,25 @@ def print_ultimate_speedup_summary():
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(
+        description='Comprehensive benchmark for Triton-Augment'
+    )
+    parser.add_argument(
+        '--autotune',
+        action='store_true',
+        help='Enable auto-tuning for optimal performance (takes 5-10s on first run)'
+    )
+    args = parser.parse_args()
+    
     if not torch.cuda.is_available():
         print("Error: CUDA is not available. This benchmark requires a GPU.")
         exit(1)
+    
+    if args.autotune:
+        ta.enable_autotune()
+        print("🔧 Auto-tuning ENABLED - will test 12 configs on first run (~5-10 seconds)")
+    else:
+        print("ℹ️  Auto-tuning DISABLED (default config). Use --autotune for optimal performance.")
     
     print("="*80)
     print("Triton-Augment Performance Benchmark (Using Triton's Benchmark Utilities)")
