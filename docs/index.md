@@ -180,14 +180,17 @@ python examples/benchmark_triton.py
 ## 🎯 When to Use Triton-Augment?
 
 **💡 Use Triton-Augment + Torchvision together:**
+
 - **Torchvision**: Data loading, resize, ToTensor, rotation, affine, etc.
 - **Triton-Augment**: Replace supported operations (currently: crop, flip, color jitter, grayscale, normalize; more coming) with fused GPU kernels
 
 **Best speedup when:**
+
 - Large images (600×600+) or large batches
-- These operations are your bottleneck: crop, flip, brightness, contrast, saturation, normalize
+- Data augmentations are your bottleneck
 
 **Stick with Torchvision only if:**
+
 - Small images (< 256×256) on high-end GPUs (A100+)
 - CPU-only training
 
