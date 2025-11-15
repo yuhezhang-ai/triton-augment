@@ -192,7 +192,7 @@ def compare_contrast(img, output_path='compare_contrast.png'):
         ax.axis('off')
         
         max_diff_fast = torch.abs(tv_result - ta_fast).max().item()
-        add_match_indicator(ax, matches=(max_diff_fast <= 0.01))
+        add_match_indicator(ax, matches=(max_diff_fast <= 1e-5), max_diff=max_diff_fast)
     
     save_and_close_plot(output_path, 'Contrast Comparison: Fast contrast uses different algorithm for speed')
 
@@ -225,7 +225,7 @@ def compare_saturation(img, output_path='compare_saturation.png'):
         
         # Check if they match
         max_diff = torch.abs(tv_result - ta_result).max().item()
-        add_match_indicator(ax, matches=(max_diff < 1e-4))
+        add_match_indicator(ax, matches=(max_diff < 1e-5))
     
     save_and_close_plot(output_path, 'Saturation Comparison: Torchvision vs Triton-Augment')
 
