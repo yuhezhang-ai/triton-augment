@@ -8,6 +8,17 @@
 
 Triton-Augment is a high-performance image augmentation library that leverages [OpenAI Triton](https://github.com/openai/triton) to fuse common transform operations, providing significant speedups over standard PyTorch implementations.
 
+## ⚡ **5 - 12x Faster** than Torchvision on typical training augmentation
+
+Replace your augmentation pipeline with a **single fused kernel** and get:
+- **8.1x average speedup** on Tesla T4 (Google Colab free tier)
+- **Up to 12x faster** on large images (1280×1280)
+- **Greater benefits** on consumer and mid-range GPUs
+
+[📊 See full benchmarks →](#-performance)
+
+---
+
 **Key Idea**: Fuse multiple GPU operations into a single kernel → eliminate intermediate memory transfers → faster augmentation.
 
 ```python
@@ -24,11 +35,10 @@ crop → flip → brightness → contrast → saturation → grayscale → norma
 
 - **One Kernel, All Operations**: Fuse crop, flip, color jitter, grayscale, and normalize in a single kernel - significantly faster, scales with image size! 🚀
 - **Different Parameters Per Sample**: Each image in batch gets different random augmentations (not just batch-wide)
-- **Transform & Functional APIs**: Random parameters (transforms) or fixed parameters (functional) - your choice
 - **Zero Memory Overhead**: No intermediate buffers between operations
-- **Float16 Ready**: ~1.3x speedup on large images + 50% memory savings
-- **Drop-in Replacement**: torchvision-like API, easy migration
+- **Drop-in Replacement**: torchvision-like transforms & functional API, easy migration
 - **Auto-Tuning**: Optional performance optimization for your GPU
+- **Float16 Ready**: ~1.3x speedup on large images + 50% memory savings
 
 ---
 
