@@ -550,7 +550,7 @@
   <a href="#auto-tuning" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Auto-Tuning
+        💡 Auto-Tuning
       
     </span>
   </a>
@@ -1134,7 +1134,7 @@
   <a href="#auto-tuning" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Auto-Tuning
+        💡 Auto-Tuning
       
     </span>
   </a>
@@ -1487,7 +1487,6 @@
 <blockquote>
 <p><strong>Why better speedup on T4?</strong> Kernel fusion reduces memory bandwidth bottlenecks, which matters more on bandwidth-limited GPUs like T4 (320 GB/s) vs A100 (1,555 GB/s). This means <strong>greater benefits on consumer and mid-range hardware</strong>.</p>
 </blockquote>
-<p><strong>💡 Auto-Tuning</strong>: All benchmark results above use default configurations. Auto-tuning can provide <strong>additional speedup</strong> on dedicated GPUs by finding optimal parameters for your hardware and data size. <a href="#auto-tuning">Learn more →</a></p>
 <h3 id="run-your-own-benchmarks">Run Your Own Benchmarks<a class="headerlink" href="#run-your-own-benchmarks" title="Permanent link">&para;</a></h3>
 <p><strong>Quick Benchmark</strong> (Ultimate Fusion only):
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Simple, clean table output - easy to run!</span>
@@ -1497,7 +1496,8 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Comprehensive analysis with visualizations</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>python<span class="w"> </span>examples/benchmark_triton.py
 </code></pre></div></p>
-<h2 id="auto-tuning">Auto-Tuning<a class="headerlink" href="#auto-tuning" title="Permanent link">&para;</a></h2>
+<h2 id="auto-tuning">💡 Auto-Tuning<a class="headerlink" href="#auto-tuning" title="Permanent link">&para;</a></h2>
+<p>All benchmark results shown above use default kernel configurations. Auto-tuning can provide <strong>additional speedup</strong> on dedicated GPUs.</p>
 <p><strong>What is Auto-Tuning?</strong></p>
 <p>Triton kernels have tunable parameters (block sizes, warps per thread, etc.) that affect performance. Auto-tuning automatically searches for the optimal configuration for <strong>your specific GPU and data sizes</strong>.</p>
 <p><strong>When to use:</strong></p>
