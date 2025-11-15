@@ -547,6 +547,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#auto-tuning" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Auto-Tuning
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#when-to-use-triton-augment" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1120,6 +1131,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#auto-tuning" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Auto-Tuning
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#when-to-use-triton-augment" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1406,14 +1428,14 @@
 </table>
 <p><strong>Average Speedup: 8.1x</strong> 🚀</p>
 <blockquote>
-<p>Operations: RandomCrop + RandomHorizontalFlip + ColorJitter + RandomGrayscale + Normalize</p>
+<p><strong>Operations</strong>: RandomCrop + RandomHorizontalFlip + ColorJitter + RandomGrayscale + Normalize</p>
+<p><strong>Note</strong>: Benchmarks use <code>torchvision.transforms.v2</code> (not the legacy v1 API) for comparison.</p>
 </blockquote>
 <p><strong>Performance scales with image size</strong> — larger images benefit more from kernel fusion:</p>
-<p align="center" style="margin: 0;">
+<p align="left" style="margin: 0;">
   <img src="images/ultimate-fusion-performance.png" alt="Ultimate Fusion Performance" width="480"/>
 </p>
 
-<p><em>Speedup advantage increases dramatically for larger images (600×600+). Triton maintains near-constant runtime while Torchvision scales linearly.</em></p>
 <p><strong>📊 Additional Benchmarks (NVIDIA A100 on Google Colab):</strong></p>
 <table>
 <thead>
@@ -1461,41 +1483,57 @@
 </tr>
 </tbody>
 </table>
-<p><strong>Average: 4.1x</strong> (A100's high memory bandwidth makes torchvision already fast, so relative improvement is smaller)</p>
+<p><strong>Average: 4.1x</strong></p>
 <blockquote>
-<p><strong>💡 Why better speedup on T4?</strong> Kernel fusion reduces memory bandwidth bottlenecks, which matters more on bandwidth-limited GPUs like T4 (320 GB/s) vs A100 (1,555 GB/s). This means <strong>greater benefits on consumer and mid-range hardware</strong>.</p>
+<p><strong>Why better speedup on T4?</strong> Kernel fusion reduces memory bandwidth bottlenecks, which matters more on bandwidth-limited GPUs like T4 (320 GB/s) vs A100 (1,555 GB/s). This means <strong>greater benefits on consumer and mid-range hardware</strong>.</p>
 </blockquote>
+<p><strong>💡 Auto-Tuning</strong>: All benchmark results above use default configurations. Auto-tuning can provide <strong>additional speedup</strong> on dedicated GPUs by finding optimal parameters for your hardware and data size. <a href="#auto-tuning">Learn more →</a></p>
 <h3 id="run-your-own-benchmarks">Run Your Own Benchmarks<a class="headerlink" href="#run-your-own-benchmarks" title="Permanent link">&para;</a></h3>
 <p><strong>Quick Benchmark</strong> (Ultimate Fusion only):
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Simple, clean table output - easy to run!</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>python<span class="w"> </span>examples/benchmark.py
 </code></pre></div></p>
-<blockquote>
-<p><strong>Note</strong>: Benchmarks use <code>torchvision.transforms.v2</code> (not the legacy v1 API) for comparison.</p>
-</blockquote>
 <p><strong>Detailed Benchmark</strong> (All operations):
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Comprehensive analysis with visualizations</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>python<span class="w"> </span>examples/benchmark_triton.py
 </code></pre></div></p>
-<blockquote>
-<p><strong>💡 Auto-Tuning</strong>: The results above use default configurations. Auto-tuning can provide additional speedup on <strong>dedicated GPUs</strong> (local workstations, cloud instances). On <strong>shared cloud services</strong> (Colab, Kaggle), auto-tuning benefits may be limited due to variable GPU utilization. See <a href="auto-tuning/">Auto-Tuning Guide</a> for details.</p>
-</blockquote>
+<h2 id="auto-tuning">Auto-Tuning<a class="headerlink" href="#auto-tuning" title="Permanent link">&para;</a></h2>
+<p><strong>What is Auto-Tuning?</strong></p>
+<p>Triton kernels have tunable parameters (block sizes, warps per thread, etc.) that affect performance. Auto-tuning automatically searches for the optimal configuration for <strong>your specific GPU and data sizes</strong>.</p>
+<p><strong>When to use:</strong></p>
+<ul>
+<li>
+<p>✅ <strong>Dedicated GPUs</strong> (local workstations, cloud instances): 10-30% additional speedup</p>
+</li>
+<li>
+<p>⚠️ <strong>Shared services</strong> (Colab, Kaggle): Limited benefits, but can help stabilize performance</p>
+</li>
+</ul>
+<p><strong>Quick start:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">triton_augment</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">ta</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="n">ta</span><span class="o">.</span><span class="n">set_autotune</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>  <span class="c1"># Enable auto-tuning (one-time cost, results cached)</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="n">transform</span> <span class="o">=</span> <span class="n">ta</span><span class="o">.</span><span class="n">TritonFusedAugment</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="n">augmented</span> <span class="o">=</span> <span class="n">transform</span><span class="p">(</span><span class="n">images</span><span class="p">)</span>  <span class="c1"># First run: tests configs; subsequent: uses cache</span>
+</code></pre></div></p>
+<p><strong>⚠️ Performance Variability</strong>: Our highly optimized kernels are more sensitive to resource contention. If you experience <strong>sudden latency spikes</strong> on shared services, this is expected due to competing workloads. Auto-tuning can help find more stable configurations.</p>
+<p>📖 <strong>Full guide</strong>: <a href="auto-tuning/">Auto-Tuning Guide</a> - Detailed instructions, cache management, and warm-up strategies</p>
 <hr />
 <h2 id="when-to-use-triton-augment">🎯 When to Use Triton-Augment?<a class="headerlink" href="#when-to-use-triton-augment" title="Permanent link">&para;</a></h2>
-<p><strong>💡 Use Triton-Augment + Torchvision together:</strong></p>
+<p><strong>Use Triton-Augment + Torchvision together:</strong></p>
 <ul>
 <li><strong>Torchvision</strong>: Data loading, resize, ToTensor, rotation, affine, etc.</li>
 <li><strong>Triton-Augment</strong>: Replace supported operations (currently: crop, flip, color jitter, grayscale, normalize; more coming) with fused GPU kernels</li>
 </ul>
 <p><strong>Best speedup when:</strong></p>
 <ul>
-<li>Large images (600×600+) or large batches</li>
+<li>Large images (500x500+) or large batches</li>
 <li>Data augmentations are your bottleneck</li>
 </ul>
 <p><strong>Stick with Torchvision only if:</strong></p>
 <ul>
-<li>Small images (&lt; 256×256) on high-end GPUs (A100+)</li>
 <li>CPU-only training</li>
+<li>Experiencing <strong>extreme latency variability</strong> on <strong>shared services</strong> (e.g., consistent 10x+ spikes) - our optimized kernels are more sensitive to resource contention. Try auto-tuning first; if instability persists, Torchvision may be more stable</li>
 </ul>
 <p>💡 <strong>TL;DR</strong>: Use both! Triton-Augment replaces Torchvision's fusible ops for 8-12x speedup.</p>
 <hr />
@@ -1508,17 +1546,17 @@
 <li>Why this architecture is fast</li>
 </ul>
 <p>Quick snippet:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># Step 1: Load data on CPU with workers</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="n">train_loader</span> <span class="o">=</span> <span class="n">DataLoader</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">num_workers</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="c1"># Step 2: Create GPU augmentation (once)</span>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="n">augment</span> <span class="o">=</span> <span class="n">ta</span><span class="o">.</span><span class="n">TritonFusedAugment</span><span class="p">(</span><span class="n">crop_size</span><span class="o">=</span><span class="mi">28</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
-<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>
-<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="c1"># Step 3: Apply in training loop on GPU batches</span>
-<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="k">for</span> <span class="n">images</span><span class="p">,</span> <span class="n">labels</span> <span class="ow">in</span> <span class="n">train_loader</span><span class="p">:</span>
-<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>    <span class="n">images</span> <span class="o">=</span> <span class="n">images</span><span class="o">.</span><span class="n">cuda</span><span class="p">()</span>
-<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>    <span class="n">images</span> <span class="o">=</span> <span class="n">augment</span><span class="p">(</span><span class="n">images</span><span class="p">)</span>  <span class="c1"># 🚀 1 kernel for all ops!</span>
-<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>    <span class="n">outputs</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">images</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># Step 1: Load data on CPU with workers</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="n">train_loader</span> <span class="o">=</span> <span class="n">DataLoader</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">num_workers</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="c1"># Step 2: Create GPU augmentation (once)</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="n">augment</span> <span class="o">=</span> <span class="n">ta</span><span class="o">.</span><span class="n">TritonFusedAugment</span><span class="p">(</span><span class="n">crop_size</span><span class="o">=</span><span class="mi">28</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="c1"># Step 3: Apply in training loop on GPU batches</span>
+<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="k">for</span> <span class="n">images</span><span class="p">,</span> <span class="n">labels</span> <span class="ow">in</span> <span class="n">train_loader</span><span class="p">:</span>
+<a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a>    <span class="n">images</span> <span class="o">=</span> <span class="n">images</span><span class="o">.</span><span class="n">cuda</span><span class="p">()</span>
+<a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a>    <span class="n">images</span> <span class="o">=</span> <span class="n">augment</span><span class="p">(</span><span class="n">images</span><span class="p">)</span>  <span class="c1"># 🚀 1 kernel for all ops!</span>
+<a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a>    <span class="n">outputs</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">images</span><span class="p">)</span>
 </code></pre></div>
 <p><a href="quickstart/">→ Full Training Guide</a></p>
 <hr />
@@ -1533,12 +1571,12 @@
 <hr />
 <h2 id="contributing">🤝 Contributing<a class="headerlink" href="#contributing" title="Permanent link">&para;</a></h2>
 <p>Contributions welcome! Please see <a href="https://github.com/yuhezhang-ai/triton-augment/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a> for guidelines.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># Development setup</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s2">&quot;.[dev]&quot;</span>
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="c1"># Useful commands</span>
-<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>make<span class="w"> </span><span class="nb">help</span><span class="w">        </span><span class="c1"># Show all available commands</span>
-<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>make<span class="w"> </span><span class="nb">test</span><span class="w">        </span><span class="c1"># Run tests</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># Development setup</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s2">&quot;.[dev]&quot;</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="c1"># Useful commands</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>make<span class="w"> </span><span class="nb">help</span><span class="w">        </span><span class="c1"># Show all available commands</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>make<span class="w"> </span><span class="nb">test</span><span class="w">        </span><span class="c1"># Run tests</span>
 </code></pre></div>
 <p><a href="https://github.com/yuhezhang-ai/triton-augment/blob/main/CONTRIBUTING.md">→ Complete Contributing Guide</a></p>
 <hr />
