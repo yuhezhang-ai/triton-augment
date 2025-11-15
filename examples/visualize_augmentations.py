@@ -81,13 +81,54 @@ def tensor_to_numpy(tensor):
     return img
 
 
+def create_figure_with_gridspec(n_rows, n_cols, figsize_width=16, figsize_height=6):
+    """Create figure with gridspec for comparison plots."""
+    fig = plt.figure(figsize=(figsize_width, figsize_height))
+    gs = gridspec.GridSpec(
+        n_rows, n_cols, 
+        hspace=0.2, 
+        wspace=0.05 if n_cols > 2 else 0.1,
+        left=0.1 if n_cols > 2 else 0.11,
+        right=0.98, 
+        top=0.92 if n_rows == 2 else 0.94, 
+        bottom=0.05 if n_rows == 2 else 0.08
+    )
+    return fig, gs
+
+
+def add_row_label(ax, label, color='lightblue', offset=-0.15):
+    """Add colored label box on the left side of the first subplot in a row."""
+    ax.text(offset, 0.5, label, fontsize=11, rotation=90,
+           ha='center', va='center', weight='bold',
+           transform=ax.transAxes,
+           bbox=dict(boxstyle='round,pad=0.5', facecolor=color, alpha=0.7))
+
+
+def add_match_indicator(ax, matches, max_diff=None):
+    """Add match/difference indicator below subplot."""
+    if matches:
+        text = f'✓ Match' if max_diff is None else f'✓ Match (max diff: {max_diff:.2e})'
+        ax.text(0.5, -0.1, text, ha='center', va='top', transform=ax.transAxes,
+               fontsize=9, color='green', weight='bold')
+    else:
+        ax.text(0.5, -0.1, '✗ Different', ha='center', va='top', transform=ax.transAxes,
+               fontsize=9, color='orange', weight='bold')
+
+
+def save_and_close_plot(output_path, title):
+    """Save plot and clean up."""
+    plt.suptitle(title, fontsize=14, y=0.98)
+    plt.savefig(output_path, dpi=150, bbox_inches='tight')
+    print(f"✓ Saved: {output_path}")
+    plt.close()
+
+
 def compare_brightness(img, output_path='compare_brightness.png'):
     """Compare brightness adjustment: Torchvision vs Triton-Augment."""
     img_gpu = img.cuda()
     factors = [0.5, 0.75, 1.0, 1.25, 1.5]
     
-    fig = plt.figure(figsize=(15, 6))
-    gs = gridspec.GridSpec(2, len(factors), hspace=0.15, wspace=0.05)
+    fig, gs = create_figure_with_gridspec(2, len(factors))
     
     for i, factor in enumerate(factors):
         # Torchvision
@@ -95,26 +136,23 @@ def compare_brightness(img, output_path='compare_brightness.png'):
         ax = fig.add_subplot(gs[0, i])
         ax.imshow(tensor_to_numpy(tv_result))
         ax.set_title(f'Factor: {factor:.2f}', fontsize=10)
-        ax.set_ylabel('Torchvision', fontsize=10, rotation=0, ha='right', va='center')
+        if i == 0:
+            add_row_label(ax, 'Torchvision', color='lightblue')
         ax.axis('off')
         
         # Triton-Augment
         ta_result = F.adjust_brightness(img_gpu, factor)
         ax = fig.add_subplot(gs[1, i])
         ax.imshow(tensor_to_numpy(ta_result))
-        ax.set_ylabel('Triton-Augment', fontsize=10, rotation=0, ha='right', va='center')
+        if i == 0:
+            add_row_label(ax, 'Triton-Augment', color='lightgreen')
         ax.axis('off')
         
         # Check if they match
         max_diff = torch.abs(tv_result - ta_result).max().item()
-        if max_diff < 1e-5:
-            ax.text(0.5, -0.1, '✓ Match', ha='center', va='top', transform=ax.transAxes,
-                   fontsize=9, color='green', weight='bold')
+        add_match_indicator(ax, matches=(max_diff < 1e-5))
     
-    plt.suptitle('Brightness Comparison: Torchvision vs Triton-Augment', fontsize=14, y=0.98)
-    plt.savefig(output_path, dpi=150, bbox_inches='tight')
-    print(f"✓ Saved: {output_path}")
-    plt.close()
+    save_and_close_plot(output_path, 'Brightness Comparison: Torchvision vs Triton-Augment')
 
 
 def compare_contrast(img, output_path='compare_contrast.png'):
@@ -122,8 +160,7 @@ def compare_contrast(img, output_path='compare_contrast.png'):
     img_gpu = img.cuda()
     factors = [0.5, 0.75, 1.0, 1.25, 1.5]
     
-    fig = plt.figure(figsize=(15, 9))
-    gs = gridspec.GridSpec(3, len(factors), hspace=0.15, wspace=0.05)
+    fig, gs = create_figure_with_gridspec(3, len(factors), figsize_height=9)
     
     for i, factor in enumerate(factors):
         # Torchvision
@@ -131,38 +168,33 @@ def compare_contrast(img, output_path='compare_contrast.png'):
         ax = fig.add_subplot(gs[0, i])
         ax.imshow(tensor_to_numpy(tv_result))
         ax.set_title(f'Factor: {factor:.2f}', fontsize=10)
-        ax.set_ylabel('Torchvision', fontsize=10, rotation=0, ha='right', va='center')
+        if i == 0:
+            add_row_label(ax, 'Torchvision', color='lightblue', offset=-0.18)
         ax.axis('off')
         
         # Triton-Augment (exact match)
         ta_exact = F.adjust_contrast(img_gpu, factor)
         ax = fig.add_subplot(gs[1, i])
         ax.imshow(tensor_to_numpy(ta_exact))
-        ax.set_ylabel('Triton (Exact)', fontsize=10, rotation=0, ha='right', va='center')
+        if i == 0:
+            add_row_label(ax, 'Triton (Exact)', color='lightgreen', offset=-0.18)
         ax.axis('off')
         
         max_diff = torch.abs(tv_result - ta_exact).max().item()
-        if max_diff < 1e-5:
-            ax.text(0.5, -0.1, '✓ Match', ha='center', va='top', transform=ax.transAxes,
-                   fontsize=9, color='green', weight='bold')
+        add_match_indicator(ax, matches=(max_diff < 1e-5))
         
         # Triton-Augment (fast - different!)
         ta_fast = F.adjust_contrast_fast(img_gpu, factor)
         ax = fig.add_subplot(gs[2, i])
         ax.imshow(tensor_to_numpy(ta_fast))
-        ax.set_ylabel('Triton (Fast)', fontsize=10, rotation=0, ha='right', va='center')
+        if i == 0:
+            add_row_label(ax, 'Triton (Fast)', color='lightyellow', offset=-0.18)
         ax.axis('off')
         
         max_diff_fast = torch.abs(tv_result - ta_fast).max().item()
-        if max_diff_fast > 0.01:
-            ax.text(0.5, -0.1, '✗ Different', ha='center', va='top', transform=ax.transAxes,
-                   fontsize=9, color='orange', weight='bold')
+        add_match_indicator(ax, matches=(max_diff_fast <= 0.01))
     
-    plt.suptitle('Contrast Comparison: Fast contrast uses different algorithm for speed', 
-                 fontsize=14, y=0.98)
-    plt.savefig(output_path, dpi=150, bbox_inches='tight')
-    print(f"✓ Saved: {output_path}")
-    plt.close()
+    save_and_close_plot(output_path, 'Contrast Comparison: Fast contrast uses different algorithm for speed')
 
 
 def compare_saturation(img, output_path='compare_saturation.png'):
@@ -170,8 +202,7 @@ def compare_saturation(img, output_path='compare_saturation.png'):
     img_gpu = img.cuda()
     factors = [0.0, 0.5, 1.0, 1.5, 2.0]
     
-    fig = plt.figure(figsize=(15, 6))
-    gs = gridspec.GridSpec(2, len(factors), hspace=0.15, wspace=0.05)
+    fig, gs = create_figure_with_gridspec(2, len(factors))
     
     for i, factor in enumerate(factors):
         # Torchvision
@@ -180,26 +211,23 @@ def compare_saturation(img, output_path='compare_saturation.png'):
         ax.imshow(tensor_to_numpy(tv_result))
         label = 'Grayscale' if factor == 0.0 else f'Factor: {factor:.1f}'
         ax.set_title(label, fontsize=10)
-        ax.set_ylabel('Torchvision', fontsize=10, rotation=0, ha='right', va='center')
+        if i == 0:
+            add_row_label(ax, 'Torchvision', color='lightblue')
         ax.axis('off')
         
         # Triton-Augment
         ta_result = F.adjust_saturation(img_gpu, factor)
         ax = fig.add_subplot(gs[1, i])
         ax.imshow(tensor_to_numpy(ta_result))
-        ax.set_ylabel('Triton-Augment', fontsize=10, rotation=0, ha='right', va='center')
+        if i == 0:
+            add_row_label(ax, 'Triton-Augment', color='lightgreen')
         ax.axis('off')
         
         # Check if they match
         max_diff = torch.abs(tv_result - ta_result).max().item()
-        if max_diff < 1e-4:
-            ax.text(0.5, -0.1, '✓ Match', ha='center', va='top', transform=ax.transAxes,
-                   fontsize=9, color='green', weight='bold')
+        add_match_indicator(ax, matches=(max_diff < 1e-4))
     
-    plt.suptitle('Saturation Comparison: Torchvision vs Triton-Augment', fontsize=14, y=0.98)
-    plt.savefig(output_path, dpi=150, bbox_inches='tight')
-    print(f"✓ Saved: {output_path}")
-    plt.close()
+    save_and_close_plot(output_path, 'Saturation Comparison: Torchvision vs Triton-Augment')
 
 
 def compare_crop(img, output_path='compare_crop.png'):
@@ -215,8 +243,7 @@ def compare_crop(img, output_path='compare_crop.png'):
         ('Bottom-Right', h - crop_size, w - crop_size),
     ]
     
-    fig = plt.figure(figsize=(12, 6))
-    gs = gridspec.GridSpec(2, len(crops), hspace=0.15, wspace=0.05)
+    fig, gs = create_figure_with_gridspec(2, len(crops), figsize_width=13)
     
     for i, (name, top, left) in enumerate(crops):
         # Torchvision
@@ -224,67 +251,59 @@ def compare_crop(img, output_path='compare_crop.png'):
         ax = fig.add_subplot(gs[0, i])
         ax.imshow(tensor_to_numpy(tv_result))
         ax.set_title(name, fontsize=10)
-        ax.set_ylabel('Torchvision', fontsize=10, rotation=0, ha='right', va='center')
+        if i == 0:
+            add_row_label(ax, 'Torchvision', color='lightblue', offset=-0.17)
         ax.axis('off')
         
         # Triton-Augment
         ta_result = F.crop(img_gpu, top, left, crop_size, crop_size)
         ax = fig.add_subplot(gs[1, i])
         ax.imshow(tensor_to_numpy(ta_result))
-        ax.set_ylabel('Triton-Augment', fontsize=10, rotation=0, ha='right', va='center')
+        if i == 0:
+            add_row_label(ax, 'Triton-Augment', color='lightgreen', offset=-0.17)
         ax.axis('off')
         
         # Check if they match
-        if torch.allclose(tv_result, ta_result):
-            ax.text(0.5, -0.1, '✓ Identical', ha='center', va='top', transform=ax.transAxes,
-                   fontsize=9, color='green', weight='bold')
+        add_match_indicator(ax, matches=torch.allclose(tv_result, ta_result))
     
-    plt.suptitle(f'Crop Comparison: Torchvision vs Triton-Augment ({crop_size}×{crop_size})', 
-                 fontsize=14, y=0.98)
-    plt.savefig(output_path, dpi=150, bbox_inches='tight')
-    print(f"✓ Saved: {output_path}")
-    plt.close()
+    save_and_close_plot(output_path, f'Crop Comparison: Torchvision vs Triton-Augment ({crop_size}×{crop_size})')
 
 
 def compare_flip(img, output_path='compare_flip.png'):
     """Compare horizontal flip: Torchvision vs Triton-Augment."""
     img_gpu = img.cuda()
     
-    fig = plt.figure(figsize=(12, 6))
-    gs = gridspec.GridSpec(2, 2, hspace=0.15, wspace=0.1)
+    fig, gs = create_figure_with_gridspec(2, 2, figsize_width=13)
     
-    # Original
+    # Original - Torchvision
     ax = fig.add_subplot(gs[0, 0])
     ax.imshow(tensor_to_numpy(img_gpu))
     ax.set_title('Original', fontsize=11)
-    ax.set_ylabel('Torchvision', fontsize=10, rotation=0, ha='right', va='center')
+    add_row_label(ax, 'Torchvision', color='lightblue', offset=-0.17)
     ax.axis('off')
     
+    # Original - Triton
     ax = fig.add_subplot(gs[1, 0])
     ax.imshow(tensor_to_numpy(img_gpu))
-    ax.set_ylabel('Triton-Augment', fontsize=10, rotation=0, ha='right', va='center')
+    add_row_label(ax, 'Triton-Augment', color='lightgreen', offset=-0.17)
     ax.axis('off')
     
-    # Flipped
+    # Flipped - Torchvision
     tv_result = tvF.horizontal_flip(img_gpu)
     ax = fig.add_subplot(gs[0, 1])
     ax.imshow(tensor_to_numpy(tv_result))
     ax.set_title('Horizontal Flip', fontsize=11)
     ax.axis('off')
     
+    # Flipped - Triton
     ta_result = F.horizontal_flip(img_gpu)
     ax = fig.add_subplot(gs[1, 1])
     ax.imshow(tensor_to_numpy(ta_result))
     ax.axis('off')
     
-    if torch.allclose(tv_result, ta_result):
-        ax.text(0.5, -0.1, '✓ Identical', ha='center', va='top', transform=ax.transAxes,
-               fontsize=9, color='green', weight='bold')
+    add_match_indicator(ax, matches=torch.allclose(tv_result, ta_result))
     
-    plt.suptitle('Horizontal Flip Comparison: Torchvision vs Triton-Augment', fontsize=14, y=0.98)
-    plt.savefig(output_path, dpi=150, bbox_inches='tight')
-    print(f"✓ Saved: {output_path}")
-    plt.close()
+    save_and_close_plot(output_path, 'Horizontal Flip Comparison: Torchvision vs Triton-Augment')
 
 
 def compare_normalize(img, output_path='compare_normalize.png'):
@@ -304,40 +323,36 @@ def compare_normalize(img, output_path='compare_normalize.png'):
     tv_denorm = tv_result * std_t + mean_t
     ta_denorm = ta_result * std_t + mean_t
     
-    fig = plt.figure(figsize=(12, 6))
-    gs = gridspec.GridSpec(2, 2, hspace=0.15, wspace=0.1)
+    fig, gs = create_figure_with_gridspec(2, 2, figsize_width=13)
     
-    # Before normalization
+    # Before normalization - Torchvision
     ax = fig.add_subplot(gs[0, 0])
     ax.imshow(tensor_to_numpy(img_gpu))
     ax.set_title('Before Normalize', fontsize=11)
-    ax.set_ylabel('Torchvision', fontsize=10, rotation=0, ha='right', va='center')
+    add_row_label(ax, 'Torchvision', color='lightblue', offset=-0.17)
     ax.axis('off')
     
+    # Before normalization - Triton
     ax = fig.add_subplot(gs[1, 0])
     ax.imshow(tensor_to_numpy(img_gpu))
-    ax.set_ylabel('Triton-Augment', fontsize=10, rotation=0, ha='right', va='center')
+    add_row_label(ax, 'Triton-Augment', color='lightgreen', offset=-0.17)
     ax.axis('off')
     
-    # After normalization (denormalized for visualization)
+    # After normalization (denormalized for visualization) - Torchvision
     ax = fig.add_subplot(gs[0, 1])
     ax.imshow(tensor_to_numpy(tv_denorm))
     ax.set_title('After Normalize\n(denormalized for display)', fontsize=11)
     ax.axis('off')
     
+    # After normalization - Triton
     ax = fig.add_subplot(gs[1, 1])
     ax.imshow(tensor_to_numpy(ta_denorm))
     ax.axis('off')
     
     max_diff = torch.abs(tv_result - ta_result).max().item()
-    if max_diff < 1e-5:
-        ax.text(0.5, -0.1, f'✓ Match (max diff: {max_diff:.2e})', ha='center', va='top', 
-               transform=ax.transAxes, fontsize=9, color='green', weight='bold')
+    add_match_indicator(ax, matches=(max_diff < 1e-5), max_diff=max_diff)
     
-    plt.suptitle('Normalize Comparison: Torchvision vs Triton-Augment', fontsize=14, y=0.98)
-    plt.savefig(output_path, dpi=150, bbox_inches='tight')
-    print(f"✓ Saved: {output_path}")
-    plt.close()
+    save_and_close_plot(output_path, 'Normalize Comparison: Torchvision vs Triton-Augment')
 
 
 def compare_fused_pipeline(img, output_path='compare_fused_pipeline.png'):
@@ -357,7 +372,7 @@ def compare_fused_pipeline(img, output_path='compare_fused_pipeline.png'):
     tv_result = tvF.normalize(tv_result, mean, std)
     
     # Triton-Augment Ultimate Fusion (1 kernel!)
-    ta_result = F.ultimate_fused_augment(
+    ta_result = F.fused_augment(
         img_gpu,
         top=h//4,
         left=w//4,
@@ -378,27 +393,28 @@ def compare_fused_pipeline(img, output_path='compare_fused_pipeline.png'):
     tv_denorm = tv_result * std_t + mean_t
     ta_denorm = ta_result * std_t + mean_t
     
-    fig = plt.figure(figsize=(15, 6))
-    gs = gridspec.GridSpec(2, 3, hspace=0.15, wspace=0.1)
+    fig, gs = create_figure_with_gridspec(2, 3)
     
-    # Original
+    # Original - Torchvision
     ax = fig.add_subplot(gs[0, 0])
     ax.imshow(tensor_to_numpy(img_gpu))
     ax.set_title('Original', fontsize=11)
-    ax.set_ylabel('Torchvision\nCompose\n(5 kernels)', fontsize=9, rotation=0, ha='right', va='center')
+    add_row_label(ax, 'Torchvision\nCompose\n(5 kernels)', color='lightblue', offset=-0.2)
     ax.axis('off')
     
+    # Original - Triton
     ax = fig.add_subplot(gs[1, 0])
     ax.imshow(tensor_to_numpy(img_gpu))
-    ax.set_ylabel('Triton-Augment\nUltimate Fusion\n(1 kernel!)', fontsize=9, rotation=0, ha='right', va='center')
+    add_row_label(ax, 'Triton-Augment\nUltimate Fusion\n(1 kernel!)', color='lightgreen', offset=-0.2)
     ax.axis('off')
     
-    # After augmentation (denormalized)
+    # After augmentation (denormalized) - Torchvision
     ax = fig.add_subplot(gs[0, 1])
     ax.imshow(tensor_to_numpy(tv_denorm))
     ax.set_title('After Pipeline\n(denormalized)', fontsize=11)
     ax.axis('off')
     
+    # After augmentation - Triton
     ax = fig.add_subplot(gs[1, 1])
     ax.imshow(tensor_to_numpy(ta_denorm))
     ax.axis('off')
@@ -419,11 +435,7 @@ def compare_fused_pipeline(img, output_path='compare_fused_pipeline.png'):
         fig.text(0.5, 0.02, '✓ Results are identical! Triton-Augment is faster with 1 kernel vs 5 kernels', 
                 ha='center', fontsize=12, color='green', weight='bold')
     
-    plt.suptitle('Full Pipeline: Crop → Flip → Brightness → Saturation → Normalize', 
-                 fontsize=14, y=0.98)
-    plt.savefig(output_path, dpi=150, bbox_inches='tight')
-    print(f"✓ Saved: {output_path}")
-    plt.close()
+    save_and_close_plot(output_path, 'Full Pipeline: Crop → Flip → Brightness → Saturation → Normalize')
 
 
 def main():
