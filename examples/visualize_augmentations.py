@@ -411,7 +411,7 @@ def compare_fused_pipeline(img, output_path='compare_fused_pipeline.png'):
     # After augmentation (denormalized) - Torchvision
     ax = fig.add_subplot(gs[0, 1])
     ax.imshow(tensor_to_numpy(tv_denorm))
-    ax.set_title('After Pipeline\n(denormalized)', fontsize=11)
+    ax.set_title('After Pipeline (denormalized)', fontsize=11)
     ax.axis('off')
     
     # After augmentation - Triton
@@ -441,7 +441,7 @@ def compare_fused_pipeline(img, output_path='compare_fused_pipeline.png'):
 def main():
     """Generate all comparison visualizations."""
     parser = argparse.ArgumentParser(description='Compare Triton-Augment with torchvision')
-    parser.add_argument('--image', type=str, default=None,
+    parser.add_argument('--image', type=str, default="examples/Lenna_test_image.png",
                         help='Path to input image (if not provided, uses generated image)')
     parser.add_argument('--output-dir', type=str, default='visualizations',
                         help='Directory to save visualizations')

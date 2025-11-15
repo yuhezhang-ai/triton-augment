@@ -149,6 +149,7 @@ datasets/
 # Exception: Allow documentation images
 !ultimate-fusion-performance.png
 !docs/images/*.png
+!examples/Lenna_test_image.png
 
 # Triton cache
 .triton/
