@@ -92,7 +92,7 @@ Example:
 ```yaml
 # mkdocs.yml
 nav:
-  - Home: ../README.md
+  - Home: index.md
   - Getting Started:
       - Installation: installation.md
       - Quick Start: quickstart.md

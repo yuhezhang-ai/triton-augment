@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Ultimate Fused Kernel**: All 7 operations in a single GPU kernel (crop, flip, brightness, contrast, saturation, grayscale, normalize)
 - **Per-Image Randomness**: Each image in batch gets different random parameters by default (`same_on_batch` flag for control)
 - **Auto-Tuning**: Optional GPU-specific performance optimization with 12 configurations
-- **Float16 Support**: Additional 1.3-2x speedup with half-precision
+- **Float16 Support**: ~1.3x speedup on large images (1024×1024+) with half-precision
 
 #### Transform Classes
 - `TritonFusedAugment`: Ultimate fusion - all operations in 1 kernel

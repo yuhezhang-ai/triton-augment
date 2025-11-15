@@ -137,7 +137,20 @@ for images, labels in train_loader:
     # ... rest of training ...
 ```
 
-**Full Examples**: See [`examples/train_mnist.py`](../examples/train_mnist.py) and [`examples/train_cifar10.py`](../examples/train_cifar10.py) for complete training scripts with neural networks.
+**Why This Pattern:**
+
+- ✅ **Fast async data loading**: `num_workers > 0` for CPU parallelism
+- ✅ **Fast GPU batch processing**: All augmentations in 1 fused kernel
+- ✅ **Different parameters per sample**: Each image gets different random parameters (default)
+- ✅ **Best of both worlds**: CPU for I/O, GPU for compute
+- ✅ **Kernel fusion**: No intermediate memory allocations
+- ✅ **Large batch advantage**: Speedup increases with batch size
+
+**Note**: Set `same_on_batch=True` if you want all images to share the same random parameters.
+
+💡 **Pro Tip**: Apply Triton-Augment transforms AFTER moving tensors to GPU for maximum performance!
+
+**Full Examples**: See [`examples/train_mnist.py`](https://github.com/yuhezhang-ai/triton-augment/blob/main/examples/train_mnist.py) and [`examples/train_cifar10.py`](https://github.com/yuhezhang-ai/triton-augment/blob/main/examples/train_cifar10.py) for complete training scripts with neural networks.
 
 ---
 

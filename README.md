@@ -26,7 +26,7 @@ crop → flip → brightness → contrast → saturation → grayscale → norma
 - **Different Parameters Per Sample**: Each image in batch gets different random augmentations (not just batch-wide)
 - **Transform & Functional APIs**: Random parameters (transforms) or fixed parameters (functional) - your choice
 - **Zero Memory Overhead**: No intermediate buffers between operations
-- **Float16 Ready**: Additional 1.3-2x speedup with half-precision
+- **Float16 Ready**: ~1.3x speedup on large images + 50% memory savings
 - **Drop-in Replacement**: torchvision-like API, easy migration
 - **Auto-Tuning**: Optional performance optimization for your GPU
 
@@ -37,19 +37,10 @@ crop → flip → brightness → contrast → saturation → grayscale → norma
 ### Installation
 
 ```bash
-# Using uv (recommended)
-curl -LsSf https://astral.sh/uv/install.sh | sh
-uv venv && source .venv/bin/activate
-uv pip install -e .
-
-# Using pip
-python -m venv .venv && source .venv/bin/activate
-pip install -e .
+pip install triton-augment
 ```
 
 **Requirements**: Python 3.8+, PyTorch 2.0+, CUDA-capable GPU
-
-[→ Full Installation Guide](https://triton-augment.readthedocs.io/installation/)
 
 ### Basic Usage
 
@@ -115,7 +106,7 @@ geo_only = ta.TritonRandomCropFlip(size=112, horizontal_flip_p=0.5)
 | [Quick Start](docs/quickstart.md) | Get started in 5 minutes with examples |
 | [Installation](docs/installation.md) | Setup and requirements |
 | [API Reference](docs/api-reference.md) | Complete API documentation for all functions and classes |
-| [Float16 Support](docs/float16.md) | Use half-precision for 1.3-2x speedup and 50% memory savings |
+| [Float16 Support](docs/float16.md) | Use half-precision for ~1.3x speedup (large images) and 50% memory savings |
 | [Contrast Notes](docs/contrast.md) | Fused kernel uses fast contrast (different from torchvision). See how to get exact torchvision results |
 | [Auto-Tuning](docs/auto-tuning.md) | Optional performance optimization for your GPU and data size (disabled by default). Includes cache warm-up guide |
 | [Batch Behavior](docs/batch-behavior.md) | Different parameters per sample (default) vs batch-wide parameters. Understanding `same_on_batch` flag |
@@ -141,14 +132,14 @@ Real training scenario with random augmentations:
 
 **Performance scales with image size** — larger images benefit more from kernel fusion:
 
-<div align="center">
-<img src="ultimate-fusion-performance.png" alt="Ultimate Fusion Performance" width="600"/>
-</div>
+<p align="center" style="margin: 0;">
+  <img src="docs/images/ultimate-fusion-performance.png" alt="Ultimate Fusion Performance" width="480"/>
+</p>
 
 *Speedup advantage increases dramatically for larger images (600×600+). Triton maintains near-constant runtime while Torchvision scales linearly.*
 
 <details>
-<summary><b>📊 Additional Benchmarks (NVIDIA A100)</b></summary>
+<summary><b>📊 Additional Benchmarks (NVIDIA A100 on Google Colab)</b></summary>
 
 | Image Size | Batch | Crop Size | Torchvision | Triton Fused | Speedup |
 |------------|-------|-----------|-------------|--------------|---------|
@@ -159,9 +150,9 @@ Real training scenario with random augmentations:
 
 **Average: 4.1x** (A100's high memory bandwidth makes torchvision already fast, so relative improvement is smaller)
 
-</details>
+> **💡 Why better speedup on T4?** Kernel fusion reduces memory bandwidth bottlenecks, which matters more on bandwidth-limited GPUs like T4 (320 GB/s) vs A100 (1,555 GB/s). This means **greater benefits on consumer and mid-range hardware**.
 
-> **💡 Why better speedup on T4?** Kernel fusion reduces memory bandwidth bottlenecks, which matters more on bandwidth-limited GPUs like T4 (320 GB/s) vs A100 (1,555 GB/s). This means **greater benefits on consumer and mid-range hardware** — exactly where most users need it!
+</details>
 
 ### Run Your Own Benchmarks
 
@@ -185,22 +176,24 @@ python examples/benchmark_triton.py
 
 ## 🎯 When to Use Triton-Augment?
 
-**Best for:**
-- Large-scale training with large images/batches
-- Production pipelines where augmentation is a bottleneck
-- Training with fused operations (crop + flip + color jitter + grayscale + normalize)
+**💡 Use Triton-Augment + Torchvision together:**
+- **Torchvision**: Data loading, resize, ToTensor, rotation, affine, etc.
+- **Triton-Augment**: Replace supported operations (currently: crop, flip, color jitter, grayscale, normalize; more coming) with fused GPU kernels
 
-**Torchvision is still better if you:**
-- Need many different augmentation operations (rotation, affine, etc.) - torchvision has 30+ transforms
-- Work with small images/batches (< 256×256)
-- Need CPU support or maximum flexibility
-- Want the most mature and battle-tested library
+**Best speedup when:**
+- Large images (600×600+) or large batches
+- These operations are your bottleneck: crop, flip, brightness, contrast, saturation, normalize
 
-**Key difference:** Triton-Augment trades breadth for speed. It does fewer operations but significantly faster on large data, especially when fused.
+**Stick with Torchvision only if:**
+- Small images (< 256×256) on high-end GPUs (A100+)
+- CPU-only training
+
+💡 **TL;DR**: Use both! Triton-Augment replaces Torchvision's fusible ops for 8-12x speedup.
 
 ---
 
-## 🎓 Training Examples
+<details>
+<summary><h2>🎓 Training Examples</h2></summary>
 
 Clean, focused examples showing Triton-Augment integration in real training pipelines:
 
@@ -262,6 +255,7 @@ for images, labels in train_loader:
 ```
 
 **Why This Pattern:**
+
 - ✅ **Fast async data loading**: `num_workers > 0` for CPU parallelism
 - ✅ **Fast GPU batch processing**: All augmentations in 1 fused kernel
 - ✅ **Different parameters per sample**: Each image gets different random parameters (default)
@@ -273,9 +267,12 @@ for images, labels in train_loader:
 
 💡 **Pro Tip**: Apply Triton-Augment transforms AFTER moving tensors to GPU for maximum performance!
 
+</details>
+
 ---
 
-## 🛠️ API Overview
+<details>
+<summary><h2>🛠️ API Overview</h2></summary>
 
 ### Transform Classes (Recommended)
 
@@ -326,6 +323,8 @@ img = F.normalize(img, mean=(...), std=(...))
 
 [→ Complete API Reference](docs/api-reference.md)
 
+</details>
+
 ---
 
 ## 📋 Roadmap
@@ -346,7 +345,10 @@ Contributions welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guideli
 ```bash
 # Development setup
 pip install -e ".[dev]"
-pytest tests/
+
+# Useful commands
+make help        # Show all available commands
+make test        # Run tests
 ```
 
 ---
@@ -378,14 +380,11 @@ Apache License 2.0 - see [LICENSE](LICENSE) file.
 
 ## 📧 Project
 
-- **Issues**: [GitHub Issues](https://github.com/yuhezhang-ai/triton-augment/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yuhezhang-ai/triton-augment/discussions)
+- **Issues and feature requests **: [GitHub Issues](https://github.com/yuhezhang-ai/triton-augment/issues)
 
 ---
 
 <div align="center">
-
-**Made with ❤️ for the deep learning community**
 
 ⭐ **If you find this library useful, please consider starring the repo!** ⭐
 

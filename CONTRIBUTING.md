@@ -194,6 +194,7 @@ make html
 ### Documentation Guidelines
 
 - Keep README.md up to date
+- **Important**: README.md and docs/index.md are separate (optimized for GitHub and MkDocs respectively). Update both if making major changes.
 - Add docstrings to all public APIs
 - Include usage examples in docstrings
 - Update CHANGELOG.md for significant changes

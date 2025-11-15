@@ -56,7 +56,7 @@ result = F.adjust_brightness(img, 1.2)
 result = F.adjust_contrast(result, 1.1)        # Torchvision-exact
 
 # Then fuse remaining ops (no contrast)
-result = F.fused_color_normalize(
+result = F.fused_augment(
     result,
     brightness_factor=1.0,                     # Identity (already applied)
     contrast_factor=1.0,                       # Identity (already applied)
@@ -66,7 +66,7 @@ result = F.fused_color_normalize(
 )
 ```
 
-⏱️ **Speed**: Fast (2 kernel launches) ⚡⚡
+⏱️ **Speed**: Fast (3 kernel launches) ⚡⚡
 
 ## For Maximum Speed (Not Exact)
 
@@ -76,7 +76,7 @@ If you don't need exact torchvision reproduction:
 import triton_augment.functional as F
 
 # Single fused kernel - fastest!
-result = F.fused_color_normalize(
+result = F.fused_augment(
     img,
     brightness_factor=1.2,
     contrast_factor=1.1,                       # Fast contrast (different from torchvision)
@@ -105,18 +105,9 @@ result = F.fused_color_normalize(
 
 ✅ **Production-proven**: Same as NVIDIA DALI  
 ✅ **Fast & fusible**: No mean computation required  
-✅ **Effective for training**: Models learn robustness to augmentation variations  
-⚠️ **Different from torchvision**: Uses fixed 0.5 instead of computed mean
 
 For **exact torchvision reproduction**, use `adjust_contrast()` instead of fast mode.
 
-## Which Should You Use?
-
-| Goal | Method | Speed |
-|------|--------|-------|
-| Exact torchvision match | Individual functions (#2) | Faster |
-| Best speed + exact | Contrast + fused (#3) | Fast |
-| Maximum speed | Full fused (#4) | Fastest |
 
 ## Technical Details
 

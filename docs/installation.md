@@ -7,44 +7,29 @@
 - Triton >= 2.0.0
 - CUDA-capable GPU
 
-## From Source (Recommended: uv)
-
-!!! note "About Virtual Environments"
-    Virtual environments create a local `.venv/` folder in your project, isolating dependencies per-project.
-
-### Using uv (10-100x faster than pip)
+## Installation from PyPI (Recommended)
 
 ```bash
-# Install uv
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Clone and setup
-git clone https://github.com/yuhezhang-ai/triton-augment.git
-cd triton-augment
-
-# Create .venv/ and install
-uv venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-uv pip install -e .
+pip install triton-augment
 ```
 
-### Using pip (Traditional)
+## Development Installation (From Source)
+
+For contributors or those who want to modify the code:
 
 ```bash
 git clone https://github.com/yuhezhang-ai/triton-augment.git
 cd triton-augment
-
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-
-pip install -e .
+pip install -e ".[dev]"
 ```
 
-## Current Limitations
+## Input Requirements
 
-- **Tensor Dimensions**: Only 4D tensors `(N, C, H, W)` are currently supported. Support for 3D `(C, H, W)` and 5D `(N, T, C, H, W)` will be added in a future release.
-- **Device**: All tensors must be on CUDA. CPU execution is not supported (Triton requires GPU).
+!!! warning "Input Requirements"
+    - **Range**: Pixel values must be in `[0, 1]` (use `transforms.ToTensor()` if loading from PIL)
+    - **Device**: GPU only (CPU tensors are automatically moved to CUDA)
+    - **Shape**: Supports both 3D `(C, H, W)` and 4D `(N, C, H, W)` tensors (automatic batching)
+    - **Dtype**: `float32` or `float16`
 
 ## First Run Behavior
 

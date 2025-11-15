@@ -693,7 +693,7 @@ Individual Triton operations (e.g., `ta.crop()`, `ta.adjust_brightness()`):
 - **Small images/batches**: Slightly slower than torchvision (kernel launch overhead)
 - **Large images/batches**: Faster than torchvision (better GPU utilization)
 
-See [benchmark results](../README.md#benchmark-results-nvidia-a100-on-google-colab) for detailed performance comparisons.
+See [benchmark results](index.md#performance) for detailed performance comparisons.
 
 **Recommendation**: Use `TritonFusedAugment` for production training, regardless of how many operations you need.
 
