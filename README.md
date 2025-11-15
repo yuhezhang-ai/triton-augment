@@ -135,7 +135,10 @@ Real training scenario with random augmentations:
 
 **Average Speedup: 8.1x** 🚀
 
-> Operations: RandomCrop + RandomHorizontalFlip + ColorJitter + RandomGrayscale + Normalize
+> **Operations**: RandomCrop + RandomHorizontalFlip + ColorJitter + RandomGrayscale + Normalize
+
+> **Note**: Benchmarks use `torchvision.transforms.v2` (not the legacy v1 API) for comparison.
+
 
 **Performance scales with image size** — larger images benefit more from kernel fusion:
 <p align="left" style="margin: 0;">
@@ -158,18 +161,14 @@ Real training scenario with random augmentations:
 
 </details>
 
-**💡 Auto-Tuning**: All benchmark results above use default configurations. Auto-tuning can potentially provide **additional speedup** on dedicated GPUs by finding optimal parameters for your hardware and data size. [Learn more →](#auto-tuning)
-
 </details>
-### Run Your Own Benchmarks
+<summary><h3>📊 Run Your Own Benchmarks</h3></summary>
 
 **Quick Benchmark** (Ultimate Fusion only):
 ```bash
 # Simple, clean table output - easy to run!
 python examples/benchmark.py
 ```
-
-> **Note**: Benchmarks use `torchvision.transforms.v2` (not the legacy v1 API) for comparison.
 
 **Detailed Benchmark** (All operations):
 ```bash
@@ -178,6 +177,8 @@ python examples/benchmark_triton.py
 ```
 
 </details>
+
+**💡 Auto-Tuning**: All benchmark results above use default configurations. Auto-tuning can potentially provide **additional speedup** on dedicated GPUs by finding optimal parameters for your hardware and data size.
 
 ## Auto-Tuning
 
