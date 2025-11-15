@@ -111,7 +111,8 @@ def add_match_indicator(ax, matches, max_diff=None):
         ax.text(0.5, -0.1, text, ha='center', va='top', transform=ax.transAxes,
                fontsize=9, color='green', weight='bold')
     else:
-        ax.text(0.5, -0.1, '✗ Different', ha='center', va='top', transform=ax.transAxes,
+        text = f'✗ Different (max diff: {max_diff:.2e})' if max_diff is not None else '✗ Different'
+        ax.text(0.5, -0.1, text, ha='center', va='top', transform=ax.transAxes,
                fontsize=9, color='orange', weight='bold')
 
 
