@@ -74,6 +74,8 @@ plugins:
             show_root_heading: true
             show_category_heading: true
             members_order: source
+            show_signature_annotations: true
+            separate_signature: true
 
 # Navigation structure
 nav:

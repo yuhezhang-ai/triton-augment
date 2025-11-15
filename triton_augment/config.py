@@ -21,9 +21,11 @@ def enable_autotune():
     and cache the best one for your GPU and image sizes.
     
     Example:
-        >>> import triton_augment as ta
-        >>> ta.enable_autotune()
-        >>> # Now kernels will auto-tune on first use
+        ```python
+        import triton_augment as ta
+        ta.enable_autotune()
+        # Now kernels will auto-tune on first use
+        ```
     """
     global ENABLE_AUTOTUNE
     ENABLE_AUTOTUNE = True
@@ -38,16 +40,18 @@ def disable_autotune():
     across most GPUs and image sizes without tuning overhead.
     
     Example:
-        >>> import triton_augment as ta
-        >>> ta.disable_autotune()
-        >>> # Now kernels will use fixed defaults (faster, good performance)
+        ```python
+        import triton_augment as ta
+        ta.disable_autotune()
+        # Now kernels will use fixed defaults (faster, good performance)
+        ```
     """
     global ENABLE_AUTOTUNE
     ENABLE_AUTOTUNE = False
     print("[Triton-Augment] Auto-tuning disabled. Using fixed kernel configurations.")
 
 
-def is_autotune_enabled():
+def is_autotune_enabled() -> bool:
     """
     Check if auto-tuning is currently enabled.
     

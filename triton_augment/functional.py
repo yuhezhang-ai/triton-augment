@@ -97,14 +97,15 @@ def _convert_to_tensor(
         ValueError: If tensor shape doesn't match (batch_size,)
     
     Example:
-        >>> # Scalar -> broadcast to all images
-        >>> t = _convert_to_tensor(1.5, batch_size=4, dtype=torch.float32, device='cuda')
-        >>> # t = tensor([1.5, 1.5, 1.5, 1.5], device='cuda')
-        >>> 
-        >>> # Tensor -> validate and convert
-        >>> per_image = torch.tensor([1.0, 1.2, 0.8, 1.5], device='cuda')
-        >>> t = _convert_to_tensor(per_image, batch_size=4, dtype=torch.float32, device='cuda')
-        >>> # t = tensor([1.0, 1.2, 0.8, 1.5], device='cuda')
+        ```python
+        # Scalar -> broadcast to all images
+        t = _convert_to_tensor(1.5, batch_size=4, dtype=torch.float32, device='cuda')
+        # t = tensor([1.5, 1.5, 1.5, 1.5], device='cuda')
+        # Tensor -> validate and convert
+        per_image = torch.tensor([1.0, 1.2, 0.8, 1.5], device='cuda')
+        t = _convert_to_tensor(per_image, batch_size=4, dtype=torch.float32, device='cuda')
+        # t = tensor([1.0, 1.2, 0.8, 1.5], device='cuda')
+        ```
     """
     if isinstance(value, torch.Tensor):
         # Validate shape
@@ -140,13 +141,14 @@ def _sample_uniform_tensor(
         Tensor of shape (batch_size,) with uniform random values
     
     Example:
-        >>> # Different per sample (default)
-        >>> t = _sample_uniform_tensor(4, 0.8, 1.2, 'cuda', same_on_batch=False)
-        >>> # t = tensor([0.95, 1.1, 0.82, 1.18], device='cuda')
-        >>> 
-        >>> # Same for all samples
-        >>> t = _sample_uniform_tensor(4, 0.8, 1.2, 'cuda', same_on_batch=True)
-        >>> # t = tensor([1.05, 1.05, 1.05, 1.05], device='cuda')
+        ```python
+        # Different per sample (default)
+        t = _sample_uniform_tensor(4, 0.8, 1.2, 'cuda', same_on_batch=False)
+        # t = tensor([0.95, 1.1, 0.82, 1.18], device='cuda')
+        # Same for all samples
+        t = _sample_uniform_tensor(4, 0.8, 1.2, 'cuda', same_on_batch=True)
+        # t = tensor([1.05, 1.05, 1.05, 1.05], device='cuda')
+        ```
     """
     if same_on_batch:
         # Same value for all samples
@@ -176,13 +178,14 @@ def _sample_bernoulli_tensor(
         Tensor of shape (batch_size,) with bool dtype
     
     Example:
-        >>> # Different per sample (default)
-        >>> t = _sample_bernoulli_tensor(4, 0.5, 'cuda', same_on_batch=False)
-        >>> # t = tensor([True, False, True, True], device='cuda', dtype=torch.bool)
-        >>> 
-        >>> # Same for all samples
-        >>> t = _sample_bernoulli_tensor(4, 0.5, 'cuda', same_on_batch=True)
-        >>> # t = tensor([False, False, False, False], device='cuda', dtype=torch.bool)
+        ```python
+        # Different per sample (default)
+        t = _sample_bernoulli_tensor(4, 0.5, 'cuda', same_on_batch=False)
+        # t = tensor([True, False, True, True], device='cuda', dtype=torch.bool)
+        # Same for all samples
+        t = _sample_bernoulli_tensor(4, 0.5, 'cuda', same_on_batch=True)
+        # t = tensor([False, False, False, False], device='cuda', dtype=torch.bool)
+        ```
     """
     if same_on_batch:
         # Same decision for all samples
@@ -218,13 +221,14 @@ def rgb_to_grayscale(
         ValueError: If num_output_channels not in {1, 3} or if input not RGB
         
     Example:
-        >>> img = torch.rand(4, 3, 224, 224, device='cuda')
-        >>> # Convert all images
-        >>> gray = rgb_to_grayscale(img, num_output_channels=3)
-        >>> 
-        >>> # Convert only some images (per-image mask)
-        >>> mask = torch.tensor([1, 0, 1, 0], dtype=torch.bool, device='cuda')
-        >>> gray = rgb_to_grayscale(img, num_output_channels=3, grayscale_mask=mask)
+        ```python
+        img = torch.rand(4, 3, 224, 224, device='cuda')
+        # Convert all images
+        gray = rgb_to_grayscale(img, num_output_channels=3)
+        # Convert only some images (per-image mask)
+        mask = torch.tensor([1, 0, 1, 0], dtype=torch.bool, device='cuda')
+        gray = rgb_to_grayscale(img, num_output_channels=3, grayscale_mask=mask)
+        ```
     """
     _validate_image_tensor(image, "image")
     
@@ -300,9 +304,11 @@ def adjust_brightness(
         ValueError: If brightness_factor is negative
         
     Example:
-        >>> img = torch.rand(1, 3, 224, 224, device='cuda')
-        >>> bright_img = adjust_brightness(img, brightness_factor=1.2)  # 20% brighter
-        >>> dark_img = adjust_brightness(img, brightness_factor=0.8)   # 20% darker
+        ```python
+        img = torch.rand(1, 3, 224, 224, device='cuda')
+        bright_img = adjust_brightness(img, brightness_factor=1.2)  # 20% brighter
+        dark_img = adjust_brightness(img, brightness_factor=0.8)   # 20% darker
+        ```
     """
     _validate_image_tensor(image, "image")
     
@@ -355,9 +361,11 @@ def adjust_contrast(
         ValueError: If contrast_factor is negative
         
     Example:
-        >>> img = torch.rand(1, 3, 224, 224, device='cuda')
-        >>> high_contrast = adjust_contrast(img, contrast_factor=1.5)
-        >>> low_contrast = adjust_contrast(img, contrast_factor=0.5)
+        ```python
+        img = torch.rand(1, 3, 224, 224, device='cuda')
+        high_contrast = adjust_contrast(img, contrast_factor=1.5)
+        low_contrast = adjust_contrast(img, contrast_factor=0.5)
+        ```
     """
     _validate_image_tensor(image, "image")
     
@@ -437,10 +445,12 @@ def adjust_contrast_fast(
         ValueError: If contrast_factor is negative
         
     Example:
-        >>> img = torch.rand(1, 3, 224, 224, device='cuda')
-        >>> high_contrast = adjust_contrast_fast(img, contrast_factor=1.5)
-        >>> # Use in fused operation for maximum speed
-        >>> result = fused_color_normalize(img, contrast_factor=1.5, ...)
+        ```python
+        img = torch.rand(1, 3, 224, 224, device='cuda')
+        high_contrast = adjust_contrast_fast(img, contrast_factor=1.5)
+        # Use in fused operation for maximum speed
+        result = fused_color_normalize(img, contrast_factor=1.5, ...)
+        ```
     """
     _validate_image_tensor(image, "image")
     
@@ -477,10 +487,12 @@ def adjust_saturation(
     Adjust color saturation of an image.
     
     Matches torchvision.transforms.v2.functional.adjust_saturation exactly.
-    Reference: torchvision/transforms/v2/functional/_color.py line 151-166
     
-    Formula: output = blend(image, grayscale, saturation_factor)
-           = image * saturation_factor + grayscale * (1 - saturation_factor)
+    Formula: 
+        ```python
+        output = blend(image, grayscale, saturation_factor)
+               = image * saturation_factor + grayscale * (1 - saturation_factor)
+        ```
     
     Args:
         image: Input image tensor of shape (N, C, H, W) on CUDA
@@ -496,9 +508,11 @@ def adjust_saturation(
         ValueError: If saturation_factor is negative
         
     Example:
-        >>> img = torch.rand(1, 3, 224, 224, device='cuda')
-        >>> grayscale = adjust_saturation(img, saturation_factor=0.0)
-        >>> saturated = adjust_saturation(img, saturation_factor=2.0)
+        ```python
+        img = torch.rand(1, 3, 224, 224, device='cuda')
+        grayscale = adjust_saturation(img, saturation_factor=0.0)
+        saturated = adjust_saturation(img, saturation_factor=2.0)
+        ```
     """
     _validate_image_tensor(image, "image")
     
@@ -556,10 +570,12 @@ def normalize(
         Normalized tensor of the same shape and dtype
         
     Example:
-        >>> img = torch.rand(1, 3, 224, 224, device='cuda')
-        >>> normalized = normalize(img, 
-        ...                        mean=(0.485, 0.456, 0.406),
-        ...                        std=(0.229, 0.224, 0.225))
+        ```python
+        img = torch.rand(1, 3, 224, 224, device='cuda')
+        normalized = normalize(img,
+                              mean=(0.485, 0.456, 0.406),
+                              std=(0.229, 0.224, 0.225))
+        ```
     """
     _validate_image_tensor(image, "image")
     
@@ -624,14 +640,15 @@ def crop(
         Cropped tensor of shape (N, C, height, width)
         
     Example:
-        >>> img = torch.rand(2, 3, 224, 224, device='cuda')
-        >>> # Crop all images at same position
-        >>> cropped = crop(img, top=56, left=56, height=112, width=112)
-        >>> 
-        >>> # Crop each image at different position
-        >>> tops = torch.tensor([56, 100], device='cuda', dtype=torch.int32)
-        >>> lefts = torch.tensor([56, 80], device='cuda', dtype=torch.int32)
-        >>> cropped = crop(img, top=tops, left=lefts, height=112, width=112)
+        ```python
+        img = torch.rand(2, 3, 224, 224, device='cuda')
+        # Crop all images at same position
+        cropped = crop(img, top=56, left=56, height=112, width=112)
+        # Crop each image at different position
+        tops = torch.tensor([56, 100], device='cuda', dtype=torch.int32)
+        lefts = torch.tensor([56, 80], device='cuda', dtype=torch.int32)
+        cropped = crop(img, top=tops, left=lefts, height=112, width=112)
+        ```
     
     Note:
         For MVP, this requires valid crop coordinates (no padding).
@@ -703,11 +720,13 @@ def center_crop(
         ValueError: If output_size is larger than image size
         
     Example:
-        >>> img = torch.rand(2, 3, 224, 224, device='cuda')
-        >>> # Center crop to 112x112
-        >>> cropped = center_crop(img, (112, 112))
-        >>> # or for square crop
-        >>> cropped = center_crop(img, 112)
+        ```python
+        img = torch.rand(2, 3, 224, 224, device='cuda')
+        # Center crop to 112x112
+        cropped = center_crop(img, (112, 112))
+        # or for square crop
+        cropped = center_crop(img, 112)
+        ```
     """
     _validate_image_tensor(image, "image")
     
@@ -756,13 +775,14 @@ def horizontal_flip(
         Horizontally flipped tensor of the same shape
         
     Example:
-        >>> img = torch.rand(2, 3, 224, 224, device='cuda')
-        >>> # Flip all images
-        >>> flipped = horizontal_flip(img)
-        >>> 
-        >>> # Flip only first image
-        >>> flip_mask = torch.tensor([1, 0], device='cuda', dtype=torch.bool)
-        >>> flipped = horizontal_flip(img, flip_mask)
+        ```python
+        img = torch.rand(2, 3, 224, 224, device='cuda')
+        # Flip all images
+        flipped = horizontal_flip(img)
+        # Flip only first image
+        flip_mask = torch.tensor([1, 0], device='cuda', dtype=torch.bool)
+        flipped = horizontal_flip(img, flip_mask)
+        ```
     
     Note:
         This uses a custom Triton kernel. For standalone flip operations,
@@ -840,39 +860,44 @@ def fused_augment(
     
     Args:
         image: Input image tensor of shape (N, C, H, W) on CUDA
-        top, left: Crop offsets (int or int32 tensor of shape (N,) for per-image)
-        height, width: Crop dimensions
+        top: Crop top offset (int or int32 tensor of shape (N,) for per-image)
+        left: Crop left offset (int or int32 tensor of shape (N,) for per-image)
+        height: Crop height
+        width: Crop width
         flip_horizontal: Whether to flip horizontally (bool or uint8 tensor of shape (N,) for per-image, default: False)
         brightness_factor: Brightness multiplier (float or tensor of shape (N,) for per-image, 1.0 = no change)
         contrast_factor: Contrast multiplier (float or tensor of shape (N,) for per-image, 1.0 = no change) [FAST mode]
         saturation_factor: Saturation multiplier (float or tensor of shape (N,) for per-image, 1.0 = no change)
         grayscale: Whether to convert to grayscale (bool or uint8 tensor of shape (N,) for per-image, default: False)
-        mean, std: Normalization parameters (None = skip normalization)
+        mean: Normalization mean parameters (None = skip normalization)
+        std: Normalization std parameters (None = skip normalization)
         
     Returns:
         Transformed tensor of shape (N, C, height, width)
         
     Example:
-        >>> img = torch.rand(4, 3, 224, 224, device='cuda')
-        >>> # Single kernel launch for ALL operations!
-        >>> result = fused_augment(
-        ...     img,
-        ...     top=20, left=30, height=112, width=112,
-        ...     flip_horizontal=True,
-        ...     brightness_factor=1.2,
-        ...     contrast_factor=1.1,
-        ...     saturation_factor=0.9,
-        ...     mean=(0.485, 0.456, 0.406),
-        ...     std=(0.229, 0.224, 0.225)
-        ... )
-        >>> 
-        >>> # Equivalent sequential operations (MUCH slower - 6 kernel launches):
-        >>> result_seq = crop(img, 20, 30, 112, 112)
-        >>> result_seq = horizontal_flip(result_seq)
-        >>> result_seq = adjust_brightness(result_seq, 1.2)
-        >>> result_seq = adjust_contrast_fast(result_seq, 1.1)
-        >>> result_seq = adjust_saturation(result_seq, 0.9)
-        >>> result_seq = normalize(result_seq, (0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
+        ```python
+        img = torch.rand(4, 3, 224, 224, device='cuda')
+        # Single kernel launch for ALL operations!
+        result = fused_augment(
+            img,
+            top=20, left=30, height=112, width=112,
+            flip_horizontal=True,
+            brightness_factor=1.2,
+            contrast_factor=1.1,
+            saturation_factor=0.9,
+            mean=(0.485, 0.456, 0.406),
+            std=(0.229, 0.224, 0.225)
+        )
+        
+        # Equivalent sequential operations (MUCH slower - 6 kernel launches):
+        result_seq = crop(img, 20, 30, 112, 112)
+        result_seq = horizontal_flip(result_seq)
+        result_seq = adjust_brightness(result_seq, 1.2)
+        result_seq = adjust_contrast_fast(result_seq, 1.1)
+        result_seq = adjust_saturation(result_seq, 0.9)
+        result_seq = normalize(result_seq, (0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
+        ```
     
     Note:
         - Uses FAST contrast (centered scaling), not torchvision's blend-with-mean

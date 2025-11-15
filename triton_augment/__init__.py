@@ -13,21 +13,24 @@ Key Features:
 - Compatible with PyTorch data loading pipelines
 
 Example:
-    >>> import torch
-    >>> import triton_augment as ta
-    >>> 
-    >>> # Create a fused transform
-    >>> transform = ta.TritonColorJitterNormalize(
-    ...     brightness=0.2,
-    ...     contrast=0.2,
-    ...     saturation=0.2,
-    ...     mean=(0.485, 0.456, 0.406),
-    ...     std=(0.229, 0.224, 0.225)
-    ... )
-    >>> 
-    >>> # Apply to images
-    >>> img = torch.rand(4, 3, 224, 224, device='cuda')
-    >>> augmented = transform(img)
+    ```python
+    import torch
+    import triton_augment as ta
+    
+    # Create a fused transform
+    transform = ta.TritonFusedAugment(
+        crop_size=112,
+        brightness=0.2,
+        contrast=0.2,
+        saturation=0.2,
+        mean=(0.485, 0.456, 0.406),
+        std=(0.229, 0.224, 0.225)
+    )
+    
+    # Apply to images
+    img = torch.rand(4, 3, 224, 224, device='cuda')
+    augmented = transform(img)
+    ```
 """
 
 from . import functional

@@ -105,7 +105,7 @@ geo_only = ta.TritonRandomCropFlip(size=112, horizontal_flip_p=0.5)
 |-------|-------------|
 | [Quick Start](docs/quickstart.md) | Get started in 5 minutes with examples |
 | [Installation](docs/installation.md) | Setup and requirements |
-| [API Reference](docs/api-reference.md) | Complete API documentation for all functions and classes |
+| [API Reference](https://yuhezhang-ai.github.io/triton-augment/api-reference/) | Complete API documentation for all functions and classes |
 | [Float16 Support](docs/float16.md) | Use half-precision for ~1.3x speedup (large images) and 50% memory savings |
 | [Contrast Notes](docs/contrast.md) | Fused kernel uses fast contrast (different from torchvision). See how to get exact torchvision results |
 | [Auto-Tuning](docs/auto-tuning.md) | Optional performance optimization for your GPU and data size (disabled by default). Includes cache warm-up guide |

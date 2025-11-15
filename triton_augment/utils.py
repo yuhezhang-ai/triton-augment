@@ -8,6 +8,7 @@ import torch
 import os
 import sys
 from pathlib import Path
+from typing import Tuple
 
 
 def get_triton_cache_dir() -> Path:
@@ -135,9 +136,9 @@ def should_show_autotune_message(kernel_name: str, cache_key: tuple) -> bool:
 
 
 def warmup_cache(
-    batch_sizes=(32, 64),
-    image_sizes=(224, 256, 512),
-    verbose=True
+    batch_sizes: Tuple[int, ...] = (32, 64),
+    image_sizes: Tuple[int, ...] = (224, 256, 512),
+    verbose: bool = True
 ):
     """
     Pre-populate the auto-tuning cache for common image sizes.
@@ -152,12 +153,13 @@ def warmup_cache(
         verbose: Whether to print progress messages (default: True)
         
     Example:
-        >>> import triton_augment as ta
-        >>> # Warm up cache for common training scenarios
-        >>> ta.warmup_cache()
-        
-        >>> # Custom sizes for your specific use case
-        >>> ta.warmup_cache(batch_sizes=(16, 128), image_sizes=(128, 384))
+        ```python
+        import triton_augment as ta
+        # Warm up cache for common training scenarios
+        ta.warmup_cache()
+        # Custom sizes for your specific use case
+        ta.warmup_cache(batch_sizes=(16, 128), image_sizes=(128, 384))
+        ```
     """
     if not torch.cuda.is_available():
         if verbose:

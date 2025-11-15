@@ -47,21 +47,24 @@ class TritonColorJitter(nn.Module):
                              If False (default), each image in batch gets different random parameters
         
     Example:
-        >>> transform = TritonColorJitter(
-        ...     brightness=0.2,  # Range: [0.8, 1.2]
-        ...     contrast=0.2,    # Range: [0.8, 1.2] (FAST contrast)
-        ...     saturation=0.2,  # Range: [0.8, 1.2]
-        ...     same_on_batch=False
-        ... )
-        >>> img = torch.rand(4, 3, 224, 224, device='cuda')
-        >>> augmented = transform(img)  # Each image gets different augmentation
+        ```python
+        # Basic usage with per-image randomness
+        transform = TritonColorJitter(
+            brightness=0.2,  # Range: [0.8, 1.2]
+            contrast=0.2,    # Range: [0.8, 1.2] (FAST contrast)
+            saturation=0.2,  # Range: [0.8, 1.2]
+            same_on_batch=False
+        )
+        img = torch.rand(4, 3, 224, 224, device='cuda')
+        augmented = transform(img)  # Each image gets different augmentation
         
-        >>> # Can also be used with specific ranges
-        >>> transform = TritonColorJitter(
-        ...     brightness=(0.5, 1.5),  # Custom range
-        ...     contrast=(0.7, 1.3),     # Custom range (FAST mode)
-        ...     saturation=(0.0, 2.0)    # Custom range
-        ... )
+        # Custom ranges
+        transform = TritonColorJitter(
+            brightness=(0.5, 1.5),  # Custom range
+            contrast=(0.7, 1.3),     # Custom range (FAST mode)
+            saturation=(0.0, 2.0)    # Custom range
+        )
+        ```
     
     Performance:
         - Uses fused kernel for all operations in a single pass
@@ -204,13 +207,15 @@ class TritonNormalize(nn.Module):
         std: Sequence of standard deviations for each channel (R, G, B)
         
     Example:
-        >>> # ImageNet normalization
-        >>> normalize = TritonNormalize(
-        ...     mean=(0.485, 0.456, 0.406),
-        ...     std=(0.229, 0.224, 0.225)
-        ... )
-        >>> img = torch.rand(1, 3, 224, 224, device='cuda')
-        >>> normalized = normalize(img)
+        ```python
+        # ImageNet normalization
+        normalize = TritonNormalize(
+            mean=(0.485, 0.456, 0.406),
+            std=(0.229, 0.224, 0.225)
+        )
+        img = torch.rand(1, 3, 224, 224, device='cuda')
+        normalized = normalize(img)
+        ```
     """
     
     def __init__(
@@ -285,18 +290,20 @@ class TritonColorJitterNormalize(nn.Module):
                              If False (default), each image in batch gets different random parameters
         
     Example:
-        >>> # Full augmentation pipeline in one transform (per-image randomness)
-        >>> transform = TritonColorJitterNormalize(
-        ...     brightness=0.2,  # Range: [0.8, 1.2]
-        ...     contrast=0.2,    # Range: [0.8, 1.2]
-        ...     saturation=0.2,  # Range: [0.8, 1.2]
-        ...     random_grayscale_p=0.1,  # 10% chance of grayscale (per-image)
-        ...     mean=(0.485, 0.456, 0.406),
-        ...     std=(0.229, 0.224, 0.225),
-        ...     same_on_batch=False
-        ... )
-        >>> img = torch.rand(4, 3, 224, 224, device='cuda')
-        >>> augmented = transform(img)  # Each image gets different augmentation
+        ```python
+        # Full augmentation pipeline in one transform (per-image randomness)
+        transform = TritonColorJitterNormalize(
+            brightness=0.2,  # Range: [0.8, 1.2]
+            contrast=0.2,    # Range: [0.8, 1.2]
+            saturation=0.2,  # Range: [0.8, 1.2]
+            random_grayscale_p=0.1,  # 10% chance of grayscale (per-image)
+            mean=(0.485, 0.456, 0.406),
+            std=(0.229, 0.224, 0.225),
+            same_on_batch=False
+        )
+        img = torch.rand(4, 3, 224, 224, device='cuda')
+        augmented = transform(img)  # Each image gets different augmentation
+        ```
     """
     
     def __init__(
@@ -468,9 +475,11 @@ class TritonGrayscale(nn.Module):
                             If 3, grayscale is replicated to 3 channels.
                             
     Example:
-        >>> transform = TritonGrayscale(num_output_channels=3)
-        >>> img = torch.rand(1, 3, 224, 224, device='cuda')
-        >>> gray = transform(img)  # Shape: (1, 3, 224, 224), all channels identical
+        ```python
+        transform = TritonGrayscale(num_output_channels=3)
+        img = torch.rand(1, 3, 224, 224, device='cuda')
+        gray = transform(img)  # Shape: (1, 3, 224, 224), all channels identical
+        ```
     """
     
     def __init__(self, num_output_channels: int = 1):
@@ -507,14 +516,16 @@ class TritonRandomGrayscale(nn.Module):
                              If False (default), each image in batch independently decides grayscale conversion
                             
     Example:
-        >>> # Per-image randomness: each image independently converted
-        >>> transform = TritonRandomGrayscale(p=0.5, num_output_channels=3, same_on_batch=False)
-        >>> img = torch.rand(4, 3, 224, 224, device='cuda')
-        >>> result = transform(img)  # Each image has 50% chance of being grayscale
+        ```python
+        # Per-image randomness (each image independently converted)
+        transform = TritonRandomGrayscale(p=0.5, num_output_channels=3, same_on_batch=False)
+        img = torch.rand(4, 3, 224, 224, device='cuda')
+        result = transform(img)  # Each image has 50% chance of being grayscale
         
-        >>> # Batch-wide: all images converted or none
-        >>> transform = TritonRandomGrayscale(p=0.5, num_output_channels=3, same_on_batch=False)
-        >>> result = transform(img)  # Either all 4 images are grayscale or none are
+        # Batch-wide (all images converted or none)
+        transform = TritonRandomGrayscale(p=0.5, num_output_channels=3, same_on_batch=True)
+        result = transform(img)  # Either all 4 images are grayscale or none are
+        ```
     """
     
     def __init__(
@@ -587,10 +598,12 @@ class TritonRandomCrop(nn.Module):
                              If False (default), each image in batch gets different random crop position.
         
     Example:
-        >>> transform = TritonRandomCrop(112)
-        >>> img = torch.rand(4, 3, 224, 224, device='cuda')
-        >>> cropped = transform(img)
-        >>> cropped.shape
+        ```python
+        transform = TritonRandomCrop(112)
+        img = torch.rand(4, 3, 224, 224, device='cuda')
+        cropped = transform(img)
+        cropped.shape
+        ```
         torch.Size([4, 3, 112, 112])
     
     Note:
@@ -702,10 +715,12 @@ class TritonCenterCrop(nn.Module):
         size: Desired output size (height, width) or int for square crop
         
     Example:
-        >>> transform = TritonCenterCrop(112)
-        >>> img = torch.rand(4, 3, 224, 224, device='cuda')
-        >>> cropped = transform(img)
-        >>> cropped.shape
+        ```python
+        transform = TritonCenterCrop(112)
+        img = torch.rand(4, 3, 224, 224, device='cuda')
+        cropped = transform(img)
+        cropped.shape
+        ```
         torch.Size([4, 3, 112, 112])
     """
     
@@ -747,9 +762,11 @@ class TritonRandomHorizontalFlip(nn.Module):
                              If False (default), each image in batch gets different random decision.
         
     Example:
-        >>> transform = TritonRandomHorizontalFlip(p=0.5)
-        >>> img = torch.rand(4, 3, 224, 224, device='cuda')
-        >>> flipped = transform(img)  # Each image has 50% chance of being flipped
+        ```python
+        transform = TritonRandomHorizontalFlip(p=0.5)
+        img = torch.rand(4, 3, 224, 224, device='cuda')
+        flipped = transform(img)  # Each image has 50% chance of being flipped
+        ```
     """
     
     def __init__(self, p: float = 0.5, same_on_batch: bool = False):
@@ -814,17 +831,19 @@ class TritonRandomCropFlip(nn.Module):
                              If False (default), each image in batch gets different random parameters
         
     Example:
-        >>> # Fused version (FAST - single kernel, per-image randomness)
-        >>> transform_fused = TritonRandomCropFlip(112, horizontal_flip_p=0.5, same_on_batch=False)
-        >>> img = torch.rand(4, 3, 224, 224, device='cuda')
-        >>> result = transform_fused(img)  # Each image gets different crop & flip
-        >>> 
-        >>> # Equivalent sequential version (SLOWER - 2 kernels)
-        >>> transform_seq = nn.Sequential(
-        ...     TritonRandomCrop(112, same_on_batch=False),
-        ...     TritonRandomHorizontalFlip(p=0.5, same_on_batch=False)
-        ... )
-        >>> result_seq = transform_seq(img)
+        ```python
+        # Fused version (FAST - single kernel, per-image randomness)
+        transform_fused = TritonRandomCropFlip(112, horizontal_flip_p=0.5, same_on_batch=False)
+        img = torch.rand(4, 3, 224, 224, device='cuda')
+        result = transform_fused(img)  # Each image gets different crop & flip
+        
+        # Equivalent sequential version (SLOWER - 2 kernels)
+        transform_seq = nn.Sequential(
+            TritonRandomCrop(112, same_on_batch=False),
+            TritonRandomHorizontalFlip(p=0.5, same_on_batch=False)
+        )
+        result_seq = transform_seq(img)
+        ```
     
     Note:
         The fused version uses compile-time branching (tl.constexpr), so there's
@@ -936,29 +955,31 @@ class TritonFusedAugment(nn.Module):
                              If False (default), each image in the batch gets different random parameters.
         
     Example:
-        >>> # Replace torchvision Compose with single transform:
-        >>> # OLD (6 kernel launches):
-        >>> transform = transforms.Compose([
-        ...     transforms.RandomCrop(112),
-        ...     transforms.RandomHorizontalFlip(),
-        ...     transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
-        ...     transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
-        ... ])
-        >>> 
-        >>> # NEW (1 kernel launch - significantly faster!):
-        >>> import triton_augment as ta
-        >>> transform = ta.TritonUltimateAugment(
-        ...     crop_size=112,
-        ...     horizontal_flip_p=0.5,
-        ...     brightness=0.2,
-        ...     contrast=0.2,
-        ...     saturation=0.2,
-        ...     mean=(0.485, 0.456, 0.406),
-        ...     std=(0.229, 0.224, 0.225)
-        ... )
-        >>> 
-        >>> img = torch.rand(4, 3, 224, 224, device='cuda')
-        >>> result = transform(img)  # Single kernel launch!
+        ```python
+        # Replace torchvision Compose with single transform
+        # OLD (6 kernel launches):
+        transform = transforms.Compose([
+            transforms.RandomCrop(112),
+            transforms.RandomHorizontalFlip(),
+            transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
+            transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
+        ])
+        
+        # NEW (1 kernel launch - significantly faster!):
+        import triton_augment as ta
+        transform = ta.TritonFusedAugment(
+            crop_size=112,
+            horizontal_flip_p=0.5,
+            brightness=0.2,
+            contrast=0.2,
+            saturation=0.2,
+            mean=(0.485, 0.456, 0.406),
+            std=(0.229, 0.224, 0.225)
+        )
+        
+        img = torch.rand(4, 3, 224, 224, device='cuda')
+        result = transform(img)  # Single kernel launch!
+        ```
     
     Note:
         - Uses FAST contrast (centered scaling), not torchvision's blend-with-mean

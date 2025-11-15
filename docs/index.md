@@ -91,7 +91,7 @@ color_only = ta.TritonColorJitterNormalize(brightness=0.2, saturation=0.2, ...)
 geo_only = ta.TritonRandomCropFlip(size=112, horizontal_flip_p=0.5)
 ```
 
-[→ More Examples](quickstart/)
+[→ More Examples](quickstart.md)
 
 ### ⚠️ Input Requirements
 
