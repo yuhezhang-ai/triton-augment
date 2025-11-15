@@ -395,7 +395,7 @@ ta.fused_augment(
 
 **Returns:** Fully augmented tensor of shape `(N, C, height, width)`
 
-**Performance**: ~3-5x faster than torchvision Compose (6 sequential operations)
+**Performance**: Over 8x faster on large images (4x average, scales dramatically with image size, even higher with auto-tuning)
 
 **Example:**
 
@@ -548,7 +548,7 @@ ta.TritonFusedAugment(
 - `random_grayscale_p` (float): Probability of converting to grayscale (default: 0.0, no grayscale)
 - `mean`, `std` (tuple): Normalization parameters
 
-**Performance**: ~3-5x faster than torchvision Compose
+**Performance**: Over 8x faster on large images (4x average, scales dramatically with image size, even higher with auto-tuning)
 
 **Design Note**: All augmentation parameters default to 0 (no augmentation) for consistency and predictability. Users explicitly opt-in to each augmentation they want to use.
 
@@ -563,7 +563,7 @@ old_transform = transforms.Compose([
     transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
 ])
 
-# With TritonFusedAugment (1 kernel launch - 3-5x faster!)
+# With TritonFusedAugment (1 kernel launch - significantly faster!)
 new_transform = ta.TritonFusedAugment(
     crop_size=112,
     horizontal_flip_p=0.5,
@@ -651,90 +651,49 @@ def fused_color_normalize(
 
 ## Input Requirements
 
-All operations require:
+All operations accept:
 
-- **Device**: CUDA (GPU) - CPU not supported
-- **Shape**: `(N, C, H, W)` - 4D tensors only
+- **Device**: CUDA (GPU) or CPU - *CPU tensors are automatically moved to GPU*
+- **Shape**: `(C, H, W)` or `(N, C, H, W)` - *3D tensors are automatically batched*
 - **Dtype**: float32 or float16
-- **Range**: [0, 1] for color operations
+- **Range**: [0, 1] for color operations (required)
 
-After normalization, values can be outside [0, 1] range.
+**Notes:**
+- After normalization, values can be outside [0, 1] range
+- 3D tensors `(C, H, W)` are automatically converted to `(1, C, H, W)` for processing
+- CPU tensors are automatically transferred to CUDA for GPU processing
 
 ---
 
-## Performance Hierarchy
+## Performance Tips
 
-### Fusion Levels (Fastest to Slowest)
+### Use Fused Kernel Even for Partial Operations
 
-Triton-Augment provides **three levels of kernel fusion**:
-
-#### Level 3: Ultimate Fusion (FASTEST) 🚀🚀🚀
-
-**Single kernel for ALL operations** (geometric + pixel):
+**Key insight**: Even if you only need a subset of operations, use `TritonFusedAugment` or `F.fused_augment` for best performance! Simply set unused operations to no-op values:
 
 ```python
-# 1 kernel launch - ~3-5x faster than torchvision
-result = ta.fused_augment(
-    img, top, left, h, w, flip_horizontal=True,
-    brightness_factor=1.2, saturation_factor=0.9,
-    mean=(...), std=(...)
+# Example: Only need crop + normalize (no flip, no color jitter)
+transform = ta.TritonFusedAugment(
+    crop_size=224,
+    horizontal_flip_p=0.0,      # No flip
+    brightness=0.0,             # No brightness
+    contrast=0.0,               # No contrast
+    saturation=0.0,             # No saturation
+    mean=(0.485, 0.456, 0.406),
+    std=(0.229, 0.224, 0.225)
 )
+# Still faster than calling crop() + normalize() separately!
 ```
 
-**Operations**: Crop + Flip + Brightness + Contrast + Saturation + Normalize
+The fused kernel is optimized to skip operations set to no-op values at compile time.
 
-#### Level 2: Specialized Fusion ⚡⚡
+### Individual Operations Performance
 
-**Single kernel per operation type**:
+Individual Triton operations (e.g., `ta.crop()`, `ta.adjust_brightness()`):
+- **Small images/batches**: Slightly slower than torchvision (kernel launch overhead)
+- **Large images/batches**: Faster than torchvision (better GPU utilization)
 
-```python
-# Geometric fusion (1 kernel)
-result = ta.fused_crop_flip(img, top, left, h, w, flip_horizontal=True)
+See [benchmark results](../README.md#benchmark-results-nvidia-a100-on-google-colab) for detailed performance comparisons.
 
-# Pixel fusion (1 kernel)
-result = ta.fused_color_normalize(
-    img, brightness_factor=1.2, saturation_factor=0.9,
-    mean=(...), std=(...)
-)
-```
-
-**Performance**: ~1.5-3x faster than sequential
-
-#### Level 1: Individual Operations ⚡
-
-**Optimized single operations**:
-
-```python
-# Individual Triton kernels (faster than torchvision)
-img = ta.crop(img, top, left, h, w)
-img = ta.adjust_brightness(img, 1.2)
-img = ta.normalize(img, mean=(...), std=(...))
-```
-
-**Performance**: ~1.2-1.5x faster than torchvision
-
-#### Level 0: Torchvision (Baseline)
-
-**Standard PyTorch operations**:
-
-```python
-# Multiple kernel launches
-import torchvision.transforms.functional as tvF
-img = tvF.crop(img, top, left, h, w)
-img = tvF.adjust_brightness(img, 1.2)
-img = tvF.normalize(img, mean=(...), std=(...))
-```
-
-**Performance**: Baseline (1.0x)
-
-### Comparison Table
-
-| Approach | Kernel Launches | Expected Speedup | Use Case |
-|----------|----------------|------------------|----------|
-| **Ultimate Fusion** | 1 | ~3-5x 🚀 | Production training pipelines |
-| **Specialized Fusion** | 2 | ~1.5-3x ⚡ | Flexible pipelines |
-| **Individual Triton** | 6 | ~1.2-1.5x | Maximum control |
-| **Torchvision** | 6 | 1.0x | Baseline / CPU support |
-
-**Recommendation**: Use **Ultimate Fusion** (`TritonFusedAugment`) for maximum performance in production training.
+**Recommendation**: Use `TritonFusedAugment` for production training, regardless of how many operations you need.
 

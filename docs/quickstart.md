@@ -11,14 +11,15 @@ import triton_augment as ta
 # Create a batch of images on GPU
 images = torch.rand(32, 3, 224, 224, device='cuda')
 
-# Replace torchvision Compose (6 kernel launches)
-# With Triton-Augment (1 kernel launch - 3-5x faster!)
+# Replace torchvision Compose (7 kernel launches)
+# With Triton-Augment (1 kernel launch - significantly faster!)
 transform = ta.TritonFusedAugment(
     crop_size=112,
     horizontal_flip_p=0.5,
     brightness=0.2,
     contrast=0.2,
     saturation=0.2,
+    random_grayscale_p=0.1,
     mean=(0.485, 0.456, 0.406),
     std=(0.229, 0.224, 0.225)
 )
@@ -33,7 +34,7 @@ augmented = transform(images)  # Single kernel launch for ALL operations!
 - ColorJitter (brightness, contrast, saturation)
 - Normalize
 
-**Performance**: ~8-10x faster than torchvision Compose
+**Performance**: Over 8x faster on large images (4x average, scales dramatically with image size, even higher with auto-tuning)
 
 ---
 
@@ -52,7 +53,7 @@ transform = ta.TritonColorJitterNormalize(
     std=(0.229, 0.224, 0.225)
 )
 
-augmented = transform(images)  # ~2-3x faster
+augmented = transform(images)  # Faster, single fused kernel
 ```
 
 ### Geometric-Only Fusion
@@ -101,55 +102,42 @@ normalize = ta.TritonNormalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.
 
 ---
 
-## Integration with PyTorch DataLoader
+## Training Integration
+
+**Recommended Pattern**: Load data on CPU (fast async I/O), augment on GPU (fast batch processing)
 
 ```python
 import torch
-from torch.utils.data import DataLoader
-from torchvision.datasets import ImageFolder
 import triton_augment as ta
+from torchvision import datasets, transforms
+from torch.utils.data import DataLoader
 
-class GPUTransform:
-    """Apply Triton augmentations on GPU."""
-    def __init__(self):
-        self.transform = ta.TritonFusedAugment(
-            crop_size=112,
-            horizontal_flip_p=0.5,
-            brightness=0.2,
-            saturation=0.2,
-            mean=(0.485, 0.456, 0.406),
-            std=(0.229, 0.224, 0.225)
-        )
-    
-    def __call__(self, batch):
-        images = batch[0].cuda()
-        labels = batch[1].cuda()
-        augmented = self.transform(images)
-        return augmented, labels
+# Step 1: CPU data loading with workers
+train_dataset = datasets.CIFAR10(
+    './data', train=True,
+    transform=transforms.ToTensor()  # Only ToTensor on CPU
+)
+train_loader = DataLoader(
+    train_dataset, batch_size=128,
+    num_workers=4, pin_memory=True  # Fast async loading!
+)
 
-# Standard PyTorch DataLoader
-dataset = ImageFolder('path/to/data')
-loader = DataLoader(dataset, batch_size=32, shuffle=True)
+# Step 2: GPU augmentation transform
+augment = ta.TritonFusedAugment(
+    crop_size=28, horizontal_flip_p=0.5,
+    brightness=0.2, saturation=0.2,
+    mean=(0.4914, 0.4822, 0.4465),
+    std=(0.2470, 0.2435, 0.2616)
+)
 
-gpu_transform = GPUTransform()
-for images, labels in loader:
-    augmented, labels = gpu_transform((images, labels))
-    # ... training code ...
+# Step 3: Apply in training loop
+for images, labels in train_loader:
+    images, labels = images.cuda(), labels.cuda()
+    images = augment(images)  # All ops in 1 kernel! 🚀
+    # ... rest of training ...
 ```
 
----
-
-## Fusion Levels Comparison
-
-Choose the right level for your use case:
-
-| Level | Operations | Kernels | Speedup | When to Use |
-|-------|-----------|---------|---------|-------------|
-| **Ultimate** | Crop+Flip+Color+Norm | 1 | ~3-5x 🚀 | Production training (best performance) |
-| **Specialized** | Geometric OR Pixel | 1-2 | ~1.5-3x ⚡ | Need flexibility in pipeline |
-| **Individual** | One at a time | 6+ | ~1.2-1.5x | Maximum control over each step |
-
-**Recommendation**: Use **Ultimate Fusion** (`TritonFusedAugment`) for production training.
+**Full Examples**: See [`examples/train_mnist.py`](../examples/train_mnist.py) and [`examples/train_cifar10.py`](../examples/train_cifar10.py) for complete training scripts with neural networks.
 
 ---
 
@@ -157,6 +145,6 @@ Choose the right level for your use case:
 
 - [Float16 Support](float16.md) - Use half-precision for 1.3-2x additional speedup
 - [Batch Behavior](batch-behavior.md) - Understand random parameter handling
-- [Contrast Notes](contrast.md) - **Important**: Fast contrast vs torchvision-exact
+- [Contrast Notes](contrast.md) - Fast contrast vs torchvision-exact
 - [Auto-Tuning](auto-tuning.md) - Optional performance optimization
 - [API Reference](api-reference.md) - Complete API documentation

@@ -34,65 +34,24 @@ This project adheres to a code of conduct that all contributors are expected to 
 
 ### Prerequisites
 
-- Python 3.8 or higher
+- Python 3.8+, PyTorch 2.0+, Triton 2.0+
 - CUDA-capable GPU
-- PyTorch 2.0 or higher
-- Triton 2.0 or higher
 
 ### Install Development Dependencies
 
-> **Note**: All methods below create a `.venv/` folder **locally in your project directory**. 
-> This keeps dependencies isolated per-project. Activation tells your shell to use this local environment.
-
-#### Recommended: Using uv (Modern & Fast)
-
-[uv](https://github.com/astral-sh/uv) is a blazingly fast Python package installer (10-100x faster than pip):
-
 ```bash
-# Install uv if you haven't already
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Create a virtual environment (creates .venv/ folder in project)
-uv venv
-
-# Activate it
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-
-# Install the package in editable mode with dev dependencies
-uv pip install -e ".[dev]"
-
-# Or use uv run without activation (it auto-detects .venv)
-uv run pytest tests/
-```
-
-#### Alternative: Using traditional venv + pip
-
-```bash
-# Create a virtual environment
+# Create virtual environment
 python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
-# Install the package in editable mode with dev dependencies
+# Install in editable mode with dev dependencies
 pip install -e ".[dev]"
 
-# Or install from requirements
-pip install -r requirements-dev.txt
-```
-
-#### Other Modern Alternatives
-
-- **Poetry**: `poetry install` (if using Poetry for dependency management)
-- **PDM**: `pdm install` (if using PDM)
-
-### Verify Installation
-
-```bash
-# Run tests
+# Verify installation
 pytest tests/
-
-# Run examples
-python examples/basic_usage.py
 ```
+
+**Alternative**: Use [uv](https://github.com/astral-sh/uv) for faster installs: `uv pip install -e ".[dev]"`
 
 ## How to Contribute
 
@@ -194,27 +153,9 @@ We welcome code contributions! Here are some areas where you can help:
 
 ### Documentation
 
-- All public functions and classes must have docstrings
-- Use Google-style docstrings:
-  ```python
-  def function(arg1: int, arg2: str) -> bool:
-      """
-      Brief description.
-      
-      Longer description if needed.
-      
-      Args:
-          arg1: Description of arg1
-          arg2: Description of arg2
-          
-      Returns:
-          Description of return value
-          
-      Example:
-          >>> function(42, "hello")
-          True
-      """
-  ```
+- All public functions and classes must have Google-style docstrings
+- Include type hints and usage examples
+- See existing code for docstring format
 
 ## Testing
 
@@ -236,25 +177,10 @@ pytest tests/test_transforms.py::TestFunctionalAPI::test_apply_brightness
 
 ### Writing Tests
 
-- Place tests in the `tests/` directory
-- Use descriptive test names that explain what is being tested
-- Test both normal cases and edge cases
-- Mock external dependencies when appropriate
-- Ensure tests are deterministic (set random seeds if needed)
-
-Example test structure:
-```python
-def test_feature_name():
-    """Test description."""
-    # Arrange
-    input_data = create_test_data()
-    
-    # Act
-    result = function_under_test(input_data)
-    
-    # Assert
-    assert result == expected_output
-```
+- Place tests in `tests/` directory with descriptive names
+- Test normal cases and edge cases
+- Ensure tests are deterministic (set random seeds)
+- Follow existing test structure in the codebase
 
 ## Documentation
 

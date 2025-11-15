@@ -16,7 +16,7 @@ mkdocs serve
 
 ## Documentation Files
 
-- `index.md` - Home page
+- `../README.md` - Home page (shared with GitHub)
 - `installation.md` - Installation guide
 - `quickstart.md` - Quick start tutorial
 - `float16.md` - Float16 support guide

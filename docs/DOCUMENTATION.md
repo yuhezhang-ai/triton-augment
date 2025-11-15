@@ -5,8 +5,8 @@ This document explains how to build, preview, and deploy the Triton-Augment docu
 ## Structure
 
 ```
+README.md                 # Home page (shared with GitHub)
 docs/
-├── index.md              # Home page
 ├── installation.md       # Installation guide
 ├── quickstart.md        # Quick start tutorial
 ├── float16.md           # Float16 support
@@ -18,6 +18,8 @@ docs/
 └── stylesheets/
     └── extra.css        # Custom CSS
 ```
+
+**Note**: The home page uses the root `README.md` to avoid duplication between GitHub and documentation site.
 
 ## Building the Documentation
 
@@ -90,7 +92,7 @@ Example:
 ```yaml
 # mkdocs.yml
 nav:
-  - Home: index.md
+  - Home: ../README.md
   - Getting Started:
       - Installation: installation.md
       - Quick Start: quickstart.md

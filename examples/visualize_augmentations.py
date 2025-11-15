@@ -416,7 +416,7 @@ def compare_fused_pipeline(img, output_path='compare_fused_pipeline.png'):
            transform=ax.transAxes, fontsize=9)
     
     if max_diff < 1e-5:
-        fig.text(0.5, 0.02, '✓ Results are identical! Triton-Augment is 3-5x faster with 1 kernel vs 5 kernels', 
+        fig.text(0.5, 0.02, '✓ Results are identical! Triton-Augment is faster with 1 kernel vs 5 kernels', 
                 ha='center', fontsize=12, color='green', weight='bold')
     
     plt.suptitle('Full Pipeline: Crop → Flip → Brightness → Saturation → Normalize', 

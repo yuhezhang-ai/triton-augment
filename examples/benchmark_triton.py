@@ -285,18 +285,18 @@ def benchmark_batch_scaling(batch_size, size, provider):
         line_names=['torchvision Compose', 'Triton-Augment Compose', 'Triton-Augment Fused'],
         styles=[('green', '-'), ('blue', '--'), ('red', '-')],
         ylabel='Runtime (ms)',
-        plot_name='training-pipeline-performance',
+        plot_name='random-color-augment-performance',
         args={'batch_size': 32},
     )
 )
-def benchmark_training_pipeline(size, batch_size, provider):
+def benchmark_random_color_augment(size, batch_size, provider):
     """
-    Real-world training pipeline using transform CLASSES with RANDOM parameters.
+    Random color-wise augmentation pipeline using transform CLASSES.
     
     This simulates actual usage in training where users create transforms once
     and apply them repeatedly with random augmentations each time.
     
-    Uses ColorJitter + RandomGrayscale + Normalize as in real training pipelines.
+    Uses ColorJitter (brightness, saturation) + RandomGrayscale + Normalize.
     """
     images = torch.rand(batch_size, 3, size, size, device='cuda', dtype=torch.float32)
     
@@ -719,12 +719,12 @@ if __name__ == '__main__':
     print("  Operations: Brightness + Saturation + Grayscale + Normalize")
     benchmark_batch_scaling.run(print_data=True, save_path='benchmark_results')
     
-    print("\nBenchmark 4: Transform CLASSES with RANDOM factors (real-world training pipeline)")
+    print("\nBenchmark 4: Random color-wise augmentation (using transform CLASSES)")
     print("  Torchvision: ColorJitter + RandomGrayscale + Normalize (Compose, sequential)")
     print("  Triton Sequential: TritonColorJitter + TritonRandomGrayscale + TritonNormalize (3 kernels)")
     print("  Triton Fused: TritonColorJitterNormalize (SINGLE FUSED KERNEL, maximum performance)")
-    print("  Simulates actual training augmentation usage with random parameters per call")
-    benchmark_training_pipeline.run(print_data=True, save_path='benchmark_results')
+    print("  Simulates actual training usage with random color augmentations per call")
+    benchmark_random_color_augment.run(print_data=True, save_path='benchmark_results')
     
     print("\nBenchmark 5: Geometric Fusion (Crop + Flip)")
     print("  Torchvision: crop() → horizontal_flip() (2 kernel launches)")

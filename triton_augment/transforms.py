@@ -65,7 +65,7 @@ class TritonColorJitter(nn.Module):
     
     Performance:
         - Uses fused kernel for all operations in a single pass
-        - ~3x faster than sequential F.adjust_* calls
+        - Faster than sequential operations
         - For even more speed, combine with normalization using TritonColorJitterNormalize
     """
     
@@ -945,7 +945,7 @@ class TritonFusedAugment(nn.Module):
         ...     transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
         ... ])
         >>> 
-        >>> # NEW (1 kernel launch - 3-5x faster!):
+        >>> # NEW (1 kernel launch - significantly faster!):
         >>> import triton_augment as ta
         >>> transform = ta.TritonUltimateAugment(
         ...     crop_size=112,

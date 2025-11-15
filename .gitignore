@@ -146,6 +146,10 @@ datasets/
 *.tiff
 *.webp
 
+# Exception: Allow documentation images
+!ultimate-fusion-performance.png
+!docs/images/*.png
+
 # Triton cache
 .triton/
 __triton_cache__/

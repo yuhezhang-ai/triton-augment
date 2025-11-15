@@ -12,7 +12,7 @@ Triton-Augment is a high-performance image augmentation library that leverages [
 
 ```python
 # Traditional (torchvision Compose): 7 kernel launches
-crop → flip → brightness → contrast → saturation → grayscale (optional) → normalize
+crop → flip → brightness → contrast → saturation → grayscale → normalize
 
 # Triton-Augment Ultimate Fusion: 1 kernel launch 🚀
 [crop + flip + brightness + contrast + saturation + grayscale + normalize]
@@ -22,7 +22,7 @@ crop → flip → brightness → contrast → saturation → grayscale (optional
 
 ## 🚀 Features
 
-- **One Kernel, All Operations**: Fuse crop, flip, color jitter, grayscale, and normalize in a single kernel - ~3-5x faster! 🚀
+- **One Kernel, All Operations**: Fuse crop, flip, color jitter, grayscale, and normalize in a single kernel - significantly faster, scales with image size! 🚀
 - **Different Parameters Per Sample**: Each image in batch gets different random augmentations (not just batch-wide)
 - **Transform & Functional APIs**: Random parameters (transforms) or fixed parameters (functional) - your choice
 - **Zero Memory Overhead**: No intermediate buffers between operations
@@ -53,7 +53,7 @@ pip install -e .
 
 ### Basic Usage
 
-**Option 1: Ultimate Fusion (Fastest - Recommended)** 🚀
+**Recommended: Ultimate Fusion** 🚀
 
 ```python
 import torch
@@ -62,14 +62,15 @@ import triton_augment as ta
 # Create batch of images on GPU
 images = torch.rand(32, 3, 224, 224, device='cuda')
 
-# Replace torchvision Compose (6 kernel launches)
-# With Triton-Augment (1 kernel launch - 3-5x faster!)
+# Replace torchvision Compose (7 kernel launches)
+# With Triton-Augment (1 kernel launch - significantly faster!)
 transform = ta.TritonFusedAugment(
     crop_size=112,
     horizontal_flip_p=0.5,
     brightness=0.2,
     contrast=0.2,
     saturation=0.2,
+    random_grayscale_p=0.1,
     mean=(0.485, 0.456, 0.406),
     std=(0.229, 0.224, 0.225)
 )
@@ -77,21 +78,31 @@ transform = ta.TritonFusedAugment(
 augmented = transform(images)  # 🚀 Single kernel for entire pipeline!
 ```
 
-**Option 2: Pixel-Only Fusion**
+**Need only some operations?** Use `TritonFusedAugment` with default/no-op values, or use specialized APIs (they all use the same fused kernel internally):
 
 ```python
-# If you only need color operations (no crop/flip)
-transform = ta.TritonColorJitterNormalize(
-    brightness=0.2,
-    saturation=0.2,
-    mean=(0.485, 0.456, 0.406),
-    std=(0.229, 0.224, 0.225)
+# Option 1: Ultimate API with partial operations (set unused to 0/default)
+transform = ta.TritonFusedAugment(
+    crop_size=224,
+    horizontal_flip_p=0.0,  # No flip
+    brightness=0.0,         # No brightness
+    saturation=0.2,         # Only saturation
+    mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)
 )
 
-augmented = transform(images)  # Single kernel for color + normalize
+# Option 2: Specialized APIs (convenience wrappers, same kernel internally)
+color_only = ta.TritonColorJitterNormalize(brightness=0.2, saturation=0.2, ...)
+geo_only = ta.TritonRandomCropFlip(size=112, horizontal_flip_p=0.5)
 ```
 
 [→ More Examples](https://triton-augment.readthedocs.io/quickstart/)
+
+### ⚠️ Input Requirements
+
+- **Range**: Images must be in `[0, 1]` range (e.g., use `torchvision.transforms.ToTensor()`)
+- **Device**: GPU (CUDA) - *CPU tensors automatically moved to GPU*
+- **Shape**: `(C, H, W)` or `(N, C, H, W)` - *3D tensors automatically batched*
+- **Dtype**: `float32` or `float16`
 
 ---
 
@@ -105,7 +116,7 @@ augmented = transform(images)  # Single kernel for color + normalize
 | [Installation](docs/installation.md) | Setup and requirements |
 | [API Reference](docs/api-reference.md) | Complete API documentation for all functions and classes |
 | [Float16 Support](docs/float16.md) | Use half-precision for 1.3-2x speedup and 50% memory savings |
-| [Contrast Notes](docs/contrast.md) | **Important**: Fused kernel uses fast contrast (different from torchvision). See how to get exact torchvision results |
+| [Contrast Notes](docs/contrast.md) | Fused kernel uses fast contrast (different from torchvision). See how to get exact torchvision results |
 | [Auto-Tuning](docs/auto-tuning.md) | Optional performance optimization for your GPU and data size (disabled by default). Includes cache warm-up guide |
 | [Batch Behavior](docs/batch-behavior.md) | Different parameters per sample (default) vs batch-wide parameters. Understanding `same_on_batch` flag |
 
@@ -113,30 +124,28 @@ augmented = transform(images)  # Single kernel for color + normalize
 
 ## ⚡ Performance
 
-By fusing operations, Triton-Augment eliminates intermediate memory transfers:
-
-```
-Traditional:  GPU ←→ Crop ←→ GPU ←→ Flip ←→ GPU ←→ Brightness ←→ GPU ←→ Contrast ←→ GPU ←→ Saturation ←→ GPU ←→ Normalize ←→ GPU
-                     ❌ Slow (multiple memory transfers)
-
-Triton:       GPU ←→ [Crop + Flip + Brightness + Contrast + Saturation + Normalize] ←→ GPU
-                     ✅ Fast (single memory transfer)
-```
-
-### Benchmark Results (NVIDIA A100)
+### Benchmark Results (NVIDIA A100 on Google Colab)
 
 Real training scenario with random augmentations:
 
-| Image Size | Batch | Torchvision | Triton Fused | Speedup |
-|------------|-------|-------------|--------------|---------|
-| 256×256    | 32    | 0.61 ms     | 0.44 ms      | **1.4x** |
-| 256×256    | 64    | 0.93 ms     | 0.43 ms      | **2.1x** |
-| 600×600    | 32    | 2.19 ms     | 0.50 ms      | **4.4x** |
-| 1280×1280  | 32    | 8.23 ms     | 0.94 ms      | **8.7x** |
+| Image Size | Batch | Crop Size | Torchvision | Triton Fused | Speedup |
+|------------|-------|-----------|-------------|--------------|---------|
+| 256×256    | 32    | 224×224   | 0.61 ms     | 0.44 ms      | **1.4x** |
+| 256×256    | 64    | 224×224   | 0.93 ms     | 0.43 ms      | **2.1x** |
+| 600×600    | 32    | 512×512   | 2.19 ms     | 0.50 ms      | **4.4x** |
+| 1280×1280  | 32    | 1024×1024 | 8.23 ms     | 0.94 ms      | **8.7x** |
 
 **Average Speedup: 4.1x** 🚀
 
 > Operations: RandomCrop + RandomHorizontalFlip + ColorJitter + RandomGrayscale + Normalize
+
+**Performance scales with image size** — larger images benefit more from kernel fusion:
+
+<div align="center">
+<img src="ultimate-fusion-performance.png" alt="Ultimate Fusion Performance" width="600"/>
+</div>
+
+*Speedup advantage increases dramatically for larger images (600×600+). Triton Ultimate Fused maintains near-constant runtime while Torchvision scales linearly.*
 
 ### Run Your Own Benchmarks
 
@@ -154,14 +163,24 @@ python examples/benchmark.py
 python examples/benchmark_triton.py
 ```
 
+> **💡 Auto-Tuning**: The results above use default configurations. Auto-tuning can provide additional speedup on **dedicated GPUs** (local workstations, cloud instances). On **shared cloud services** (Colab, Kaggle), auto-tuning benefits may be limited due to variable GPU utilization. See [Auto-Tuning Guide](docs/auto-tuning.md) for details.
+
 ---
 
-## 🔥 Use Cases
+## 🎯 When to Use Triton-Augment?
 
-✅ Large-scale training (ImageNet, COCO)  
-✅ Real-time inference pipelines  
-✅ Mixed-precision training (float16)  
-✅ Memory-constrained scenarios  
+**Best for:**
+- Large-scale training with large images/batches
+- Production pipelines where augmentation is a bottleneck
+- Training with fused operations (crop + flip + color jitter + grayscale + normalize)
+
+**Torchvision is still better if you:**
+- Need many different augmentation operations (rotation, affine, etc.) - torchvision has 30+ transforms
+- Work with small images/batches (< 256×256)
+- Need CPU support or maximum flexibility
+- Want the most mature and battle-tested library
+
+**Key difference:** Triton-Augment trades breadth for speed. It does fewer operations but significantly faster on large data, especially when fused.
 
 ---
 
@@ -176,13 +195,6 @@ python examples/train_mnist.py
 # CIFAR-10 training example (RGB images, recommended)
 python examples/train_cifar10.py
 ```
-
-These examples demonstrate:
-- ✅ Fast async data loading with `num_workers > 0`
-- ✅ GPU batch augmentation in training loop
-- ✅ All operations fused in 1 kernel per batch
-- ✅ Best of both worlds: CPU for I/O, GPU for compute
-- ✅ Real production training setup
 
 **Key Integration Points:**
 
@@ -241,7 +253,7 @@ for images, labels in train_loader:
 - ✅ **Kernel fusion**: No intermediate memory allocations
 - ✅ **Large batch advantage**: Speedup increases with batch size
 
-**Note**: Set `same_on_batch=True` if you want all images to share the same random parameters (slightly faster, but less useful for training).
+**Note**: Set `same_on_batch=True` if you want all images to share the same random parameters.
 
 💡 **Pro Tip**: Apply Triton-Augment transforms AFTER moving tensors to GPU for maximum performance!
 
@@ -251,26 +263,26 @@ for images, labels in train_loader:
 
 ### Transform Classes (Recommended)
 
+**Multi-operation transforms use the fused kernel** (single kernel for best performance):
+
 ```python
 import triton_augment as ta
 
-# Ultimate fusion - ALL operations in ONE kernel (fastest!) 🚀
+# Ultimate API - full control, all operations (uses fused kernel)
 ultimate = ta.TritonFusedAugment(
     crop_size=112, horizontal_flip_p=0.5,
     brightness=0.2, contrast=0.2, saturation=0.2,
     mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)
 )
 
-# Pixel fusion - color operations + normalize
-pixel_fused = ta.TritonColorJitterNormalize(
+# Specialized APIs - convenience wrappers (also use fused kernel)
+color_only = ta.TritonColorJitterNormalize(
     brightness=0.2, saturation=0.2,
     mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)
 )
+geo_only = ta.TritonRandomCropFlip(size=112, horizontal_flip_p=0.5)
 
-# Geometric fusion - crop + flip
-geo_fused = ta.TritonRandomCropFlip(size=112, horizontal_flip_p=0.5)
-
-# Individual transforms
+# Individual transforms (use separate kernels, for maximum control)
 crop = ta.TritonRandomCrop(112)
 flip = ta.TritonRandomHorizontalFlip(p=0.5)
 jitter = ta.TritonColorJitter(brightness=0.2)
@@ -281,28 +293,19 @@ jitter = ta.TritonColorJitter(brightness=0.2)
 ```python
 import triton_augment.functional as F
 
-# Ultimate fusion - ALL operations
-result = F.ultimate_fused_augment(
+# Ultimate fusion - ALL operations (single kernel)
+result = F.fused_augment(
     img, top=20, left=30, height=112, width=112,
     flip_horizontal=True, brightness_factor=1.2,
     saturation_factor=0.9, mean=(...), std=(...)
 )
 
-# Geometric operations
+# Individual operations (separate kernels)
 cropped = F.crop(img, top=20, left=30, height=112, width=112)
 flipped = F.horizontal_flip(img)
-# Geometric fused
-result = F.fused_crop_flip(img, 20, 30, 112, 112, flip_horizontal=True)
-
-# Pixel operations
 img = F.adjust_brightness(img, 1.2)
 img = F.adjust_saturation(img, 0.9)
 img = F.normalize(img, mean=(...), std=(...))
-# Pixel fused
-result = F.fused_color_normalize(
-    img, brightness_factor=1.2, saturation_factor=0.9,
-    mean=(...), std=(...)
-)
 ```
 
 [→ Complete API Reference](docs/api-reference.md)
@@ -313,8 +316,8 @@ result = F.fused_color_normalize(
 
 - [x] **Phase 1**: Fused color operations (brightness, contrast, saturation, normalize)
 - [x] **Phase 1.5**: Grayscale, float16 support, auto-tuning
-- [x] **Phase 2**: Geometric operations (crop, flip) + Ultimate fusion 🚀
-- [ ] **Phase 3**: Extended operations (rotation, blur, erasing, mixup)
+- [x] **Phase 2**: Basic Geometric operations (crop, flip) + Ultimate fusion 🚀
+- [ ] **Phase 3**: Extended operations (resize, rotation, blur, erasing, mixup)
 
 [→ Detailed Roadmap](https://github.com/yuhezhang-ai/triton-augment/issues)
 
@@ -346,7 +349,18 @@ Apache License 2.0 - see [LICENSE](LICENSE) file.
 
 ---
 
-## 📧 Contact
+## 👤 Author
+
+**Yuhe Zhang**
+
+- 💼 LinkedIn: [Yuhe Zhang](https://www.linkedin.com/in/yuhe-zhang-phd/)
+- 📧 Email: yuhezhang.zju@gmail.com
+
+*Research interests: Applied ML, Computer Vision, Efficient Deep Learning, GPU Acceleration*
+
+---
+
+## 📧 Project
 
 - **Issues**: [GitHub Issues](https://github.com/yuhezhang-ai/triton-augment/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/yuhezhang-ai/triton-augment/discussions)
@@ -356,6 +370,8 @@ Apache License 2.0 - see [LICENSE](LICENSE) file.
 <div align="center">
 
 **Made with ❤️ for the deep learning community**
+
+⭐ **If you find this library useful, please consider starring the repo!** ⭐
 
 [Documentation](https://triton-augment.readthedocs.io) • [GitHub](https://github.com/yuhezhang-ai/triton-augment) • [PyPI](https://pypi.org/project/triton-augment/)
 
