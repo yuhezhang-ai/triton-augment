@@ -91,7 +91,7 @@ color_only = ta.TritonColorJitterNormalize(brightness=0.2, saturation=0.2, ...)
 geo_only = ta.TritonRandomCropFlip(size=112, horizontal_flip_p=0.5)
 ```
 
-[→ More Examples](https://triton-augment.readthedocs.io/quickstart/)
+[→ More Examples](quickstart/)
 
 ### ⚠️ Input Requirements
 
@@ -104,7 +104,7 @@ geo_only = ta.TritonRandomCropFlip(size=112, horizontal_flip_p=0.5)
 
 ## 📚 Documentation
 
-**Full documentation**: https://triton-augment.readthedocs.io (or see `docs/` folder)
+**Full documentation**: Navigation menu on the left (or see [GitHub repo](https://github.com/yuhezhang-ai/triton-augment) `docs/` folder)
 
 | Guide | Description |
 |-------|-------------|

@@ -86,7 +86,7 @@ color_only = ta.TritonColorJitterNormalize(brightness=0.2, saturation=0.2, ...)
 geo_only = ta.TritonRandomCropFlip(size=112, horizontal_flip_p=0.5)
 ```
 
-[→ More Examples](https://triton-augment.readthedocs.io/quickstart/)
+[→ More Examples](https://yuhezhang-ai.github.io/triton-augment/quickstart/)
 
 ### ⚠️ Input Requirements
 
@@ -99,7 +99,7 @@ geo_only = ta.TritonRandomCropFlip(size=112, horizontal_flip_p=0.5)
 
 ## 📚 Documentation
 
-**Full documentation**: https://triton-augment.readthedocs.io (or see `docs/` folder)
+**Full documentation**: https://yuhezhang-ai.github.io/triton-augment (or see `docs/` folder)
 
 | Guide | Description |
 |-------|-------------|
@@ -334,8 +334,6 @@ img = F.normalize(img, mean=(...), std=(...))
 - [x] **Phase 2**: Basic Geometric operations (crop, flip) + Ultimate fusion 🚀
 - [ ] **Phase 3**: Extended operations (resize, rotation, blur, erasing, mixup)
 
-[→ Detailed Roadmap](https://github.com/yuhezhang-ai/triton-augment/issues)
-
 ---
 
 ## 🤝 Contributing
@@ -378,16 +376,13 @@ Apache License 2.0 - see [LICENSE](LICENSE) file.
 
 ---
 
-## 📧 Project
-
-- **Issues and feature requests **: [GitHub Issues](https://github.com/yuhezhang-ai/triton-augment/issues)
-
----
-
 <div align="center">
+
+Feel free to file issues or feature requests: [GitHub Issues](https://github.com/yuhezhang-ai/triton-augment/issues)
+
 
 ⭐ **If you find this library useful, please consider starring the repo!** ⭐
 
-[Documentation](https://triton-augment.readthedocs.io) • [GitHub](https://github.com/yuhezhang-ai/triton-augment) • [PyPI](https://pypi.org/project/triton-augment/)
+[Documentation](https://yuhezhang-ai.github.io/triton-augment) • [GitHub](https://github.com/yuhezhang-ai/triton-augment) • [PyPI](https://pypi.org/project/triton-augment/)
 
 </div>
