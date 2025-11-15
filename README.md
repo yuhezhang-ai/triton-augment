@@ -42,6 +42,10 @@ pip install triton-augment
 
 **Requirements**: Python 3.8+, PyTorch 2.0+, CUDA-capable GPU
 
+**Try it now**: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1aN0V3zjtINXZmj2gZPv9zwNiPrD48qcW) - Test correctness and run benchmarks without local setup
+
+> **Note**: Colab is a shared service - performance may vary due to GPU allocation and resource contention. For stable benchmarking, use a dedicated GPU.
+
 ### Basic Usage
 
 **Recommended: Ultimate Fusion** 🚀
@@ -114,6 +118,9 @@ geo_only = ta.TritonRandomCropFlip(size=112, horizontal_flip_p=0.5)
 ---
 
 ## ⚡ Performance
+
+**📊 [Run benchmarks yourself on Google Colab](https://colab.research.google.com/drive/1aN0V3zjtINXZmj2gZPv9zwNiPrD48qcW)** - Verify correctness and performance on free GPU  
+*Note: Colab performance may vary due to shared resources*
 
 ### Benchmark Results (Tesla T4 - Google Colab Free Tier)
 
