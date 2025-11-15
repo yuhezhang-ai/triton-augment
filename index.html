@@ -436,6 +436,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#5-12x-faster-than-torchvision-on-typical-training-augmentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ⚡ 5 - 12x Faster than Torchvision on typical training augmentation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#features" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1020,6 +1031,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#5-12x-faster-than-torchvision-on-typical-training-augmentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ⚡ 5 - 12x Faster than Torchvision on typical training augmentation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#features" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1260,6 +1282,17 @@
 <a href="https://pytorch.org/"><img alt="PyTorch 2.0+" src="https://img.shields.io/badge/pytorch-2.0+-ee4c2c.svg" /></a>
 <a href="https://github.com/yuhezhang-ai/triton-augment/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache%202.0-green.svg" /></a></p>
 <p>Triton-Augment is a high-performance image augmentation library that leverages <a href="https://github.com/openai/triton">OpenAI Triton</a> to fuse common transform operations, providing significant speedups over standard PyTorch implementations.</p>
+<h2 id="5-12x-faster-than-torchvision-on-typical-training-augmentation">⚡ <strong>5 - 12x Faster</strong> than Torchvision on typical training augmentation<a class="headerlink" href="#5-12x-faster-than-torchvision-on-typical-training-augmentation" title="Permanent link">&para;</a></h2>
+<p>Replace your augmentation pipeline with a <strong>single fused kernel</strong> and get:</p>
+<ul>
+<li>
+<p><strong>8.1x average speedup</strong> on Tesla T4 (Google Colab free tier)</p>
+</li>
+<li>
+<p><strong>Up to 12x faster</strong> on large images (1280×1280)</p>
+</li>
+</ul>
+<p><a href="#-performance">📊 See full benchmarks →</a></p>
 <p><strong>Key Idea</strong>: Fuse multiple GPU operations into a single kernel → eliminate intermediate memory transfers → faster augmentation.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Traditional (torchvision Compose): 7 kernel launches</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="n">crop</span> <span class="err">→</span> <span class="n">flip</span> <span class="err">→</span> <span class="n">brightness</span> <span class="err">→</span> <span class="n">contrast</span> <span class="err">→</span> <span class="n">saturation</span> <span class="err">→</span> <span class="n">grayscale</span> <span class="err">→</span> <span class="n">normalize</span>
@@ -1272,11 +1305,10 @@
 <ul>
 <li><strong>One Kernel, All Operations</strong>: Fuse crop, flip, color jitter, grayscale, and normalize in a single kernel - significantly faster, scales with image size! 🚀</li>
 <li><strong>Different Parameters Per Sample</strong>: Each image in batch gets different random augmentations (not just batch-wide)</li>
-<li><strong>Transform &amp; Functional APIs</strong>: Random parameters (transforms) or fixed parameters (functional) - your choice</li>
 <li><strong>Zero Memory Overhead</strong>: No intermediate buffers between operations</li>
-<li><strong>Float16 Ready</strong>: ~1.3x speedup on large images + 50% memory savings</li>
-<li><strong>Drop-in Replacement</strong>: torchvision-like API, easy migration</li>
+<li><strong>Drop-in Replacement</strong>: torchvision-like transforms &amp; functional APIs, easy migration</li>
 <li><strong>Auto-Tuning</strong>: Optional performance optimization for your GPU</li>
+<li><strong>Float16 Ready</strong>: ~1.3x speedup on large images + 50% memory savings</li>
 </ul>
 <hr />
 <h2 id="quick-start">📦 Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
@@ -1496,6 +1528,7 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Comprehensive analysis with visualizations</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>python<span class="w"> </span>examples/benchmark_triton.py
 </code></pre></div></p>
+<hr />
 <h2 id="auto-tuning">💡 Auto-Tuning<a class="headerlink" href="#auto-tuning" title="Permanent link">&para;</a></h2>
 <p>All benchmark results shown above use default kernel configurations. Auto-tuning can provide <strong>additional speedup</strong> on dedicated GPUs.</p>
 <p><strong>What is Auto-Tuning?</strong></p>
