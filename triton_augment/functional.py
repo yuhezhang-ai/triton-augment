@@ -832,7 +832,7 @@ def fused_augment(
     Combines geometric (crop + flip) and pixel (color + normalize) operations
     in a single GPU kernel, providing maximum performance.
     
-    **Performance**: ~8-10x faster than torchvision Compose (6+ sequential operations)
+    **Performance**: Up to 12x faster on large images (8.1x average on Tesla T4, scales dramatically with image size)
     
     Operations applied in sequence:
     1. **Geometric**: Crop + Optional Horizontal Flip (index transformations, per-image)

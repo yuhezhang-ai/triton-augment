@@ -124,18 +124,18 @@ geo_only = ta.TritonRandomCropFlip(size=112, horizontal_flip_p=0.5)
 
 ## ⚡ Performance
 
-### Benchmark Results (NVIDIA A100 on Google Colab)
+### Benchmark Results (Tesla T4 - Google Colab Free Tier)
 
 Real training scenario with random augmentations:
 
 | Image Size | Batch | Crop Size | Torchvision | Triton Fused | Speedup |
 |------------|-------|-----------|-------------|--------------|---------|
-| 256×256    | 32    | 224×224   | 0.61 ms     | 0.44 ms      | **1.4x** |
-| 256×256    | 64    | 224×224   | 0.93 ms     | 0.43 ms      | **2.1x** |
-| 600×600    | 32    | 512×512   | 2.19 ms     | 0.50 ms      | **4.4x** |
-| 1280×1280  | 32    | 1024×1024 | 8.23 ms     | 0.94 ms      | **8.7x** |
+| 256×256    | 32    | 224×224   | 2.48 ms     | 0.56 ms      | **4.5x** |
+| 256×256    | 64    | 224×224   | 4.51 ms     | 0.69 ms      | **6.5x** |
+| 600×600    | 32    | 512×512   | 11.82 ms    | 1.26 ms      | **9.4x** |
+| 1280×1280  | 32    | 1024×1024 | 48.91 ms    | 4.07 ms      | **12.0x** |
 
-**Average Speedup: 4.1x** 🚀
+**Average Speedup: 8.1x** 🚀
 
 > Operations: RandomCrop + RandomHorizontalFlip + ColorJitter + RandomGrayscale + Normalize
 
@@ -145,7 +145,23 @@ Real training scenario with random augmentations:
 <img src="ultimate-fusion-performance.png" alt="Ultimate Fusion Performance" width="600"/>
 </div>
 
-*Speedup advantage increases dramatically for larger images (600×600+). Triton Ultimate Fused maintains near-constant runtime while Torchvision scales linearly.*
+*Speedup advantage increases dramatically for larger images (600×600+). Triton maintains near-constant runtime while Torchvision scales linearly.*
+
+<details>
+<summary><b>📊 Additional Benchmarks (NVIDIA A100)</b></summary>
+
+| Image Size | Batch | Crop Size | Torchvision | Triton Fused | Speedup |
+|------------|-------|-----------|-------------|--------------|---------|
+| 256×256    | 32    | 224×224   | 0.61 ms     | 0.44 ms      | **1.4x** |
+| 256×256    | 64    | 224×224   | 0.93 ms     | 0.43 ms      | **2.1x** |
+| 600×600    | 32    | 512×512   | 2.19 ms     | 0.50 ms      | **4.4x** |
+| 1280×1280  | 32    | 1024×1024 | 8.23 ms     | 0.94 ms      | **8.7x** |
+
+**Average: 4.1x** (A100's high memory bandwidth makes torchvision already fast, so relative improvement is smaller)
+
+</details>
+
+> **💡 Why better speedup on T4?** Kernel fusion reduces memory bandwidth bottlenecks, which matters more on bandwidth-limited GPUs like T4 (320 GB/s) vs A100 (1,555 GB/s). This means **greater benefits on consumer and mid-range hardware** — exactly where most users need it!
 
 ### Run Your Own Benchmarks
 

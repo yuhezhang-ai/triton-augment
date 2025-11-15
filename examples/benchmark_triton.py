@@ -513,7 +513,7 @@ def benchmark_ultimate_fusion(size, batch_size, provider):
     - Triton Sequential: 5 Triton transforms (7 kernel launches)
     - Triton Ultimate: 1 fused kernel (1 kernel launch) 🚀
     
-    Expected: ~8-10x speedup vs torchvision!
+    Expected: ~5-12x speedup vs torchvision (Tesla T4)!
     """
     img = torch.rand(batch_size, 3, size, size, device='cuda')
     

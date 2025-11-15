@@ -44,7 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Input validation and helpful error messages
 
 #### Documentation & Testing
-- Comprehensive README with benchmark results (4x average speedup, up to 8.7x on large images)
+- Comprehensive README with benchmark results (8.1x average speedup on T4, up to 12x on large images)
 - Full API reference documentation
 - User guides: Float16, Auto-Tuning, Batch Behavior, Contrast Implementation
 - 200+ unit tests covering correctness, float16, per-image randomness
@@ -52,8 +52,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Benchmark scripts with visualization
 
 ### Performance
-- **4.1x average speedup** vs torchvision (A100, Google Colab)
-- Scales with image size: 1.4x (256×256) → 8.7x (1280×1280)
+- **8.1x average speedup** vs torchvision (Tesla T4, Google Colab Free Tier)
+- Scales with image size: 4.5x (256×256) → 12.0x (1280×1280)
+- 4.1x average on A100 (high bandwidth makes relative improvement smaller)
 - Zero intermediate memory allocations through kernel fusion
 - Optimized for large batches and large images
 

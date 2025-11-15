@@ -34,7 +34,7 @@ augmented = transform(images)  # Single kernel launch for ALL operations!
 - ColorJitter (brightness, contrast, saturation)
 - Normalize
 
-**Performance**: Over 8x faster on large images (4x average, scales dramatically with image size, even higher with auto-tuning)
+**Performance**: Up to 12x faster on large images (8.1x average on Tesla T4, scales dramatically with image size)
 
 ---
 

@@ -395,7 +395,7 @@ ta.fused_augment(
 
 **Returns:** Fully augmented tensor of shape `(N, C, height, width)`
 
-**Performance**: Over 8x faster on large images (4x average, scales dramatically with image size, even higher with auto-tuning)
+**Performance**: Up to 12x faster on large images (8.1x average on Tesla T4, scales dramatically with image size)
 
 **Example:**
 
@@ -548,7 +548,7 @@ ta.TritonFusedAugment(
 - `random_grayscale_p` (float): Probability of converting to grayscale (default: 0.0, no grayscale)
 - `mean`, `std` (tuple): Normalization parameters
 
-**Performance**: Over 8x faster on large images (4x average, scales dramatically with image size, even higher with auto-tuning)
+**Performance**: Up to 12x faster on large images (8.1x average on Tesla T4, scales dramatically with image size)
 
 **Design Note**: All augmentation parameters default to 0 (no augmentation) for consistency and predictability. Users explicitly opt-in to each augmentation they want to use.
 
