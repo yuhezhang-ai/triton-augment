@@ -140,15 +140,14 @@ geo_only = ta.TritonRandomCropFlip(size=112, horizontal_flip_p=0.5)
 
 **Average Speedup: 8.1x** 🚀
 
-> Operations: RandomCrop + RandomHorizontalFlip + ColorJitter + RandomGrayscale + Normalize
+> **Operations**: RandomCrop + RandomHorizontalFlip + ColorJitter + RandomGrayscale + Normalize
+
+> **Note**: Benchmarks use `torchvision.transforms.v2` (not the legacy v1 API) for comparison.
 
 **Performance scales with image size** — larger images benefit more from kernel fusion:
-
-<p align="center" style="margin: 0;">
+<p align="left" style="margin: 0;">
   <img src="images/ultimate-fusion-performance.png" alt="Ultimate Fusion Performance" width="480"/>
 </p>
-
-*Speedup advantage increases dramatically for larger images (600×600+). Triton maintains near-constant runtime while Torchvision scales linearly.*
 
 **📊 Additional Benchmarks (NVIDIA A100 on Google Colab):**
 
@@ -159,10 +158,12 @@ geo_only = ta.TritonRandomCropFlip(size=112, horizontal_flip_p=0.5)
 | 600×600    | 32    | 512×512   | 2.19 ms     | 0.50 ms      | **4.4x** |
 | 1280×1280  | 32    | 1024×1024 | 8.23 ms     | 0.94 ms      | **8.7x** |
 
-**Average: 4.1x** (A100's high memory bandwidth makes torchvision already fast, so relative improvement is smaller)
+**Average: 4.1x**
+
+> **Why better speedup on T4?** Kernel fusion reduces memory bandwidth bottlenecks, which matters more on bandwidth-limited GPUs like T4 (320 GB/s) vs A100 (1,555 GB/s). This means **greater benefits on consumer and mid-range hardware**.
 
 
-> **💡 Why better speedup on T4?** Kernel fusion reduces memory bandwidth bottlenecks, which matters more on bandwidth-limited GPUs like T4 (320 GB/s) vs A100 (1,555 GB/s). This means **greater benefits on consumer and mid-range hardware**.
+**💡 Auto-Tuning**: All benchmark results above use default configurations. Auto-tuning can provide **additional speedup** on dedicated GPUs by finding optimal parameters for your hardware and data size. [Learn more →](#auto-tuning)
 
 ### Run Your Own Benchmarks
 
@@ -172,34 +173,55 @@ geo_only = ta.TritonRandomCropFlip(size=112, horizontal_flip_p=0.5)
 python examples/benchmark.py
 ```
 
-> **Note**: Benchmarks use `torchvision.transforms.v2` (not the legacy v1 API) for comparison.
-
 **Detailed Benchmark** (All operations):
 ```bash
 # Comprehensive analysis with visualizations
 python examples/benchmark_triton.py
 ```
 
-> **💡 Auto-Tuning**: The results above use default configurations. Auto-tuning can provide additional speedup on **dedicated GPUs** (local workstations, cloud instances). On **shared cloud services** (Colab, Kaggle), auto-tuning benefits may be limited due to variable GPU utilization. See [Auto-Tuning Guide](auto-tuning.md) for details.
+## Auto-Tuning
+
+**What is Auto-Tuning?**
+
+Triton kernels have tunable parameters (block sizes, warps per thread, etc.) that affect performance. Auto-tuning automatically searches for the optimal configuration for **your specific GPU and data sizes**.
+
+**When to use:**
+
+- ✅ **Dedicated GPUs** (local workstations, cloud instances): 10-30% additional speedup
+
+- ⚠️ **Shared services** (Colab, Kaggle): Limited benefits, but can help stabilize performance
+
+**Quick start:**
+```python
+import triton_augment as ta
+
+ta.set_autotune(True)  # Enable auto-tuning (one-time cost, results cached)
+transform = ta.TritonFusedAugment(...)
+augmented = transform(images)  # First run: tests configs; subsequent: uses cache
+```
+
+**⚠️ Performance Variability**: Our highly optimized kernels are more sensitive to resource contention. If you experience **sudden latency spikes** on shared services, this is expected due to competing workloads. Auto-tuning can help find more stable configurations.
+
+📖 **Full guide**: [Auto-Tuning Guide](auto-tuning.md) - Detailed instructions, cache management, and warm-up strategies
 
 ---
 
 ## 🎯 When to Use Triton-Augment?
 
-**💡 Use Triton-Augment + Torchvision together:**
+**Use Triton-Augment + Torchvision together:**
 
 - **Torchvision**: Data loading, resize, ToTensor, rotation, affine, etc.
 - **Triton-Augment**: Replace supported operations (currently: crop, flip, color jitter, grayscale, normalize; more coming) with fused GPU kernels
 
 **Best speedup when:**
 
-- Large images (600×600+) or large batches
+- Large images (500x500+) or large batches
 - Data augmentations are your bottleneck
 
 **Stick with Torchvision only if:**
 
-- Small images (< 256×256) on high-end GPUs (A100+)
 - CPU-only training
+- Experiencing **extreme latency variability** on **shared services** (e.g., consistent 10x+ spikes) - our optimized kernels are more sensitive to resource contention. Try auto-tuning first; if instability persists, Torchvision may be more stable
 
 💡 **TL;DR**: Use both! Triton-Augment replaces Torchvision's fusible ops for 8-12x speedup.
 
