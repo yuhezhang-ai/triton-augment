@@ -80,22 +80,41 @@ transform = ta.TritonFusedAugment(
 augmented = transform(images)  # 🚀 Single kernel for entire pipeline!
 ```
 
-**Need only some operations?** Use `TritonFusedAugment` with default/no-op values, or use specialized APIs (they all use the same fused kernel internally):
+**Need only some operations?** Set unused parameters to their default values:
 
 ```python
-# Option 1: Ultimate API with partial operations (set unused to 0/default)
+# Example: Only saturation adjustment + normalization
 transform = ta.TritonFusedAugment(
-    crop_size=224,
+    crop_size=224,          # No crop (same size as input)
+    brightness=0.0,         # No brightness change
+    contrast=0.0,           # No contrast change (default)
+    saturation=0.2,         # Only saturation jitter
     horizontal_flip_p=0.0,  # No flip
-    brightness=0.0,         # No brightness
-    saturation=0.2,         # Only saturation
-    mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)
+    mean=(0.485, 0.456, 0.406),
+    std=(0.229, 0.224, 0.225)
 )
-
-# Option 2: Specialized APIs (convenience wrappers, same kernel internally)
-color_only = ta.TritonColorJitterNormalize(brightness=0.2, saturation=0.2, ...)
-geo_only = ta.TritonRandomCropFlip(size=112, horizontal_flip_p=0.5)
 ```
+
+**Specialized APIs**: For convenience, also available: `TritonColorJitterNormalize`, `TritonRandomCropFlip`, etc.
+
+### 🔗 Combine with Torchvision Transforms
+
+For operations not yet supported by Triton-Augment (like rotation, perspective transforms, etc.), combine with torchvision transforms:
+
+```python
+import torchvision.transforms.v2 as transforms
+
+# Triton-Augment + Torchvision (per-image randomness + unsupported ops)
+transform = transforms.Compose([
+    transforms.RandomRotation(degrees=15),  # Torchvision (no per-image randomness)
+    ta.TritonColorJitterNormalize(         # Triton-Augment (per-image randomness)
+        brightness=0.2, contrast=0.2, saturation=0.2,
+        mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)
+    )
+])
+```
+
+**Note**: Torchvision transforms apply the same random parameters to all images in a batch, while Triton-Augment provides true per-image randomness.
 
 [→ More Examples](https://yuhezhang-ai.github.io/triton-augment/quickstart/)
 
