@@ -86,6 +86,12 @@ warn_unused_configs = true
 disallow_untyped_defs = false
 ignore_missing_imports = true
 
+[tool.setuptools]
+packages = {find = {exclude = ["tests", "tests.*", "examples", "examples.*"]}}
+
+[tool.setuptools.package-dir]
+"" = "."
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
