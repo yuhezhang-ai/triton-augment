@@ -186,6 +186,8 @@ python examples/benchmark.py
 python examples/benchmark_triton.py
 ```
 
+---
+
 ## 💡 Auto-Tuning
 
 All benchmark results shown above use default kernel configurations. Auto-tuning can provide **additional speedup** on dedicated GPUs.

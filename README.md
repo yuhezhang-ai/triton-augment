@@ -169,7 +169,7 @@ geo_only = ta.TritonRandomCropFlip(size=112, horizontal_flip_p=0.5)
 </details>
 
 <details>
-<summary><h3>📊 Run Your Own Benchmarks</h3></summary>
+<summary><h3>Run Your Own Benchmarks</h3></summary>
 
 **Quick Benchmark** (Ultimate Fusion only):
 ```bash
@@ -184,6 +184,8 @@ python examples/benchmark_triton.py
 ```
 
 </details>
+
+---
 
 ## 💡 Auto-Tuning
 
