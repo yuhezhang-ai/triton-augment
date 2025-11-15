@@ -21,8 +21,6 @@ Replace your augmentation pipeline with a **single fused kernel** and get:
 
 - **Up to 12x faster** on large images (1280×1280)
 
-- **Greater benefits** on consumer and mid-range GPUs
-
 [📊 See full benchmarks →](#-performance)
 
 

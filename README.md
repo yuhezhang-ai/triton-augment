@@ -13,11 +13,8 @@ Triton-Augment is a high-performance image augmentation library that leverages [
 Replace your augmentation pipeline with a **single fused kernel** and get:
 - **8.1x average speedup** on Tesla T4 (Google Colab free tier)
 - **Up to 12x faster** on large images (1280×1280)
-- **Greater benefits** on consumer and mid-range GPUs
 
 [📊 See full benchmarks →](#-performance)
-
----
 
 **Key Idea**: Fuse multiple GPU operations into a single kernel → eliminate intermediate memory transfers → faster augmentation.
 
