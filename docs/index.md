@@ -162,9 +162,6 @@ geo_only = ta.TritonRandomCropFlip(size=112, horizontal_flip_p=0.5)
 
 > **Why better speedup on T4?** Kernel fusion reduces memory bandwidth bottlenecks, which matters more on bandwidth-limited GPUs like T4 (320 GB/s) vs A100 (1,555 GB/s). This means **greater benefits on consumer and mid-range hardware**.
 
-
-**💡 Auto-Tuning**: All benchmark results above use default configurations. Auto-tuning can provide **additional speedup** on dedicated GPUs by finding optimal parameters for your hardware and data size. [Learn more →](#auto-tuning)
-
 ### Run Your Own Benchmarks
 
 **Quick Benchmark** (Ultimate Fusion only):
@@ -179,7 +176,9 @@ python examples/benchmark.py
 python examples/benchmark_triton.py
 ```
 
-## Auto-Tuning
+## 💡 Auto-Tuning
+
+All benchmark results shown above use default kernel configurations. Auto-tuning can provide **additional speedup** on dedicated GPUs.
 
 **What is Auto-Tuning?**
 
