@@ -122,9 +122,9 @@ geo_only = ta.TritonRandomCropFlip(size=112, horizontal_flip_p=0.5)
 **📊 [Run benchmarks yourself on Google Colab](https://colab.research.google.com/drive/1aN0V3zjtINXZmj2gZPv9zwNiPrD48qcW)** - Verify correctness and performance on free GPU  
 *Note: Colab performance may vary due to shared resources*
 
-### Benchmark Results (Tesla T4 - Google Colab Free Tier)
+### Benchmark Results
 
-Real training scenario with random augmentations:
+**Real training scenario with random augmentations on Tesla T4 (Google Colab Free Tier):**
 
 | Image Size | Batch | Crop Size | Torchvision | Triton Fused | Speedup |
 |------------|-------|-----------|-------------|--------------|---------|
@@ -136,7 +136,7 @@ Real training scenario with random augmentations:
 **Average Speedup: 8.1x** 🚀
 
 > **Operations**: RandomCrop + RandomHorizontalFlip + ColorJitter + RandomGrayscale + Normalize
-
+> 
 > **Note**: Benchmarks use `torchvision.transforms.v2` (not the legacy v1 API) for comparison.
 
 
@@ -161,7 +161,7 @@ Real training scenario with random augmentations:
 
 </details>
 
-</details>
+<details>
 <summary><h3>📊 Run Your Own Benchmarks</h3></summary>
 
 **Quick Benchmark** (Ultimate Fusion only):
@@ -178,9 +178,9 @@ python examples/benchmark_triton.py
 
 </details>
 
-**💡 Auto-Tuning**: All benchmark results above use default configurations. Auto-tuning can potentially provide **additional speedup** on dedicated GPUs by finding optimal parameters for your hardware and data size.
-
 ## Auto-Tuning
+
+All benchmark results shown above use default configurations. Auto-tuning can potentially provide **additional speedup** on dedicated GPUs.
 
 **What is Auto-Tuning?**
 
