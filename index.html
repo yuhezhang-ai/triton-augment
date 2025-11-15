@@ -1299,7 +1299,7 @@
 <a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="n">color_only</span> <span class="o">=</span> <span class="n">ta</span><span class="o">.</span><span class="n">TritonColorJitterNormalize</span><span class="p">(</span><span class="n">brightness</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span> <span class="n">saturation</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
 <a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="n">geo_only</span> <span class="o">=</span> <span class="n">ta</span><span class="o">.</span><span class="n">TritonRandomCropFlip</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">112</span><span class="p">,</span> <span class="n">horizontal_flip_p</span><span class="o">=</span><span class="mf">0.5</span><span class="p">)</span>
 </code></pre></div>
-<p><a href="https://triton-augment.readthedocs.io/quickstart/">→ More Examples</a></p>
+<p><a href="quickstart/">→ More Examples</a></p>
 <h3 id="input-requirements">⚠️ Input Requirements<a class="headerlink" href="#input-requirements" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>Range</strong>: Images must be in <code>[0, 1]</code> range (e.g., use <code>torchvision.transforms.ToTensor()</code>)</li>
@@ -1309,7 +1309,7 @@
 </ul>
 <hr />
 <h2 id="documentation">📚 Documentation<a class="headerlink" href="#documentation" title="Permanent link">&para;</a></h2>
-<p><strong>Full documentation</strong>: https://triton-augment.readthedocs.io (or see <code>docs/</code> folder)</p>
+<p><strong>Full documentation</strong>: Navigation menu on the left (or see <a href="https://github.com/yuhezhang-ai/triton-augment">GitHub repo</a> <code>docs/</code> folder)</p>
 <table>
 <thead>
 <tr>
@@ -1476,15 +1476,21 @@
 </blockquote>
 <hr />
 <h2 id="when-to-use-triton-augment">🎯 When to Use Triton-Augment?<a class="headerlink" href="#when-to-use-triton-augment" title="Permanent link">&para;</a></h2>
-<p><strong>💡 Use Triton-Augment + Torchvision together:</strong>
-- <strong>Torchvision</strong>: Data loading, resize, ToTensor, rotation, affine, etc.
-- <strong>Triton-Augment</strong>: Replace supported operations (currently: crop, flip, color jitter, grayscale, normalize; more coming) with fused GPU kernels</p>
-<p><strong>Best speedup when:</strong>
-- Large images (600×600+) or large batches
-- These operations are your bottleneck: crop, flip, brightness, contrast, saturation, normalize</p>
-<p><strong>Stick with Torchvision only if:</strong>
-- Small images (&lt; 256×256) on high-end GPUs (A100+)
-- CPU-only training</p>
+<p><strong>💡 Use Triton-Augment + Torchvision together:</strong></p>
+<ul>
+<li><strong>Torchvision</strong>: Data loading, resize, ToTensor, rotation, affine, etc.</li>
+<li><strong>Triton-Augment</strong>: Replace supported operations (currently: crop, flip, color jitter, grayscale, normalize; more coming) with fused GPU kernels</li>
+</ul>
+<p><strong>Best speedup when:</strong></p>
+<ul>
+<li>Large images (600×600+) or large batches</li>
+<li>Data augmentations are your bottleneck</li>
+</ul>
+<p><strong>Stick with Torchvision only if:</strong></p>
+<ul>
+<li>Small images (&lt; 256×256) on high-end GPUs (A100+)</li>
+<li>CPU-only training</li>
+</ul>
 <p>💡 <strong>TL;DR</strong>: Use both! Triton-Augment replaces Torchvision's fusible ops for 8-12x speedup.</p>
 <hr />
 <h2 id="training-integration">🎓 Training Integration<a class="headerlink" href="#training-integration" title="Permanent link">&para;</a></h2>
