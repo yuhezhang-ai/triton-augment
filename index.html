@@ -1391,7 +1391,7 @@
 <a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>    <span class="p">)</span>
 <a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="p">])</span>
 </code></pre></div>
-<p><strong>Note</strong>: Torchvision transforms apply the same random parameters to all images in a batch, while Triton-Augment provides true per-image randomness.</p>
+<p><strong>Note</strong>: Torchvision transforms.v2 apply the same random parameters to all images in a batch, while Triton-Augment provides true per-image randomness. <a href="https://kornia.readthedocs.io/">Kornia</a> also supports per-image randomness.</p>
 <p><a href="quickstart/">→ More Examples</a></p>
 <h3 id="input-requirements">⚠️ Input Requirements<a class="headerlink" href="#input-requirements" title="Permanent link">&para;</a></h3>
 <ul>
@@ -1424,10 +1424,6 @@
 <td>Complete API documentation for all functions and classes</td>
 </tr>
 <tr>
-<td><a href="float16/">Float16 Support</a></td>
-<td>Use half-precision for ~1.3x speedup (large images) and 50% memory savings</td>
-</tr>
-<tr>
 <td><a href="contrast/">Contrast Notes</a></td>
 <td>Fused kernel uses fast contrast (different from torchvision). See how to get exact torchvision results</td>
 </tr>
@@ -1438,6 +1434,10 @@
 <tr>
 <td><a href="batch-behavior/">Batch Behavior</a></td>
 <td>Different parameters per sample (default) vs batch-wide parameters. Understanding <code>same_on_batch</code> flag</td>
+</tr>
+<tr>
+<td><a href="float16/">Float16 Support</a></td>
+<td>Use half-precision for ~1.3x speedup (large images) and 50% memory savings</td>
 </tr>
 </tbody>
 </table>
@@ -1633,7 +1633,8 @@
 <li>[x] <strong>Phase 1</strong>: Fused color operations (brightness, contrast, saturation, normalize)</li>
 <li>[x] <strong>Phase 1.5</strong>: Grayscale, float16 support, auto-tuning</li>
 <li>[x] <strong>Phase 2</strong>: Basic Geometric operations (crop, flip) + Ultimate fusion 🚀</li>
-<li>[ ] <strong>Phase 3</strong>: Extended operations (resize, rotation, blur, erasing, mixup)</li>
+<li>[ ] <strong>Phase 3</strong>: Extended operations (resize, rotation, blur, erasing, mixup, etc.)</li>
+<li>[ ] <strong>Future</strong>: Differentiable augmentation (autograd support, available in Kornia) - evaluate demand vs performance tradeoff</li>
 </ul>
 <p><a href="https://github.com/yuhezhang-ai/triton-augment/issues">→ Detailed Roadmap</a></p>
 <hr />
