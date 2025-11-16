@@ -156,8 +156,8 @@ for images, labels in train_loader:
 
 ## Next Steps
 
-- [Float16 Support](float16.md) - Use half-precision for 1.3-2x additional speedup
 - [Batch Behavior](batch-behavior.md) - Understand random parameter handling
 - [Contrast Notes](contrast.md) - Fast contrast vs torchvision-exact
 - [Auto-Tuning](auto-tuning.md) - Optional performance optimization
+- [Float16 Support](float16.md) - Use half-precision for 1.3-2x additional speedup
 - [API Reference](api-reference.md) - Complete API documentation

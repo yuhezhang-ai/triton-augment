@@ -114,7 +114,7 @@ transform = transforms.Compose([
 ])
 ```
 
-**Note**: Torchvision transforms apply the same random parameters to all images in a batch, while Triton-Augment provides true per-image randomness.
+**Note**: Torchvision transforms.v2 apply the same random parameters to all images in a batch, while Triton-Augment provides true per-image randomness. [Kornia](https://kornia.readthedocs.io/) also supports per-image randomness.
 
 [→ More Examples](https://yuhezhang-ai.github.io/triton-augment/quickstart/)
 
@@ -136,10 +136,10 @@ transform = transforms.Compose([
 | [Quick Start](docs/quickstart.md) | Get started in 5 minutes with examples |
 | [Installation](docs/installation.md) | Setup and requirements |
 | [API Reference](https://yuhezhang-ai.github.io/triton-augment/api-reference/) | Complete API documentation for all functions and classes |
-| [Float16 Support](docs/float16.md) | Use half-precision for ~1.3x speedup (large images) and 50% memory savings |
 | [Contrast Notes](docs/contrast.md) | Fused kernel uses fast contrast (different from torchvision). See how to get exact torchvision results |
 | [Auto-Tuning](docs/auto-tuning.md) | Optional performance optimization for your GPU and data size (disabled by default). Includes cache warm-up guide |
 | [Batch Behavior](docs/batch-behavior.md) | Different parameters per sample (default) vs batch-wide parameters. Understanding `same_on_batch` flag |
+| [Float16 Support](docs/float16.md) | Use half-precision for ~1.3x speedup (large images) and 50% memory savings |
 
 ---
 
@@ -391,7 +391,8 @@ img = F.normalize(img, mean=(...), std=(...))
 - [x] **Phase 1**: Fused color operations (brightness, contrast, saturation, normalize)
 - [x] **Phase 1.5**: Grayscale, float16 support, auto-tuning
 - [x] **Phase 2**: Basic Geometric operations (crop, flip) + Ultimate fusion 🚀
-- [ ] **Phase 3**: Extended operations (resize, rotation, blur, erasing, mixup)
+- [ ] **Phase 3**: Extended operations (resize, rotation, blur, erasing, mixup, etc.)
+- [ ] **Future**: Differentiable augmentation (autograd support, available in Kornia) - evaluate demand vs performance tradeoff
 
 ---
 

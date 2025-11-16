@@ -99,6 +99,22 @@ def benchmark_ultimate(batch_size=32, image_size=224, crop_size=112):
         return triton_fused_transform(img)
     
     triton_fused_time = do_bench(triton_fused_fn, warmup=25, rep=100)
+
+    # 4. Kornia (generally slower than torchvision.transforms.v2, not included in this benchmark for clarity.)
+    # import kornia.augmentation as K
+
+    # kornia_transform = K.AugmentationSequential(
+    #     K.RandomCrop(size=crop_size, align_corners=False, p=1.0), 
+    #     K.RandomHorizontalFlip(p=0.5),
+    #     K.ColorJitter(brightness=0.2, saturation=0.2, contrast=0.2, p=1.0),
+    #     K.RandomGrayscale(p=0.1),
+    #     K.Normalize(mean=mean.tolist(), std=std.tolist()),    
+    # )
+
+    # def kornia_fn():
+    #     return kornia_transform(img)
+
+    # kornia_time = do_bench(kornia_fn, warmup=25, rep=100)
     
     # ========================================================================
     # Calculate speedups
