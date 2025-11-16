@@ -222,15 +222,7 @@ transform = ta.TritonFusedAugment(
 
 The fused kernel is optimized to skip operations set to no-op values at compile time.
 
-### 2. Individual Operations Performance
-
-Individual Triton operations (e.g., `ta.crop()`, `ta.adjust_brightness()`):
-- **Small images/batches**: Slightly slower than torchvision (kernel launch overhead)
-- **Large images/batches**: Faster than torchvision (better GPU utilization)
-
-**Recommendation**: Use `TritonFusedAugment` for production training, regardless of how many operations you need.
-
-### 3. Auto-Tuning
+### 2. Auto-Tuning
 
 Enable auto-tuning for optimal performance on your specific GPU and data sizes:
 

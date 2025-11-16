@@ -140,6 +140,7 @@ transform = transforms.Compose([
 | [Auto-Tuning](docs/auto-tuning.md) | Optional performance optimization for your GPU and data size (disabled by default). Includes cache warm-up guide |
 | [Batch Behavior](docs/batch-behavior.md) | Different parameters per sample (default) vs batch-wide parameters. Understanding `same_on_batch` flag |
 | [Float16 Support](docs/float16.md) | Use half-precision for ~1.3x speedup (large images) and 50% memory savings |
+| [Comparison with Other Libraries](docs/comparison-other-libs.md) | How Triton-Augment compares to DALI, Kornia, and when to use each |
 
 ---
 

@@ -84,10 +84,11 @@ nav:
       - Installation: installation.md
       - Quick Start: quickstart.md
   - User Guide:
-      - Float16 Support: float16.md
       - Batch Behavior: batch-behavior.md
       - Contrast Implementation: contrast.md
       - Auto-Tuning: auto-tuning.md
+      - Float16 Support: float16.md
+      - Comparison with Other Libraries: comparison-other-libs.md
   - API Reference: api-reference.md
   - GitHub: https://github.com/yuhezhang-ai/triton-augment
 
