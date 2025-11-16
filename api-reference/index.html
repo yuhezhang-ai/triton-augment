@@ -15,7 +15,7 @@
         <link rel="canonical" href="https://github.com/yuhezhang-ai/triton-augment/api-reference/">
       
       
-        <link rel="prev" href="../auto-tuning/">
+        <link rel="prev" href="../comparison-other-libs/">
       
       
       
@@ -266,7 +266,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../float16/" class="md-tabs__link">
+        <a href="../batch-behavior/" class="md-tabs__link">
           
   
   
@@ -570,34 +570,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../float16/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Float16 Support
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../batch-behavior/" class="md-nav__link">
         
   
@@ -662,6 +634,62 @@
     
   
     Auto-Tuning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../float16/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Float16 Support
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../comparison-other-libs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Comparison with Other Libraries
   
 
     
@@ -1431,21 +1459,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#2-individual-operations-performance" class="md-nav__link">
+  <a href="#2-auto-tuning" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. Individual Operations Performance
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#3-auto-tuning" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        3. Auto-Tuning
+        2. Auto-Tuning
       
     </span>
   </a>
@@ -2212,21 +2229,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#2-individual-operations-performance" class="md-nav__link">
+  <a href="#2-auto-tuning" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. Individual Operations Performance
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#3-auto-tuning" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        3. Auto-Tuning
+        2. Auto-Tuning
       
     </span>
   </a>
@@ -6221,12 +6227,7 @@ the 5-10 second delay on first use.</p>
 <a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="c1"># Still faster than calling crop() + normalize() separately!</span>
 </code></pre></div>
 <p>The fused kernel is optimized to skip operations set to no-op values at compile time.</p>
-<h3 id="2-individual-operations-performance">2. Individual Operations Performance<a class="headerlink" href="#2-individual-operations-performance" title="Permanent link">&para;</a></h3>
-<p>Individual Triton operations (e.g., <code>ta.crop()</code>, <code>ta.adjust_brightness()</code>):
-- <strong>Small images/batches</strong>: Slightly slower than torchvision (kernel launch overhead)
-- <strong>Large images/batches</strong>: Faster than torchvision (better GPU utilization)</p>
-<p><strong>Recommendation</strong>: Use <code>TritonFusedAugment</code> for production training, regardless of how many operations you need.</p>
-<h3 id="3-auto-tuning">3. Auto-Tuning<a class="headerlink" href="#3-auto-tuning" title="Permanent link">&para;</a></h3>
+<h3 id="2-auto-tuning">2. Auto-Tuning<a class="headerlink" href="#2-auto-tuning" title="Permanent link">&para;</a></h3>
 <p>Enable auto-tuning for optimal performance on your specific GPU and data sizes:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">triton_augment</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">ta</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>

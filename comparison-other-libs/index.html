@@ -12,13 +12,13 @@
         <meta name="author" content="yuhezhang-ai">
       
       
-        <link rel="canonical" href="https://github.com/yuhezhang-ai/triton-augment/installation/">
+        <link rel="canonical" href="https://github.com/yuhezhang-ai/triton-augment/comparison-other-libs/">
       
       
-        <link rel="prev" href="..">
+        <link rel="prev" href="../float16/">
       
       
-        <link rel="next" href="../quickstart/">
+        <link rel="next" href="../api-reference/">
       
       
         
@@ -29,7 +29,7 @@
     
     
       
-        <title>Installation - Triton-Augment</title>
+        <title>Comparison with Other Libraries - Triton-Augment</title>
       
     
     
@@ -84,7 +84,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#installation-guide" class="md-skip">
+        <a href="#comparison-with-other-gpu-based-data-transforms-library" class="md-skip">
           Skip to content
         </a>
       
@@ -120,7 +120,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Installation
+              Comparison with Other Libraries
             
           </span>
         </div>
@@ -244,13 +244,11 @@
   
   
   
-    
-  
   
     
     
-      <li class="md-tabs__item md-tabs__item--active">
-        <a href="./" class="md-tabs__link">
+      <li class="md-tabs__item">
+        <a href="../installation/" class="md-tabs__link">
           
   
   
@@ -266,10 +264,12 @@
   
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
+      <li class="md-tabs__item md-tabs__item--active">
         <a href="../batch-behavior/" class="md-tabs__link">
           
   
@@ -402,31 +402,26 @@
       
   
   
-    
   
   
-  
     
     
     
     
-      
-        
-        
       
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
         
           
-          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
             
   
   
@@ -444,7 +439,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_2">
             <span class="md-nav__icon md-icon"></span>
             
@@ -459,37 +454,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Installation
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../installation/" class="md-nav__link">
         
   
   
@@ -505,109 +473,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#requirements" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Requirements
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#installation-from-pypi-recommended" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Installation from PyPI (Recommended)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#development-installation-from-source" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Development Installation (From Source)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#input-requirements" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Input Requirements
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#first-run-behavior" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        First Run Behavior
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="First Run Behavior">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#what-to-expect" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        What to expect
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#verification" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Verification
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -652,26 +517,31 @@
       
   
   
+    
   
   
+  
     
     
     
     
+      
+        
+        
       
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
         
           
-          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
             
   
   
@@ -689,7 +559,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             
@@ -816,10 +686,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../comparison-other-libs/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Comparison with Other Libraries
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -835,6 +732,48 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#triton-augment-vs-dali-vs-kornia" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        📊 Triton-Augment vs DALI vs Kornia
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        📝 Notes
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -928,10 +867,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#requirements" class="md-nav__link">
+  <a href="#triton-augment-vs-dali-vs-kornia" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Requirements
+        📊 Triton-Augment vs DALI vs Kornia
       
     </span>
   </a>
@@ -939,71 +878,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#installation-from-pypi-recommended" class="md-nav__link">
+  <a href="#notes" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Installation from PyPI (Recommended)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#development-installation-from-source" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Development Installation (From Source)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#input-requirements" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Input Requirements
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#first-run-behavior" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        First Run Behavior
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="First Run Behavior">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#what-to-expect" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        What to expect
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#verification" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Verification
+        📝 Notes
       
     </span>
   </a>
@@ -1030,59 +908,102 @@
   
 
 
-<h1 id="installation-guide">Installation Guide<a class="headerlink" href="#installation-guide" title="Permanent link">&para;</a></h1>
-<h2 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Permanent link">&para;</a></h2>
+<h1 id="comparison-with-other-gpu-based-data-transforms-library">Comparison with other GPU-based data transforms library<a class="headerlink" href="#comparison-with-other-gpu-based-data-transforms-library" title="Permanent link">&para;</a></h1>
+<h2 id="triton-augment-vs-dali-vs-kornia">📊 Triton-Augment vs DALI vs Kornia<a class="headerlink" href="#triton-augment-vs-dali-vs-kornia" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th><strong>Triton-Augment</strong> (yours)</th>
+<th><strong>NVIDIA DALI</strong></th>
+<th><strong>Kornia</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Primary goal</strong></td>
+<td>Fast, fused GPU augmentations for training</td>
+<td>End-to-end input pipeline (decode → resize → augment)</td>
+<td>Differentiable augmentations in pure PyTorch</td>
+</tr>
+<tr>
+<td><strong>Fused ops</strong></td>
+<td>✔️ Crop + flip + brightness + contrast + saturation + grayscale + normalize (single kernel)</td>
+<td>⚠️ Only some fusions (e.g., <code>crop_mirror_normalize</code>); color ops are separate kernels</td>
+<td>❌ No fusion — each op is a separate CUDA/PyTorch op</td>
+</tr>
+<tr>
+<td><strong>Per-sample random params</strong></td>
+<td>✔️ Built-in, torchvision-style API</td>
+<td>✔️ Supported (via feeding random tensors), but more manual</td>
+<td>✔️ Built-in</td>
+</tr>
+<tr>
+<td><strong>Ease of use</strong></td>
+<td>✔️ Simple, torchvision-like</td>
+<td>⚠️ Steeper learning curve (pipeline graph)</td>
+<td>✔️ Very easy (just PyTorch ops)</td>
+</tr>
+<tr>
+<td><strong>Supported ops</strong></td>
+<td>⚠️ Limited for now (crop, flip, color jitter, normalize, grayscale)</td>
+<td>✔️ Huge library (decode, resize, warp, color, video, audio)</td>
+<td>✔️ Wide set (geometry, color, filtering, keypoints)</td>
+</tr>
+<tr>
+<td><strong>Performance</strong></td>
+<td>🚀 Very fast for augmentation (1 fused kernel for all ops)</td>
+<td>🚀 Fast for full pipelines (GPU decode/resize), but augmentation uses multiple kernels (less fusion)</td>
+<td>⚠️ Moderate (PyTorch kernels, multiple launches)</td>
+</tr>
+<tr>
+<td><strong>Integration</strong></td>
+<td>PyTorch training pipelines</td>
+<td>PyTorch, TensorFlow, JAX</td>
+<td>PyTorch only</td>
+</tr>
+<tr>
+<td><strong>CPU preprocessing</strong></td>
+<td>❌ None (expects tensors already on GPU)</td>
+<td>✔️ Hardware-accelerated decode/resize possible</td>
+<td>✔️ Built on top of PyTorch</td>
+</tr>
+<tr>
+<td><strong>Autograd support</strong></td>
+<td>❌ Not needed (augmentations only)</td>
+<td>❌ Most ops are not differentiable</td>
+<td>✔️ Yes (Kornia is differentiable by design)</td>
+</tr>
+<tr>
+<td><strong>Production readiness</strong></td>
+<td>⚠️ Early-stage (fast but limited scope)</td>
+<td>✔️ Mature, used in industry</td>
+<td>✔️ Mature</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="notes">📝 Notes<a class="headerlink" href="#notes" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Python &gt;= 3.8</li>
-<li>PyTorch &gt;= 2.0.0</li>
-<li>Triton &gt;= 2.0.0</li>
-<li>CUDA-capable GPU</li>
+<li>
+<p><strong>Triton-Augment is not a replacement for DALI or Kornia.</strong>
+  It’s a <em>small, focused</em> library aimed at speeding up a few high-impact augmentations via kernel fusion.</p>
+</li>
+<li>
+<p><strong>DALI is still the best choice</strong> if the bottleneck is decode/resize or you need full data pipeline acceleration. However, for augmentation-only workloads (data already on GPU as tensors), Triton-Augment is faster due to higher kernel fusion.</p>
+</li>
+<li>
+<p><strong>Kornia is best</strong> if you need differentiable augmentation or a wide variety of transforms.</p>
+</li>
+<li>
+<p><strong>Our advantage</strong>:
+  For the operations that are supported, <strong>our one-kernel design beats both</strong> in raw speed and simplicity.</p>
+</li>
+<li>
+<p><strong>Our limitation</strong>:
+  Fewer ops, no CPU pipeline, not designed for everything — just the common path.</p>
+</li>
 </ul>
-<h2 id="installation-from-pypi-recommended">Installation from PyPI (Recommended)<a class="headerlink" href="#installation-from-pypi-recommended" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>pip<span class="w"> </span>install<span class="w"> </span>triton-augment
-</code></pre></div>
-<h2 id="development-installation-from-source">Development Installation (From Source)<a class="headerlink" href="#development-installation-from-source" title="Permanent link">&para;</a></h2>
-<p>For contributors or those who want to modify the code:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/yuhezhang-ai/triton-augment.git
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nb">cd</span><span class="w"> </span>triton-augment
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s2">&quot;.[dev]&quot;</span>
-</code></pre></div>
-<h2 id="input-requirements">Input Requirements<a class="headerlink" href="#input-requirements" title="Permanent link">&para;</a></h2>
-<div class="admonition warning">
-<p class="admonition-title">Input Requirements</p>
-<ul>
-<li><strong>Range</strong>: Pixel values must be in <code>[0, 1]</code> (use <code>transforms.ToTensor()</code> if loading from PIL)</li>
-<li><strong>Device</strong>: GPU only (CPU tensors are automatically moved to CUDA)</li>
-<li><strong>Shape</strong>: Supports both 3D <code>(C, H, W)</code> and 4D <code>(N, C, H, W)</code> tensors (automatic batching)</li>
-<li><strong>Dtype</strong>: <code>float32</code> or <code>float16</code></li>
-</ul>
-</div>
-<h2 id="first-run-behavior">First Run Behavior<a class="headerlink" href="#first-run-behavior" title="Permanent link">&para;</a></h2>
-<p>On first use, Triton will compile kernels for your GPU (~1-2 seconds per image size with default config). This is normal and only happens once per GPU and image size.</p>
-<div class="admonition note">
-<p class="admonition-title">Optional: Cache Warm-Up</p>
-<p>To avoid compilation delays during training, you can optionally warm up the cache after installation:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>python<span class="w"> </span>-m<span class="w"> </span>triton_augment.warmup
-</code></pre></div>
-<p>For more details and auto-tuning optimization, see the <a href="../auto-tuning/">Auto-Tuning Guide</a>.</p>
-</div>
-<h3 id="what-to-expect">What to expect<a class="headerlink" href="#what-to-expect" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>First import</strong>: Helpful message about auto-tuning status (can be suppressed with <code>TRITON_AUGMENT_SUPPRESS_FIRST_RUN_MESSAGE=1</code>)</li>
-<li><strong>First use</strong> of each image size: ~1-2 seconds (kernel compilation)</li>
-<li><strong>Subsequent uses</strong>: Instant (kernels are cached)</li>
-</ul>
-<h2 id="verification">Verification<a class="headerlink" href="#verification" title="Permanent link">&para;</a></h2>
-<p>Test your installation:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">triton_augment</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">ta</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># Should work without errors</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="n">img</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s1">&#39;cuda&#39;</span><span class="p">)</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="n">transform</span> <span class="o">=</span> <span class="n">ta</span><span class="o">.</span><span class="n">TritonColorJitterNormalize</span><span class="p">(</span><span class="n">brightness</span><span class="o">=</span><span class="mf">0.2</span><span class="p">)</span>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="n">result</span> <span class="o">=</span> <span class="n">transform</span><span class="p">(</span><span class="n">img</span><span class="p">)</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;✅ Installation successful!&quot;</span><span class="p">)</span>
-</code></pre></div>
 
 
 
