@@ -335,7 +335,7 @@ Apache License 2.0 - see [LICENSE](https://github.com/yuhezhang-ai/triton-augmen
 **Yuhe Zhang**
 
 - 💼 LinkedIn: [Yuhe Zhang](https://www.linkedin.com/in/yuhe-zhang-phd/)
-- 📧 Email: yuhezhang.zju@gmail.com
+- 📧 [Email me](mailto:yuhezhang.zju@gmail.com)
 
 *Research interests: Applied ML, Computer Vision, Efficient Deep Learning, GPU Acceleration*
 
