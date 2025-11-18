@@ -13,18 +13,15 @@
 
 Triton-Augment is a high-performance image augmentation library that leverages [OpenAI Triton](https://github.com/openai/triton) to fuse common transform operations, providing significant speedups over standard PyTorch implementations.
 
-## ⚡ **5 - 12x Faster** than Torchvision on typical training augmentation
+## ⚡ 5 - 73x Faster than Torchvision/Kornia on Image and Video Augmentation
 
 Replace your augmentation pipeline with a **single fused kernel** and get:
 
-- **8.1x average speedup** on Tesla T4 (Google Colab free tier)
+- **Image Speedup**: **8.1x average speedup** on Tesla T4 and **up to 12x faster** on large images (1280×1280) - compared to torchvision.transforms.v2.
 
-- **Up to 12x faster** on large images (1280×1280)
-
-- **5D video tensor support** with `same_on_batch=False, same_on_frame=True` control; speedup: **8.6x vs Torchvision, 73.7x vs Kornia**
+- **Video Speedup**: **5D video tensor support** with `same_on_batch=False, same_on_frame=True` control. Speedup: **8.6x vs Torchvision**, **73.7x vs Kornia** 🚀
 
 [📊 See full benchmarks →](#-performance)
-
 
 **Key Idea**: Fuse multiple GPU operations into a single kernel → eliminate intermediate memory transfers → faster augmentation.
 
