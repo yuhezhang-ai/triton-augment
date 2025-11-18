@@ -18,6 +18,212 @@ import collections.abc
 from . import functional as F
 
 
+# ============================================================================
+# Helper functions for video (5D) tensor support
+# ============================================================================
+
+def _normalize_video_shape(
+    image: torch.Tensor,
+) -> Tuple[torch.Tensor, Optional[int], Optional[int], Tuple, bool]:
+    """
+    Normalize input shape to [N, C, H, W] for processing, handling 3D, 4D, and 5D inputs.
+    
+    Supported shapes:
+    - [C, H, W] → [1, C, H, W], batch_size=None, num_frames=None
+    - [N, C, H, W] → unchanged, batch_size=N, num_frames=None
+    - [N, T, C, H, W] → [N*T, C, H, W], batch_size=N, num_frames=T
+    
+    Args:
+        image: Input tensor of shape [C, H, W], [N, C, H, W], or [N, T, C, H, W]
+        
+    Returns:
+        Tuple of:
+        - normalized_image: Tensor of shape [N, C, H, W] ready for processing
+        - batch_size: N (first dimension) or None if not video
+        - num_frames: T (second dimension) or None if not video
+        - original_shape: Original shape to reshape back
+        - was_3d: Whether input was originally 3D
+    """
+    original_shape = image.shape
+    was_3d = image.ndim == 3
+    
+    # Handle 3D: [C, H, W] → [1, C, H, W]
+    if was_3d:
+        image = image.unsqueeze(0)
+        return image, None, None, original_shape, was_3d
+    
+    # Handle 4D: [N, C, H, W] - no change needed
+    if image.ndim == 4:
+        return image, image.shape[0], None, original_shape, was_3d
+    
+    # Handle 5D: [N, T, C, H, W] → [N*T, C, H, W]
+    if image.ndim == 5:
+        batch_size = image.shape[0]
+        num_frames = image.shape[1]
+        # Flatten: [N, T, C, H, W] → [N*T, C, H, W]
+        normalized = image.reshape(-1, *image.shape[2:])
+        return normalized, batch_size, num_frames, original_shape, was_3d
+    
+    raise ValueError(f"Expected 3D, 4D, or 5D tensor, got {image.ndim}D tensor with shape {image.shape}")
+
+
+def _compute_param_count(
+    batch_size: Optional[int],
+    num_frames: Optional[int],
+    same_on_batch: bool,
+    same_on_frame: bool
+) -> int:
+    """
+    Compute how many parameter sets to generate based on video dimensions and flags.
+    
+    For [N, T, C, H, W]:
+    - same_on_batch=False, same_on_frame=False → N*T params (all independent)
+    - same_on_batch=False, same_on_frame=True  → N params (per video)
+    - same_on_batch=True,  same_on_frame=False → T params (per frame position)
+    - same_on_batch=True,  same_on_frame=True  → 1 param (shared)
+    
+    For 3D/4D inputs (batch_size=None), returns the flattened batch size.
+    
+    Args:
+        batch_size: N dimension or None for 3D/4D
+        num_frames: T dimension or None for 3D/4D
+        same_on_batch: Whether to share params across batch dimension
+        same_on_frame: Whether to share params across frame dimension
+        
+    Returns:
+        Number of parameter sets to generate
+    """
+    # 3D input: [C, H, W] → always 1 param
+    if batch_size is None:
+        return 1
+    
+    # 4D input: [N, C, H, W] → use same_on_batch for batch dimension
+    if num_frames is None:
+        return 1 if same_on_batch else batch_size
+
+    # For 5D inputs
+    if same_on_batch and same_on_frame:
+        return 1
+    elif same_on_batch and not same_on_frame:
+        return num_frames
+    elif not same_on_batch and same_on_frame:
+        return batch_size
+    else:  # not same_on_batch and not same_on_frame
+        return batch_size * num_frames
+
+
+def _broadcast_params_to_all_samples(
+    params: torch.Tensor,
+    batch_size: Optional[int],
+    num_frames: Optional[int],
+    total_samples: int,
+    same_on_batch: bool,
+    same_on_frame: bool
+) -> torch.Tensor:
+    """
+    Broadcast parameters to shape [total_samples] based on same_on_batch and same_on_frame.
+    
+    For [N, T, C, H, W] with total_samples=N*T:
+    - params shape [1] → broadcast to [N*T]
+    - params shape [N] → each broadcasted to T frames → [N*T]
+    - params shape [T] → repeat for each of N videos → [N*T]
+    - params shape [N*T] → already correct shape
+    
+    For [N, C, H, W] with total_samples=N:
+    - params shape [1] → broadcast to [N]
+    - params shape [N] → already correct shape
+    
+    Args:
+        params: Parameter tensor
+        batch_size: N dimension (None for 3D only)
+        num_frames: T dimension (None for 3D/4D)
+        total_samples: Total flattened size (N*T for 5D, N for 4D, 1 for 3D)
+        same_on_batch: Whether params are shared across batch
+        same_on_frame: Whether params are shared across frames
+        
+    Returns:
+        Parameter tensor of shape [total_samples]
+    """
+    # Already correct shape
+    if params.shape[0] == total_samples:
+        return params
+    
+    # 3D input: [C, H, W]
+    if batch_size is None:
+        if params.shape[0] == 1:
+            return params.expand(total_samples).contiguous()
+        return params
+    
+    # 4D input: [N, C, H, W]
+    if num_frames is None:
+        if params.shape[0] == 1:
+            return params.expand(total_samples).contiguous()
+        return params
+    
+    # 5D input: [N, T, C, H, W] - use flags to determine which case we're in
+    N, T = batch_size, num_frames
+    
+    # Case 1: [1] → [N*T] (all same: same_on_batch=True, same_on_frame=True)
+    if params.shape[0] == 1:
+        return params.expand(total_samples).contiguous()
+    
+    # Case 2: [N] → [N*T] (same_on_frame=True, not same_on_batch)
+    # Each video's param broadcast to its T frames
+    if not same_on_batch and same_on_frame:
+        if params.shape[0] != N:
+            raise ValueError(
+                f"Expected {N} params for same_on_frame=True, got {params.shape[0]}"
+            )
+        # [N] → [N, 1] → [N, T] → [N*T]
+        return params.unsqueeze(1).expand(N, T).reshape(-1).contiguous()
+    
+    # Case 3: [T] → [N*T] (same_on_batch=True, not same_on_frame)
+    # Frame params repeated for each video
+    if same_on_batch and not same_on_frame:
+        if params.shape[0] != T:
+            raise ValueError(
+                f"Expected {T} params for same_on_batch=True, got {params.shape[0]}"
+            )
+        # [T] → [1, T] → [N, T] → [N*T]
+        return params.unsqueeze(0).expand(N, T).reshape(-1).contiguous()
+    
+    # Case 4: Should not reach here (all other cases handled by earlier checks)
+    raise ValueError(
+        f"Unexpected param shape {params.shape} for video with "
+        f"batch_size={batch_size}, num_frames={num_frames}, total_samples={total_samples}, "
+        f"same_on_batch={same_on_batch}, same_on_frame={same_on_frame}"
+    )
+
+
+def _reshape_to_original(
+    output: torch.Tensor,
+    original_shape: Tuple,
+    was_3d: bool
+) -> torch.Tensor:
+    """
+    Reshape output back to original input shape.
+    
+    Args:
+        output: Processed tensor of shape [N, C, H', W'] (spatial dims may differ)
+        original_shape: Original input shape
+        was_3d: Whether input was 3D
+        
+    Returns:
+        Tensor reshaped to match original dimensions (3D→3D, 4D→4D, 5D→5D)
+        Note: Spatial dimensions (H', W') may differ from original due to cropping
+    """
+    if was_3d:
+        # 3D input: [C, H, W] → [1, C, H', W'] → [C, H', W']
+        return output.squeeze(0)
+    elif len(original_shape) == 5:
+        # 5D input: [N, T, C, H, W] → [N*T, C, H', W'] → [N, T, C, H', W']
+        N, T = original_shape[0], original_shape[1]
+        return output.reshape(N, T, *output.shape[1:])
+    else:
+        # 4D input: no reshaping needed, spatial dims may have changed
+        return output
+
+
 class TritonColorJitter(nn.Module):
     """
     Randomly change the brightness, contrast, and saturation of an image.
@@ -43,8 +249,11 @@ class TritonColorJitter(nn.Module):
         saturation: How much to jitter saturation.
                    saturation_factor is chosen uniformly from [max(0, 1 - saturation), 1 + saturation]
                    or the given [min, max]. Should be non negative numbers.
-        same_on_batch: If True, all images in batch share the same random parameters
-                             If False (default), each image in batch gets different random parameters
+        same_on_batch: If True, all images in batch (N dimension) share the same random parameters.
+                      If False (default), each image gets different random parameters.
+        same_on_frame: If True, all frames in a video (T dimension) share the same random parameters.
+                      If False, each frame gets different random parameters.
+                      Only applies to 5D input [N, T, C, H, W]. Default: True (consistent augmentation across frames).
         
     Example:
         ```python
@@ -78,6 +287,7 @@ class TritonColorJitter(nn.Module):
         contrast: Optional[Union[float, Sequence[float]]] = None,
         saturation: Optional[Union[float, Sequence[float]]] = None,
         same_on_batch: bool = False,
+        same_on_frame: bool = True,
     ):
         super().__init__()
         
@@ -86,6 +296,7 @@ class TritonColorJitter(nn.Module):
         self.contrast = self._check_input(contrast, "contrast")
         self.saturation = self._check_input(saturation, "saturation")
         self.same_on_batch = same_on_batch
+        self.same_on_frame = same_on_frame
     
     def _check_input(
         self,
@@ -118,7 +329,7 @@ class TritonColorJitter(nn.Module):
         
         return None if value[0] == value[1] == center else (float(value[0]), float(value[1]))
     
-    def _get_params(self, batch_size: int, device: torch.device):
+    def _get_params(self, param_count: int, device: torch.device):
         """
         Randomly sample transformation parameters (per-image or batch-wide).
         
@@ -128,26 +339,26 @@ class TritonColorJitter(nn.Module):
         # Generate brightness factors
         if self.brightness is not None:
             brightness_factors = F._sample_uniform_tensor(
-                batch_size, self.brightness[0], self.brightness[1], device, same_on_batch=self.same_on_batch
+                param_count, self.brightness[0], self.brightness[1], device
             )
         else:
-            brightness_factors = torch.ones(batch_size, device=device)
+            brightness_factors = torch.ones(param_count, device=device)
         
         # Generate contrast factors
         if self.contrast is not None:
             contrast_factors = F._sample_uniform_tensor(
-                batch_size, self.contrast[0], self.contrast[1], device, same_on_batch=self.same_on_batch
+                param_count, self.contrast[0], self.contrast[1], device
             )
         else:
-            contrast_factors = torch.ones(batch_size, device=device)
+            contrast_factors = torch.ones(param_count, device=device)
         
         # Generate saturation factors
         if self.saturation is not None:
             saturation_factors = F._sample_uniform_tensor(
-                batch_size, self.saturation[0], self.saturation[1], device, same_on_batch=self.same_on_batch
+                param_count, self.saturation[0], self.saturation[1], device
             )
         else:
-            saturation_factors = torch.ones(batch_size, device=device)
+            saturation_factors = torch.ones(param_count, device=device)
         
         return brightness_factors, contrast_factors, saturation_factors
     
@@ -156,20 +367,43 @@ class TritonColorJitter(nn.Module):
         Apply random color jitter to the input image tensor.
         
         Args:
-            img: Input image tensor of shape (N, C, H, W) on CUDA
+            img: Input image tensor of shape (C, H, W), (N, C, H, W), or (N, T, C, H, W)
             
         Returns:
             Augmented image tensor of the same shape and dtype
         """
-        batch_size = img.shape[0]
+        # Normalize shape: 3D/4D/5D → 4D
+        normalized_img, batch_size, num_frames, original_shape, was_3d = _normalize_video_shape(img)
         
-        # Sample random parameters (per-image or batch-wide)
-        brightness_factors, contrast_factors, saturation_factors = self._get_params(batch_size, img.device)
+        # Move to CUDA if needed
+        if not normalized_img.is_cuda:
+            if not torch.cuda.is_available():
+                raise RuntimeError("Triton-Augment requires CUDA")
+            normalized_img = normalized_img.cuda()
+        
+        total_samples = normalized_img.shape[0]
+        
+        # Compute how many parameter sets to generate
+        param_count = _compute_param_count(batch_size, num_frames, self.same_on_batch, self.same_on_frame)
+        
+        # Sample random parameters
+        brightness_factors, contrast_factors, saturation_factors = self._get_params(param_count, normalized_img.device)
+        
+        # Broadcast params to all samples
+        brightness_factors = _broadcast_params_to_all_samples(
+            brightness_factors, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame
+        )
+        contrast_factors = _broadcast_params_to_all_samples(
+            contrast_factors, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame
+        )
+        saturation_factors = _broadcast_params_to_all_samples(
+            saturation_factors, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame
+        )
         
         # Apply transformations using fused kernel (FAST contrast mode)
-        _, _, height, width = img.shape
+        _, _, height, width = normalized_img.shape
         output = F.fused_augment(
-            img,
+            normalized_img,
             top=0,  # No crop
             left=0,  # No crop
             height=height,
@@ -183,7 +417,8 @@ class TritonColorJitter(nn.Module):
             std=None,
         )
         
-        return output
+        # Reshape back to original shape
+        return _reshape_to_original(output, original_shape, was_3d)
     
     def __repr__(self):
         return (
@@ -191,7 +426,8 @@ class TritonColorJitter(nn.Module):
             f"brightness={self.brightness}, "
             f"contrast={self.contrast}, "
             f"saturation={self.saturation}, "
-            f"same_on_batch={self.same_on_batch})"
+            f"same_on_batch={self.same_on_batch}, "
+            f"same_on_frame={self.same_on_frame})"
         )
 
 
@@ -235,33 +471,28 @@ class TritonNormalize(nn.Module):
         Normalize the input image tensor.
         
         Args:
-            img: Input tensor of shape (N, C, H, W) or (C, H, W)
+            img: Input tensor of shape (C, H, W), (N, C, H, W), or (N, T, C, H, W)
                  Can be on CPU or CUDA (will be moved to CUDA automatically)
             
         Returns:
             Normalized tensor of same shape and device as input
         """
-        # Handle 3D tensors (C, H, W) from dataset transforms
-        is_3d = img.ndim == 3
-        if is_3d:
-            img = img.unsqueeze(0)
+        # Normalize shape: 3D/4D/5D → 4D
+        normalized_img, batch_size, num_frames, original_shape, was_3d = _normalize_video_shape(img)
         
         # Move to CUDA if not already (Triton requires CUDA)
-        if not img.is_cuda:
+        if not normalized_img.is_cuda:
             if not torch.cuda.is_available():
                 raise RuntimeError(
                     "Triton-Augment requires CUDA, but CUDA is not available. "
                     "Please ensure you have a CUDA-capable GPU and PyTorch with CUDA support."
                 )
-            img = img.cuda()
+            normalized_img = normalized_img.cuda()
         
-        result = F.normalize(img, mean=self.mean, std=self.std)
+        result = F.normalize(normalized_img, mean=self.mean, std=self.std)
         
-        # Remove batch dimension if input was 3D
-        if is_3d:
-            result = result.squeeze(0)
-        
-        return result
+        # Reshape back to original shape
+        return _reshape_to_original(result, original_shape, was_3d)
     
     def __repr__(self):
         return (
@@ -283,9 +514,9 @@ class TritonColorJitterNormalize(nn.Module):
         brightness: How much to jitter brightness (same as TritonColorJitter)
         contrast: How much to jitter contrast (same as TritonColorJitter)
         saturation: How much to jitter saturation (same as TritonColorJitter)
-        random_grayscale_p: Probability of converting to grayscale (default: 0.0)
-        mean: Sequence of means for normalization (R, G, B)
-        std: Sequence of standard deviations for normalization (R, G, B)
+        grayscale_p: Probability of converting to grayscale (default: 0.0)
+        mean: Sequence of means for normalization (R, G, B). If None, normalization is skipped.
+        std: Sequence of standard deviations for normalization (R, G, B). If None, normalization is skipped.
         same_on_batch: If True, all images in batch share the same random parameters
                              If False (default), each image in batch gets different random parameters
         
@@ -296,13 +527,18 @@ class TritonColorJitterNormalize(nn.Module):
             brightness=0.2,  # Range: [0.8, 1.2]
             contrast=0.2,    # Range: [0.8, 1.2]
             saturation=0.2,  # Range: [0.8, 1.2]
-            random_grayscale_p=0.1,  # 10% chance of grayscale (per-image)
-            mean=(0.485, 0.456, 0.406),
-            std=(0.229, 0.224, 0.225),
+            grayscale_p=0.1,  # 10% chance of grayscale (per-image)
+            mean=(0.485, 0.456, 0.406),  # ImageNet normalization (optional)
+            std=(0.229, 0.224, 0.225),    # ImageNet normalization (optional)
             same_on_batch=False
         )
         img = torch.rand(4, 3, 224, 224, device='cuda')
         augmented = transform(img)  # Each image gets different augmentation
+        
+        # Without normalization (mean=None, std=None by default)
+        transform_no_norm = TritonColorJitterNormalize(
+            brightness=0.2, contrast=0.2, saturation=0.2
+        )
         ```
     """
     
@@ -311,10 +547,11 @@ class TritonColorJitterNormalize(nn.Module):
         brightness: Optional[Union[float, Sequence[float]]] = None,
         contrast: Optional[Union[float, Sequence[float]]] = None,
         saturation: Optional[Union[float, Sequence[float]]] = None,
-        random_grayscale_p: float = 0.0,
-        mean: Tuple[float, float, float] = (0.485, 0.456, 0.406),
-        std: Tuple[float, float, float] = (0.229, 0.224, 0.225),
+        grayscale_p: float = 0.0,
+        mean: Optional[Tuple[float, float, float]] = None,
+        std: Optional[Tuple[float, float, float]] = None,
         same_on_batch: bool = False,
+        same_on_frame: bool = True,
     ):
         super().__init__()
         
@@ -322,18 +559,28 @@ class TritonColorJitterNormalize(nn.Module):
         self.brightness = self._check_input(brightness, "brightness")
         self.contrast = self._check_input(contrast, "contrast")
         self.saturation = self._check_input(saturation, "saturation")
-        self.random_grayscale_p = random_grayscale_p
+        self.grayscale_p = grayscale_p
         self.same_on_batch = same_on_batch
+        self.same_on_frame = same_on_frame
         
-        if not (0.0 <= random_grayscale_p <= 1.0):
-            raise ValueError(f"random_grayscale_p must be in [0, 1], got {random_grayscale_p}")
+        if not (0.0 <= grayscale_p <= 1.0):
+            raise ValueError(f"grayscale_p must be in [0, 1], got {grayscale_p}")
         
         # Store normalization parameters
-        self.mean = tuple(mean)
-        self.std = tuple(std)
+        if (mean is None) != (std is None):
+            raise ValueError("mean and std must both be provided or both be None")
         
-        if len(self.mean) != 3 or len(self.std) != 3:
-            raise ValueError("mean and std must have 3 values for RGB channels")
+        if mean is not None:
+            mean = tuple(mean)
+            if len(mean) != 3:
+                raise ValueError("mean must have 3 values for RGB channels")
+        if std is not None:
+            std = tuple(std)
+            if len(std) != 3:
+                raise ValueError("std must have 3 values for RGB channels")
+        
+        self.mean = mean
+        self.std = std
     
     def _check_input(
         self,
@@ -363,35 +610,35 @@ class TritonColorJitterNormalize(nn.Module):
         
         return None if value[0] == value[1] == center else (float(value[0]), float(value[1]))
     
-    def _get_params(self, batch_size: int, device: torch.device):
+    def _get_params(self, param_count: int, device: torch.device):
         """Randomly sample transformation parameters (per-image or batch-wide)."""
         # Generate brightness factors
         if self.brightness is not None:
             brightness_factors = F._sample_uniform_tensor(
-                batch_size, self.brightness[0], self.brightness[1], device, same_on_batch=self.same_on_batch
+                param_count, self.brightness[0], self.brightness[1], device
             )
         else:
-            brightness_factors = torch.ones(batch_size, device=device)
+            brightness_factors = torch.ones(param_count, device=device)
         
         # Generate contrast factors
         if self.contrast is not None:
             contrast_factors = F._sample_uniform_tensor(
-                batch_size, self.contrast[0], self.contrast[1], device, same_on_batch=self.same_on_batch
+                param_count, self.contrast[0], self.contrast[1], device
             )
         else:
-            contrast_factors = torch.ones(batch_size, device=device)
+            contrast_factors = torch.ones(param_count, device=device)
         
         # Generate saturation factors
         if self.saturation is not None:
             saturation_factors = F._sample_uniform_tensor(
-                batch_size, self.saturation[0], self.saturation[1], device, same_on_batch=self.same_on_batch
+                param_count, self.saturation[0], self.saturation[1], device
             )
         else:
-            saturation_factors = torch.ones(batch_size, device=device)
+            saturation_factors = torch.ones(param_count, device=device)
         
         # Generate grayscale mask
         grayscale_mask = F._sample_bernoulli_tensor(
-            batch_size, self.random_grayscale_p, device, same_on_batch=self.same_on_batch
+            param_count, self.grayscale_p, device
         )
         
         return brightness_factors, contrast_factors, saturation_factors, grayscale_mask
@@ -401,35 +648,50 @@ class TritonColorJitterNormalize(nn.Module):
         Apply random color jitter and normalization in a single fused operation.
         
         Args:
-            img: Input tensor of shape (N, C, H, W) or (C, H, W)
+            img: Input tensor of shape (C, H, W), (N, C, H, W), or (N, T, C, H, W)
                  Can be on CPU or CUDA (will be moved to CUDA automatically)
             
         Returns:
             Augmented and normalized tensor of same shape and device as input
         """
-        # Handle 3D tensors (C, H, W) from dataset transforms
-        is_3d = img.ndim == 3
-        if is_3d:
-            img = img.unsqueeze(0)
+        # Normalize shape: 3D/4D/5D → 4D
+        normalized_img, batch_size, num_frames, original_shape, was_3d = _normalize_video_shape(img)
         
         # Move to CUDA if not already (Triton requires CUDA)
-        if not img.is_cuda:
+        if not normalized_img.is_cuda:
             if not torch.cuda.is_available():
                 raise RuntimeError(
                     "Triton-Augment requires CUDA, but CUDA is not available. "
                     "Please ensure you have a CUDA-capable GPU and PyTorch with CUDA support."
                 )
-            img = img.cuda()
+            normalized_img = normalized_img.cuda()
         
-        batch_size = img.shape[0]
+        total_samples = normalized_img.shape[0]
         
-        # Sample random parameters (per-image or batch-wide)
-        brightness_factors, contrast_factors, saturation_factors, grayscale_mask = self._get_params(batch_size, img.device)
+        # Compute how many parameter sets to generate
+        param_count = _compute_param_count(batch_size, num_frames, self.same_on_batch, self.same_on_frame)
+
+        # Sample random parameters
+        brightness_factors, contrast_factors, saturation_factors, grayscale_mask = self._get_params(param_count, normalized_img.device)
+        
+        # Broadcast params to all samples
+        brightness_factors = _broadcast_params_to_all_samples(
+            brightness_factors, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame
+        )
+        contrast_factors = _broadcast_params_to_all_samples(
+            contrast_factors, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame
+        )
+        saturation_factors = _broadcast_params_to_all_samples(
+            saturation_factors, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame
+        )
+        grayscale_mask = _broadcast_params_to_all_samples(
+            grayscale_mask, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame
+        )
         
         # Apply the fully fused transformation
-        _, _, height, width = img.shape
+        _, _, height, width = normalized_img.shape
         result = F.fused_augment(
-            img,
+            normalized_img,
             top=0,  # No crop
             left=0,  # No crop
             height=height,
@@ -443,11 +705,8 @@ class TritonColorJitterNormalize(nn.Module):
             std=self.std,
         )
         
-        # Remove batch dimension if input was 3D
-        if is_3d:
-            result = result.squeeze(0)
-        
-        return result
+        # Reshape back to original shape
+        return _reshape_to_original(result, original_shape, was_3d)
     
     def __repr__(self):
         return (
@@ -455,10 +714,11 @@ class TritonColorJitterNormalize(nn.Module):
             f"brightness={self.brightness}, "
             f"contrast={self.contrast}, "
             f"saturation={self.saturation}, "
-            f"random_grayscale_p={self.random_grayscale_p}, "
+            f"grayscale_p={self.grayscale_p}, "
             f"mean={self.mean}, "
             f"std={self.std}, "
-            f"same_on_batch={self.same_on_batch})"
+            f"same_on_batch={self.same_on_batch}, "
+            f"same_on_frame={self.same_on_frame})"
         )
 
 
@@ -491,12 +751,19 @@ class TritonGrayscale(nn.Module):
     def forward(self, image: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            image: Input tensor of shape (N, 3, H, W)
+            image: Input tensor of shape (C, H, W), (N, 3, H, W), or (N, T, 3, H, W)
             
         Returns:
-            Grayscale tensor of shape (N, num_output_channels, H, W)
+            Grayscale tensor of shape matching input structure
         """
-        return F.rgb_to_grayscale(image, num_output_channels=self.num_output_channels)
+        # Normalize shape: 3D/4D/5D → 4D
+        normalized_img, batch_size, num_frames, original_shape, was_3d = _normalize_video_shape(image)
+        
+        # Apply grayscale conversion
+        result = F.rgb_to_grayscale(normalized_img, num_output_channels=self.num_output_channels)
+        
+        # Reshape back to original shape
+        return _reshape_to_original(result, original_shape, was_3d)
     
     def __repr__(self):
         return f"{self.__class__.__name__}(num_output_channels={self.num_output_channels})"
@@ -512,8 +779,11 @@ class TritonRandomGrayscale(nn.Module):
         p: Probability of converting to grayscale (default: 0.1)
         num_output_channels: Number of output channels (1 or 3, default: 3)
                             Usually 3 to maintain compatibility with RGB pipelines
-        same_on_batch: If True, all images in batch make the same grayscale decision
-                             If False (default), each image in batch independently decides grayscale conversion
+        same_on_batch: If True, all images in batch (N dimension) make the same grayscale decision.
+                      If False (default), each image independently decides grayscale conversion.
+        same_on_frame: If True, all frames in a video (T dimension) make the same grayscale decision.
+                      If False, each frame independently decides.
+                      Only applies to 5D input [N, T, C, H, W]. Default: True.
                             
     Example:
         ```python
@@ -532,7 +802,8 @@ class TritonRandomGrayscale(nn.Module):
         self,
         p: float = 0.1,
         num_output_channels: int = 3,
-        same_on_batch: bool = False
+        same_on_batch: bool = False,
+        same_on_frame: bool = True,
     ):
         super().__init__()
         if not (0.0 <= p <= 1.0):
@@ -542,11 +813,12 @@ class TritonRandomGrayscale(nn.Module):
         self.p = p
         self.num_output_channels = num_output_channels
         self.same_on_batch = same_on_batch
+        self.same_on_frame = same_on_frame
     
     def forward(self, image: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            image: Input tensor of shape (N, 3, H, W)
+            image: Input tensor of shape (C, H, W), (N, 3, H, W), or (N, T, 3, H, W)
             
         Returns:
             Image tensor, either original or grayscale based on probability
@@ -554,11 +826,21 @@ class TritonRandomGrayscale(nn.Module):
         if self.p == 0:
             return image
         
-        batch_size = image.shape[0]
+        # Normalize shape: 3D/4D/5D → 4D
+        normalized_img, batch_size, num_frames, original_shape, was_3d = _normalize_video_shape(image)
+        total_samples = normalized_img.shape[0]
         
-        # Generate grayscale mask (deterministic functional API)
+        # Compute how many parameter sets to generate
+        param_count = _compute_param_count(batch_size, num_frames, self.same_on_batch, self.same_on_frame)
+        
+        # Generate grayscale mask
         grayscale_mask = F._sample_bernoulli_tensor(
-            batch_size, self.p, image.device, same_on_batch=self.same_on_batch
+            param_count, self.p, normalized_img.device
+        )
+        
+        # Broadcast mask to all samples
+        grayscale_mask = _broadcast_params_to_all_samples(
+            grayscale_mask, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame
         )
         
         # Early exit if no images need grayscale
@@ -566,18 +848,22 @@ class TritonRandomGrayscale(nn.Module):
             return image
         
         # Use deterministic functional API with mask
-        return F.rgb_to_grayscale(
-            image,
+        result = F.rgb_to_grayscale(
+            normalized_img,
             num_output_channels=self.num_output_channels,
             grayscale_mask=grayscale_mask
         )
+        
+        # Reshape back to original shape
+        return _reshape_to_original(result, original_shape, was_3d)
     
     def __repr__(self):
         return (
             f"{self.__class__.__name__}("
             f"p={self.p}, "
             f"num_output_channels={self.num_output_channels}, "
-            f"same_on_batch={self.same_on_batch})"
+            f"same_on_batch={self.same_on_batch}, "
+            f"same_on_frame={self.same_on_frame})"
         )
 
 
@@ -594,8 +880,11 @@ class TritonRandomCrop(nn.Module):
     
     Args:
         size: Desired output size (height, width) or int for square crop
-        same_on_batch: If True, all images in batch crop at the same position.
-                             If False (default), each image in batch gets different random crop position.
+        same_on_batch: If True, all images in batch (N dimension) crop at the same position.
+                      If False (default), each image gets different random crop position.
+        same_on_frame: If True, all frames in a video (T dimension) crop at the same position.
+                      If False, each frame gets different random crop.
+                      Only applies to 5D input [N, T, C, H, W]. Default: True.
         
     Example:
         ```python
@@ -611,7 +900,7 @@ class TritonRandomCrop(nn.Module):
         Future versions will support padding, pad_if_needed, fill, padding_mode.
     """
     
-    def __init__(self, size: Union[int, Sequence[int]], same_on_batch: bool = False):
+    def __init__(self, size: Union[int, Sequence[int]], same_on_batch: bool = False, same_on_frame: bool = True):
         super().__init__()
         if isinstance(size, int):
             self.size = (size, size)
@@ -624,56 +913,26 @@ class TritonRandomCrop(nn.Module):
             raise ValueError(f"size must have 2 elements, got {len(self.size)}")
         
         self.same_on_batch = same_on_batch
-    
-    @staticmethod
-    def get_params(image: torch.Tensor, output_size: Tuple[int, int]) -> Tuple[int, int, int, int]:
-        """
-        Get parameters for random crop.
-        
-        Args:
-            image: Input image tensor (N, C, H, W)
-            output_size: Desired output size (height, width)
-            
-        Returns:
-            Tuple (top, left, height, width) for cropping
-        """
-        _, _, h, w = image.shape
-        th, tw = output_size
-        
-        if h < th or w < tw:
-            raise ValueError(
-                f"Image size ({h}, {w}) is smaller than crop size ({th}, {tw}). "
-                f"Padding not yet supported in MVP."
-            )
-        
-        if h == th and w == tw:
-            return 0, 0, h, w
-        
-        i = torch.randint(0, h - th + 1, size=(1,)).item()
-        j = torch.randint(0, w - tw + 1, size=(1,)).item()
-        
-        return i, j, th, tw
+        self.same_on_frame = same_on_frame
     
     def forward(self, image: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            image: Input tensor of shape (N, C, H, W) or (C, H, W)
+            image: Input tensor of shape (C, H, W), (N, C, H, W), or (N, T, C, H, W)
             
         Returns:
-            Randomly cropped tensor of shape (N, C, size[0], size[1])
+            Randomly cropped tensor of shape matching input
         """
-        # Handle 3D tensors
-        is_3d = image.ndim == 3
-        if is_3d:
-            image = image.unsqueeze(0)
+        # Normalize shape: 3D/4D/5D → 4D
+        normalized_img, batch_size, num_frames, original_shape, was_3d = _normalize_video_shape(image)
         
         # Move to CUDA if needed
-        if not image.is_cuda:
+        if not normalized_img.is_cuda:
             if not torch.cuda.is_available():
                 raise RuntimeError("Triton-Augment requires CUDA")
-            image = image.cuda()
+            normalized_img = normalized_img.cuda()
         
-        batch_size, _, h, w = image.shape
+        total_samples, _, h, w = normalized_img.shape
         th, tw = self.size
         
         if h < th or w < tw:
@@ -682,27 +941,28 @@ class TritonRandomCrop(nn.Module):
                 f"Padding not yet supported in MVP."
             )
         
+        # Compute how many parameter sets to generate
+        param_count = _compute_param_count(batch_size, num_frames, self.same_on_batch, self.same_on_frame)
+
         # Generate crop positions
-        if self.same_on_batch:
-            # Same crop position for all images
-            top = torch.randint(0, h - th + 1, (1,)).item()
-            left = torch.randint(0, w - tw + 1, (1,)).item()
-            top_offsets = torch.full((batch_size,), top, device=image.device, dtype=torch.int32)
-            left_offsets = torch.full((batch_size,), left, device=image.device, dtype=torch.int32)
-        else:
-            # Per-image random crop positions
-            top_offsets = torch.randint(0, h - th + 1, (batch_size,), device=image.device, dtype=torch.int32)
-            left_offsets = torch.randint(0, w - tw + 1, (batch_size,), device=image.device, dtype=torch.int32)
+        top_offsets = torch.randint(0, h - th + 1, (param_count,), device=normalized_img.device, dtype=torch.int32)
+        left_offsets = torch.randint(0, w - tw + 1, (param_count,), device=normalized_img.device, dtype=torch.int32)
         
-        result = F.crop(image, top_offsets, left_offsets, th, tw)
+        # Broadcast params to all samples
+        top_offsets = _broadcast_params_to_all_samples(
+            top_offsets, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame
+        )
+        left_offsets = _broadcast_params_to_all_samples(
+            left_offsets, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame
+        )
         
-        if is_3d:
-            result = result.squeeze(0)
+        result = F.crop(normalized_img, top_offsets, left_offsets, th, tw)
         
-        return result
+        # Reshape back to original shape
+        return _reshape_to_original(result, original_shape, was_3d)
     
     def __repr__(self):
-        return f"{self.__class__.__name__}(size={self.size}, same_on_batch={self.same_on_batch})"
+        return f"{self.__class__.__name__}(size={self.size}, same_on_batch={self.same_on_batch}, same_on_frame={self.same_on_frame})"
 
 
 class TritonCenterCrop(nn.Module):
@@ -739,12 +999,19 @@ class TritonCenterCrop(nn.Module):
     def forward(self, image: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            image: Input tensor of shape (N, C, H, W)
+            image: Input tensor of shape (C, H, W), (N, C, H, W), or (N, T, C, H, W)
             
         Returns:
-            Center-cropped tensor of shape (N, C, size[0], size[1])
+            Center-cropped tensor of shape matching input
         """
-        return F.center_crop(image, self.size)
+        # Normalize shape: 3D/4D/5D → 4D
+        normalized_img, batch_size, num_frames, original_shape, was_3d = _normalize_video_shape(image)
+        
+        # Apply center crop
+        result = F.center_crop(normalized_img, self.size)
+        
+        # Reshape back to original shape
+        return _reshape_to_original(result, original_shape, was_3d)
     
     def __repr__(self):
         return f"{self.__class__.__name__}(size={self.size})"
@@ -758,8 +1025,11 @@ class TritonRandomHorizontalFlip(nn.Module):
     
     Args:
         p: Probability of flipping (default: 0.5)
-        same_on_batch: If True, all images in batch share the same decision.
-                             If False (default), each image in batch gets different random decision.
+        same_on_batch: If True, all images in batch (N dimension) share the same flip decision.
+                      If False (default), each image gets different random decision.
+        same_on_frame: If True, all frames in a video (T dimension) share the same flip decision.
+                      If False, each frame gets different random decision.
+                      Only applies to 5D input [N, T, C, H, W]. Default: True.
         
     Example:
         ```python
@@ -769,17 +1039,18 @@ class TritonRandomHorizontalFlip(nn.Module):
         ```
     """
     
-    def __init__(self, p: float = 0.5, same_on_batch: bool = False):
+    def __init__(self, p: float = 0.5, same_on_batch: bool = False, same_on_frame: bool = True):
         super().__init__()
         if not (0.0 <= p <= 1.0):
             raise ValueError(f"p ({p}) must be in [0, 1]")
         self.p = p
         self.same_on_batch = same_on_batch
+        self.same_on_frame = same_on_frame
     
     def forward(self, image: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            image: Input tensor of shape (N, C, H, W) or (C, H, W)
+            image: Input tensor of shape (C, H, W), (N, C, H, W), or (N, T, C, H, W)
             
         Returns:
             Image tensor, either original or horizontally flipped
@@ -787,32 +1058,36 @@ class TritonRandomHorizontalFlip(nn.Module):
         if self.p == 0:
             return image
         
-        # Handle 3D tensors
-        is_3d = image.ndim == 3
-        if is_3d:
-            image = image.unsqueeze(0)
+        # Normalize shape: 3D/4D/5D → 4D
+        normalized_img, batch_size, num_frames, original_shape, was_3d = _normalize_video_shape(image)
         
         # Move to CUDA if needed
-        if not image.is_cuda:
+        if not normalized_img.is_cuda:
             if not torch.cuda.is_available():
                 raise RuntimeError("Triton-Augment requires CUDA")
-            image = image.cuda()
+            normalized_img = normalized_img.cuda()
         
-        batch_size = image.shape[0]
+        total_samples = normalized_img.shape[0]
         
-        # Generate per-image or batch-wide flip decisions
-        flip_mask = F._sample_bernoulli_tensor(batch_size, self.p, image.device, self.same_on_batch)
+        # Compute how many parameter sets to generate
+        param_count = _compute_param_count(batch_size, num_frames, self.same_on_batch, self.same_on_frame)
+
+        # Generate flip decisions
+        flip_mask = F._sample_bernoulli_tensor(param_count, self.p, normalized_img.device)
+        
+        # Broadcast mask to all samples
+        flip_mask = _broadcast_params_to_all_samples(
+            flip_mask, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame
+        )
         
         # Use kernel-based per-image flipping
-        result = F.horizontal_flip(image, flip_mask=flip_mask)
+        result = F.horizontal_flip(normalized_img, flip_mask=flip_mask)
         
-        if is_3d:
-            result = result.squeeze(0)
-        
-        return result
+        # Reshape back to original shape
+        return _reshape_to_original(result, original_shape, was_3d)
     
     def __repr__(self):
-        return f"{self.__class__.__name__}(p={self.p}, same_on_batch={self.same_on_batch})"
+        return f"{self.__class__.__name__}(p={self.p}, same_on_batch={self.same_on_batch}, same_on_frame={self.same_on_frame})"
 
 
 class TritonRandomCropFlip(nn.Module):
@@ -827,8 +1102,11 @@ class TritonRandomCropFlip(nn.Module):
     Args:
         size: Desired output size (height, width) or int for square crop
         horizontal_flip_p: Probability of horizontal flip (default: 0.5)
-        same_on_batch: If True, all images in batch share the same random parameters
-                             If False (default), each image in batch gets different random parameters
+        same_on_batch: If True, all images in batch (N dimension) share the same random parameters.
+                      If False (default), each image gets different random parameters.
+        same_on_frame: If True, all frames in a video (T dimension) share the same random parameters.
+                      If False, each frame gets different random parameters.
+                      Only applies to 5D input [N, T, C, H, W]. Default: True.
         
     Example:
         ```python
@@ -854,7 +1132,8 @@ class TritonRandomCropFlip(nn.Module):
         self,
         size: Union[int, Sequence[int]],
         horizontal_flip_p: float = 0.5,
-        same_on_batch: bool = False
+        same_on_batch: bool = False,
+        same_on_frame: bool = True,
     ):
         super().__init__()
         if isinstance(size, int):
@@ -872,17 +1151,26 @@ class TritonRandomCropFlip(nn.Module):
         
         self.horizontal_flip_p = horizontal_flip_p
         self.same_on_batch = same_on_batch
+        self.same_on_frame = same_on_frame
     
     def forward(self, image: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            image: Input tensor of shape (N, C, H, W)
+            image: Input tensor of shape (C, H, W), (N, C, H, W), or (N, T, C, H, W)
             
         Returns:
-            Randomly cropped (and optionally flipped) tensor of shape (N, C, size[0], size[1])
+            Randomly cropped (and optionally flipped) tensor of shape matching input
         """
-        batch_size = image.shape[0]
-        img_height, img_width = image.shape[2], image.shape[3]
+        # Normalize shape: 3D/4D/5D → 4D
+        normalized_img, batch_size, num_frames, original_shape, was_3d = _normalize_video_shape(image)
+        
+        # Move to CUDA if needed
+        if not normalized_img.is_cuda:
+            if not torch.cuda.is_available():
+                raise RuntimeError("Triton-Augment requires CUDA")
+            normalized_img = normalized_img.cuda()
+        
+        total_samples, _, img_height, img_width = normalized_img.shape
         th, tw = self.size
         
         # Validate crop size
@@ -891,26 +1179,32 @@ class TritonRandomCropFlip(nn.Module):
                 f"Crop size ({th}, {tw}) is larger than image size ({img_height}, {img_width})"
             )
         
-        # Generate per-image or batch-wide crop offsets
-        if self.same_on_batch:
-            # Same offsets for all images
-            top = torch.randint(0, img_height - th + 1, (1,), device=image.device, dtype=torch.int32).item()
-            left = torch.randint(0, img_width - tw + 1, (1,), device=image.device, dtype=torch.int32).item()
-            top_offsets = torch.full((batch_size,), top, device=image.device, dtype=torch.int32)
-            left_offsets = torch.full((batch_size,), left, device=image.device, dtype=torch.int32)
-        else:
-            # Different offsets per image
-            top_offsets = torch.randint(0, img_height - th + 1, (batch_size,), device=image.device, dtype=torch.int32)
-            left_offsets = torch.randint(0, img_width - tw + 1, (batch_size,), device=image.device, dtype=torch.int32)
+        # Compute how many parameter sets to generate
+        param_count = _compute_param_count(batch_size, num_frames, self.same_on_batch, self.same_on_frame)
         
-        # Generate per-image or batch-wide flip decisions
+        # Generate crop offsets
+        top_offsets = torch.randint(0, img_height - th + 1, (param_count,), device=normalized_img.device, dtype=torch.int32)
+        left_offsets = torch.randint(0, img_width - tw + 1, (param_count,), device=normalized_img.device, dtype=torch.int32)
+        
+        # Generate flip decisions
         flip_mask = F._sample_bernoulli_tensor(
-            batch_size, self.horizontal_flip_p, image.device, same_on_batch=self.same_on_batch
+            param_count, self.horizontal_flip_p, normalized_img.device
+        )
+        
+        # Broadcast params to all samples
+        top_offsets = _broadcast_params_to_all_samples(
+            top_offsets, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame
+        )
+        left_offsets = _broadcast_params_to_all_samples(
+            left_offsets, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame
+        )
+        flip_mask = _broadcast_params_to_all_samples(
+            flip_mask, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame
         )
         
         # Single fused kernel launch (using fused_augment with no-op color operations)
-        return F.fused_augment(
-            image,
+        result = F.fused_augment(
+            normalized_img,
             top=top_offsets,
             left=left_offsets,
             height=th,
@@ -923,9 +1217,12 @@ class TritonRandomCropFlip(nn.Module):
             mean=None,              # No-op
             std=None                # No-op
         )
+        
+        # Reshape back to original shape
+        return _reshape_to_original(result, original_shape, was_3d)
     
     def __repr__(self):
-        return f"{self.__class__.__name__}(size={self.size}, horizontal_flip_p={self.horizontal_flip_p}, same_on_batch={self.same_on_batch})"
+        return f"{self.__class__.__name__}(size={self.size}, horizontal_flip_p={self.horizontal_flip_p}, same_on_batch={self.same_on_batch}, same_on_frame={self.same_on_frame})"
 
 
 class TritonFusedAugment(nn.Module):
@@ -948,11 +1245,14 @@ class TritonFusedAugment(nn.Module):
                    If tuple, chosen uniformly from [brightness[0], brightness[1]].
         contrast: How much to jitter contrast (same format as brightness)
         saturation: How much to jitter saturation (same format as brightness)
-        random_grayscale_p: Probability of converting to grayscale (default: 0.0, no grayscale)
-        mean: Sequence of means for R, G, B channels
-        std: Sequence of stds for R, G, B channels
-        same_on_batch: If True, all images in the batch share the same parameters.
-                             If False (default), each image in the batch gets different random parameters.
+        grayscale_p: Probability of converting to grayscale (default: 0.0, no grayscale)
+        mean: Sequence of means for R, G, B channels. If None, normalization is skipped.
+        std: Sequence of stds for R, G, B channels. If None, normalization is skipped.
+        same_on_batch: If True, all images in batch (N dimension) share the same random parameters.
+                      If False (default), each image gets different random parameters.
+        same_on_frame: If True, all frames in a video (T dimension) share the same random parameters.
+                      If False, each frame gets different random parameters.
+                      Only applies to 5D input [N, T, C, H, W]. Default: True (consistent augmentation across frames).
         
     Example:
         ```python
@@ -973,18 +1273,25 @@ class TritonFusedAugment(nn.Module):
             brightness=0.2,
             contrast=0.2,
             saturation=0.2,
-            mean=(0.485, 0.456, 0.406),
-            std=(0.229, 0.224, 0.225)
+            mean=(0.485, 0.456, 0.406),  # ImageNet normalization (optional)
+            std=(0.229, 0.224, 0.225)    # ImageNet normalization (optional)
         )
         
         img = torch.rand(4, 3, 224, 224, device='cuda')
         result = transform(img)  # Single kernel launch!
+        
+        # Without normalization (mean=None, std=None by default)
+        transform_no_norm = ta.TritonFusedAugment(
+            crop_size=112,
+            horizontal_flip_p=0.5,
+            brightness=0.2, contrast=0.2, saturation=0.2
+        )
         ```
     
     Note:
         - Uses FAST contrast (centered scaling), not torchvision's blend-with-mean
         - By default, each image gets different random parameters (set same_on_batch=False for same params)
-        - Input must be (N, 3, H, W) float tensor on CUDA in [0, 1] range
+        - Input must be (C, H, W), (N, C, H, W), or (N, T, C, H, W) float tensor on CUDA in [0, 1] range
     """
     
     def __init__(
@@ -994,10 +1301,11 @@ class TritonFusedAugment(nn.Module):
         brightness: float | tuple[float, float] = 0,
         contrast: float | tuple[float, float] = 0,
         saturation: float | tuple[float, float] = 0,
-        random_grayscale_p: float = 0.0,
-        mean: tuple[float, float, float] = (0.485, 0.456, 0.406),
-        std: tuple[float, float, float] = (0.229, 0.224, 0.225),
+        grayscale_p: float = 0.0,
+        mean: Optional[tuple[float, float, float]] = None,
+        std: Optional[tuple[float, float, float]] = None,
         same_on_batch: bool = False,
+        same_on_frame: bool = True,
     ):
         super().__init__()
         
@@ -1014,12 +1322,26 @@ class TritonFusedAugment(nn.Module):
         self.contrast = self._check_input(contrast, 'contrast')
         self.saturation = self._check_input(saturation, 'saturation')
         
-        self.random_grayscale_p = random_grayscale_p
+        self.grayscale_p = grayscale_p
+        
+        # Validate normalization parameters
+        if (mean is None) != (std is None):
+            raise ValueError("mean and std must both be provided or both be None")
+        
+        if mean is not None:
+            mean = tuple(mean)
+            if len(mean) != 3:
+                raise ValueError("mean must have 3 values for RGB channels")
+        if std is not None:
+            std = tuple(std)
+            if len(std) != 3:
+                raise ValueError("std must have 3 values for RGB channels")
         
         self.mean = mean
         self.std = std
         
         self.same_on_batch = same_on_batch
+        self.same_on_frame = same_on_frame
     
     def _check_input(
         self,
@@ -1050,19 +1372,18 @@ class TritonFusedAugment(nn.Module):
         return None if value[0] == value[1] == center else (float(value[0]), float(value[1]))
     
     
-    def _get_params(self, batch_size: int, image_height: int, image_width: int, device: torch.device):
+    def _get_params(self, param_count: int, image_height: int, image_width: int, device: torch.device):
         """
         Sample all random parameters for the ultimate transform.
         
         Args:
-            batch_size: Number of images in the batch
+            param_count: Number of parameter sets to generate
             image_height, image_width: Input image dimensions
             device: Device to create tensors on
         
         Returns:
             Tuple of (top_offsets, left_offsets, flip_mask, brightness_factors, contrast_factors, saturation_factors, grayscale_mask)
-            - All are tensors of shape (N,)
-            - If same_on_batch=False, tensors are filled with the same value for all images
+            - All are tensors of shape (param_count,)
         """
         # Validate crop size
         if self.crop_height > image_height or self.crop_width > image_width:
@@ -1072,46 +1393,38 @@ class TritonFusedAugment(nn.Module):
             )
         
         # Sample crop parameters (integer offsets)
-        if self.same_on_batch:
-            # Same offsets for all images
-            top = torch.randint(0, image_height - self.crop_height + 1, (1,)).item()
-            left = torch.randint(0, image_width - self.crop_width + 1, (1,)).item()
-            top_offsets = torch.full((batch_size,), top, device=device, dtype=torch.int32)
-            left_offsets = torch.full((batch_size,), left, device=device, dtype=torch.int32)
-        else:
-            # Different offsets per image
-            top_offsets = torch.randint(0, image_height - self.crop_height + 1, (batch_size,), device=device, dtype=torch.int32)
-            left_offsets = torch.randint(0, image_width - self.crop_width + 1, (batch_size,), device=device, dtype=torch.int32)
+        top_offsets = torch.randint(0, image_height - self.crop_height + 1, (param_count,), device=device, dtype=torch.int32)
+        left_offsets = torch.randint(0, image_width - self.crop_width + 1, (param_count,), device=device, dtype=torch.int32)
         
         # Sample flip decisions
         flip_mask = (
-            F._sample_bernoulli_tensor(batch_size, self.horizontal_flip_p, device, self.same_on_batch)
+            F._sample_bernoulli_tensor(param_count, self.horizontal_flip_p, device)
             if self.horizontal_flip_p > 0
-            else torch.zeros(batch_size, device=device, dtype=torch.uint8)
+            else torch.zeros(param_count, device=device, dtype=torch.uint8)
         )
         
         # Sample color jitter parameters
         brightness_factors = (
-            F._sample_uniform_tensor(batch_size, self.brightness[0], self.brightness[1], device, self.same_on_batch)
+            F._sample_uniform_tensor(param_count, self.brightness[0], self.brightness[1], device)
             if self.brightness is not None
-            else torch.ones(batch_size, device=device)
+            else torch.ones(param_count, device=device)
         )
         contrast_factors = (
-            F._sample_uniform_tensor(batch_size, self.contrast[0], self.contrast[1], device, self.same_on_batch)
+            F._sample_uniform_tensor(param_count, self.contrast[0], self.contrast[1], device)
             if self.contrast is not None
-            else torch.ones(batch_size, device=device)
+            else torch.ones(param_count, device=device)
         )
         saturation_factors = (
-            F._sample_uniform_tensor(batch_size, self.saturation[0], self.saturation[1], device, self.same_on_batch)
+            F._sample_uniform_tensor(param_count, self.saturation[0], self.saturation[1], device)
             if self.saturation is not None
-            else torch.ones(batch_size, device=device)
+            else torch.ones(param_count, device=device)
         )
         
         # Sample grayscale decisions
         grayscale_mask = (
-            F._sample_bernoulli_tensor(batch_size, self.random_grayscale_p, device, self.same_on_batch)
-            if self.random_grayscale_p > 0
-            else torch.zeros(batch_size, device=device, dtype=torch.uint8)
+            F._sample_bernoulli_tensor(param_count, self.grayscale_p, device)
+            if self.grayscale_p > 0
+            else torch.zeros(param_count, device=device, dtype=torch.uint8)
         )
         
         return top_offsets, left_offsets, flip_mask, brightness_factors, contrast_factors, saturation_factors, grayscale_mask
@@ -1121,36 +1434,60 @@ class TritonFusedAugment(nn.Module):
         Apply all augmentations in a single fused kernel.
         
         Args:
-            image: Input tensor of shape (N, C, H, W) or (C, H, W)
+            image: Input tensor of shape (C, H, W), (N, C, H, W), or (N, T, C, H, W)
                    Can be on CPU or CUDA (will be moved to CUDA automatically)
             
         Returns:
             Augmented tensor of same shape and device as input
         """
-        # Handle 3D tensors (C, H, W) from dataset transforms
-        is_3d = image.ndim == 3
-        if is_3d:
-            image = image.unsqueeze(0)  # Add batch dimension
+        # Normalize shape: 3D/4D/5D → 4D
+        normalized_img, batch_size, num_frames, original_shape, was_3d = _normalize_video_shape(image)
         
         # Move to CUDA if not already (Triton requires CUDA)
-        if not image.is_cuda:
+        if not normalized_img.is_cuda:
             if not torch.cuda.is_available():
                 raise RuntimeError(
                     "Triton-Augment requires CUDA, but CUDA is not available. "
                     "Please ensure you have a CUDA-capable GPU and PyTorch with CUDA support."
                 )
-            image = image.cuda()
+            normalized_img = normalized_img.cuda()
         
-        batch_size, _, img_height, img_width = image.shape
+        total_samples, _, img_height, img_width = normalized_img.shape
         
-        # Sample all random parameters (per-image if same_on_batch=False)
+        # Compute how many parameter sets to generate
+        param_count = _compute_param_count(batch_size, num_frames, self.same_on_batch, self.same_on_frame)
+         
+        # Sample all random parameters
         top_offsets, left_offsets, flip_mask, brightness_factors, contrast_factors, saturation_factors, grayscale_mask = self._get_params(
-            batch_size, img_height, img_width, image.device
+            param_count, img_height, img_width, normalized_img.device
+        )
+        
+        # Broadcast params to all samples
+        top_offsets = _broadcast_params_to_all_samples(
+            top_offsets, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame
+        )
+        left_offsets = _broadcast_params_to_all_samples(
+            left_offsets, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame
+        )
+        flip_mask = _broadcast_params_to_all_samples(
+            flip_mask, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame
+        )
+        brightness_factors = _broadcast_params_to_all_samples(
+            brightness_factors, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame
+        )
+        contrast_factors = _broadcast_params_to_all_samples(
+            contrast_factors, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame
+        )
+        saturation_factors = _broadcast_params_to_all_samples(
+            saturation_factors, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame
+        )
+        grayscale_mask = _broadcast_params_to_all_samples(
+            grayscale_mask, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame
         )
         
         # Single kernel launch for ALL operations!
         result = F.fused_augment(
-            image,
+            normalized_img,
             top=top_offsets,
             left=left_offsets,
             height=self.crop_height,
@@ -1164,11 +1501,8 @@ class TritonFusedAugment(nn.Module):
             std=self.std,
         )
         
-        # Remove batch dimension if input was 3D
-        if is_3d:
-            result = result.squeeze(0)
-        
-        return result
+        # Reshape back to original shape
+        return _reshape_to_original(result, original_shape, was_3d)
     
     def __repr__(self):
         format_string = self.__class__.__name__ + '('
@@ -1180,10 +1514,12 @@ class TritonFusedAugment(nn.Module):
             format_string += f', contrast={self.contrast}'
         if self.saturation:
             format_string += f', saturation={self.saturation}'
-        if self.random_grayscale_p > 0:
-            format_string += f', random_grayscale_p={self.random_grayscale_p}'
-        format_string += f', mean={self.mean}'
-        format_string += f', std={self.std}'
+        if self.grayscale_p > 0:
+            format_string += f', grayscale_p={self.grayscale_p}'
+        if self.mean is not None:
+            format_string += f', mean={self.mean}'
+        if self.std is not None:
+            format_string += f', std={self.std}'
         format_string += ')'
         return format_string
 

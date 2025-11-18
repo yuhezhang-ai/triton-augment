@@ -347,7 +347,7 @@ def benchmark_random_color_augment(size, batch_size, provider):
         transform = ta.TritonColorJitterNormalize(
             brightness=0.2,
             saturation=0.2,
-            random_grayscale_p=0.1,
+            grayscale_p=0.1,
             mean=mean,
             std=std,
         )
@@ -400,7 +400,7 @@ def benchmark_float16_vs_float32(size, batch_size, provider):
             brightness=0.2,
             contrast=0.2,
             saturation=0.2,
-            random_grayscale_p=0.1,
+            grayscale_p=0.1,
             mean=mean,
             std=std,
         )
@@ -412,7 +412,7 @@ def benchmark_float16_vs_float32(size, batch_size, provider):
             brightness=0.2,
             contrast=0.2,
             saturation=0.2,
-            random_grayscale_p=0.1,
+            grayscale_p=0.1,
             mean=mean,
             std=std,
         )
@@ -554,7 +554,7 @@ def benchmark_ultimate_fusion(size, batch_size, provider):
             brightness=0.2,
             contrast=0.2,
             saturation=0.2,
-            random_grayscale_p=0.1,
+            grayscale_p=0.1,
             mean=mean,
             std=std,
         )
@@ -603,7 +603,7 @@ def print_ultimate_speedup_summary():
         brightness=0.2,
         contrast=0.2,
         saturation=0.2,
-        random_grayscale_p=0.1,
+        grayscale_p=0.1,
         mean=mean,
         std=std,
     )

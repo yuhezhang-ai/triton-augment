@@ -90,7 +90,7 @@ def benchmark_ultimate(batch_size=32, image_size=224, crop_size=112):
         brightness=0.2,
         contrast=0.2,
         saturation=0.2,
-        random_grayscale_p=0.1,
+        grayscale_p=0.1,
         mean=mean,
         std=std,
     )
@@ -147,8 +147,8 @@ def print_table(results):
     print("\n")
     
     # Header
-    print("| Image Size | Batch |  Crop Size  | Torchvision (ms) | Triton Sequential (ms) | Triton Fused (ms) | Speedup (Sequential) | Speedup (Fused) |")
-    print("|------------|-------|-------------|------------------|------------------------|-------------------|----------------------|-----------------|")
+    print("| Image Size | Batch |  Crop Size | Torchvision (ms) | Triton Sequential (ms) | Triton Fused (ms) | Speedup (Sequential)  | Speedup (Fused)  |")
+    print("|------------|-------|------------|------------------|------------------------|-------------------|-----------------------|------------------|")
     
     # Rows
     for r in results:

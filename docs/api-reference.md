@@ -186,17 +186,36 @@ Low-level functional interface for fine-grained control with fixed parameters. U
 
 ## Input Requirements
 
-All operations accept:
+### Transform Classes
+
+Transform classes (e.g., `TritonFusedAugment`, `TritonColorJitter`, etc.) accept:
 
 - **Device**: CUDA (GPU) or CPU - *CPU tensors are automatically moved to GPU*
-- **Shape**: `(C, H, W)` or `(N, C, H, W)` - *3D tensors are automatically batched*
+- **Shape**: `(C, H, W)`, `(N, C, H, W)`, or `(N, T, C, H, W)` - *3D, 4D, or 5D (video)*
 - **Dtype**: float32 or float16
 - **Range**: [0, 1] for color operations (required)
 
 **Notes:**
+
+- 3D tensors `(C, H, W)` are automatically converted to `(1, C, H, W)` internally for processing
+- 5D tensors `(N, T, C, H, W)` are supported for video augmentation (batch, frames, channels, height, width)
+
+- For 5D inputs, use `same_on_frame=True` (default) for consistent augmentation across frames, or `same_on_frame=False` for independent per-frame augmentation
+
 - After normalization, values can be outside [0, 1] range
-- 3D tensors `(C, H, W)` are automatically converted to `(1, C, H, W)` for processing
+
 - CPU tensors are automatically transferred to CUDA for GPU processing
+
+### Functional API
+
+Functional functions (e.g., `fused_augment()`, `crop()`, `normalize()`, etc.) expect:
+
+- **Device**: CUDA (GPU) - *must be on CUDA device*
+- **Shape**: `(N, C, H, W)` - *4D tensors only*
+- **Dtype**: float32 or float16
+- **Range**: [0, 1] for color operations (required)
+
+**Note:** Transform classes handle 3D/5D normalization internally. If using the functional API directly, ensure inputs are already in 4D format `(N, C, H, W)`.
 
 ---
 

@@ -198,7 +198,7 @@ def main():
         brightness=0.2,
         contrast=0.2,
         saturation=0.0,
-        random_grayscale_p=0.0,
+        grayscale_p=0.0,
         mean=(0.1307,),
         std=(0.3081,),
         same_on_batch=False  # Each image gets different random params

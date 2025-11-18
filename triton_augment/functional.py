@@ -43,11 +43,9 @@ def _validate_image_tensor(tensor: torch.Tensor, name: str = "tensor") -> None:
         ValueError: If tensor is not on CUDA or has invalid shape
     
     Note:
-        Currently only supports 4D tensors (N, C, H, W).
-        Future versions will support:
-        - 3D tensors (C, H, W) for single images
-        - 5D tensors (N, T, C, H, W) for video batches
-        This matches torchvision's broader dimension support.
+        This functional API expects 4D tensors (N, C, H, W).
+        Transform classes (e.g., TritonFusedAugment) handle 3D (C, H, W) and 5D (N, T, C, H, W) inputs
+        by normalizing them to 4D before calling the functional API.
     """
     if not isinstance(tensor, torch.Tensor):
         raise TypeError(f"{name} must be a torch.Tensor, got {type(tensor)}")
@@ -121,79 +119,55 @@ def _convert_to_tensor(
 
 
 def _sample_uniform_tensor(
-    batch_size: int,
+    size: int,
     min_val: float,
     max_val: float,
     device: torch.device,
-    same_on_batch: bool = False
 ) -> torch.Tensor:
     """
-    Sample uniform random values, supporting both per-sample and batch-wide randomness.
+    Sample uniform random values independently for each position.
     
     Args:
-        batch_size: Number of samples to generate
+        size: Number of random values to generate
         min_val: Minimum value (inclusive)
         max_val: Maximum value (exclusive)
         device: Device to create tensor on
-        same_on_batch: If True, same value for all samples. If False, different value per sample (default).
     
     Returns:
-        Tensor of shape (batch_size,) with uniform random values
+        Tensor of shape (size,) with uniform random values
     
     Example:
         ```python
-        # Different per sample (default)
-        t = _sample_uniform_tensor(4, 0.8, 1.2, 'cuda', same_on_batch=False)
+        t = _sample_uniform_tensor(4, 0.8, 1.2, 'cuda')
         # t = tensor([0.95, 1.1, 0.82, 1.18], device='cuda')
-        # Same for all samples
-        t = _sample_uniform_tensor(4, 0.8, 1.2, 'cuda', same_on_batch=True)
-        # t = tensor([1.05, 1.05, 1.05, 1.05], device='cuda')
         ```
     """
-    if same_on_batch:
-        # Same value for all samples
-        single_val = torch.empty(1).uniform_(min_val, max_val).item()
-        return torch.full((batch_size,), single_val, device=device)
-    else:
-        # Different value per sample
-        return torch.empty(batch_size, device=device).uniform_(min_val, max_val)
+    return torch.empty(size, device=device).uniform_(min_val, max_val)
 
 
 def _sample_bernoulli_tensor(
-    batch_size: int,
+    size: int,
     p: float,
     device: torch.device,
-    same_on_batch: bool = False
 ) -> torch.Tensor:
     """
-    Sample Bernoulli random values as boolean, supporting both per-sample and batch-wide randomness.
+    Sample Bernoulli random values as boolean independently for each position.
     
     Args:
-        batch_size: Number of samples to generate
+        size: Number of random values to generate
         p: Probability of True
         device: Device to create tensor on
-        same_on_batch: If True, same decision for all samples. If False, different decision per sample (default).
     
     Returns:
-        Tensor of shape (batch_size,) with bool dtype
+        Tensor of shape (size,) with bool dtype
     
     Example:
         ```python
-        # Different per sample (default)
-        t = _sample_bernoulli_tensor(4, 0.5, 'cuda', same_on_batch=False)
+        t = _sample_bernoulli_tensor(4, 0.5, 'cuda')
         # t = tensor([True, False, True, True], device='cuda', dtype=torch.bool)
-        # Same for all samples
-        t = _sample_bernoulli_tensor(4, 0.5, 'cuda', same_on_batch=True)
-        # t = tensor([False, False, False, False], device='cuda', dtype=torch.bool)
         ```
     """
-    if same_on_batch:
-        # Same decision for all samples
-        single_decision = torch.rand(1).item() < p
-        return torch.full((batch_size,), single_decision, device=device, dtype=torch.bool)
-    else:
-        # Different decision per sample
-        return torch.rand(batch_size, device=device) < p
+    return torch.rand(size, device=device) < p
 
 
 def rgb_to_grayscale(
