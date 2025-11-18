@@ -63,6 +63,77 @@ result = transform(batch)  # All images: same crop position, flip, brightness
 
 ---
 
+## Video (5D Tensor) Support: `same_on_frame` Flag
+
+For video tensors with shape `[N, T, C, H, W]` (batch, frames, channels, height, width), Triton-Augment supports the `same_on_frame` parameter to control whether augmentation parameters are shared across frames:
+
+### Consistent Augmentation Across Frames (Default)
+
+```python
+# Video batch: 8 videos × 16 frames × 3 channels × 224×224
+videos = torch.rand(8, 16, 3, 224, 224, device='cuda')
+
+transform = ta.TritonFusedAugment(
+    crop_size=112,
+    horizontal_flip_p=0.5,
+    brightness=0.2,
+    same_on_frame=True  # Default: same augmentation for all frames
+)
+
+result = transform(videos)  # All 16 frames in each video get same crop/flip/color
+```
+
+**Use when:**
+- ✅ Video training (consistent augmentation preserves temporal coherence)
+- ✅ You want frames in a video to look consistent
+- ✅ Similar to Kornia's `VideoSequential` behavior
+
+### Independent Augmentation Per Frame
+
+```python
+transform = ta.TritonFusedAugment(
+    crop_size=112,
+    horizontal_flip_p=0.5,
+    brightness=0.2,
+    same_on_frame=False  # Each frame gets different augmentation
+)
+
+result = transform(videos)  # Each of 16 frames gets different crop/flip/color
+```
+
+**Use when:**
+- ✅ You want maximum frame diversity
+- ✅ Each frame should be augmented independently
+- ✅ Similar to processing frames individually
+
+### Combining `same_on_batch` and `same_on_frame`
+
+For video tensors `[N, T, C, H, W]`, you can control both batch and frame dimensions:
+
+```python
+transform = ta.TritonFusedAugment(
+    crop_size=112,
+    horizontal_flip_p=0.5,
+    brightness=0.2,
+    same_on_batch=False,   # Different params per video
+    same_on_frame=True     # Same params for all frames in each video
+)
+
+# Result:
+# - Video 0: frames 0-15 share same augmentation
+# - Video 1: frames 0-15 share same augmentation (different from Video 0)
+# - Video 2: frames 0-15 share same augmentation (different from Videos 0,1)
+# ... and so on
+```
+
+**Parameter combinations for `[N, T, C, H, W]`:**
+- `same_on_batch=False, same_on_frame=False`: N×T different parameters (all independent)
+- `same_on_batch=False, same_on_frame=True`: N different parameters (one per video, shared across frames)
+- `same_on_batch=True, same_on_frame=False`: T different parameters (one per frame position, shared across videos)
+- `same_on_batch=True, same_on_frame=True`: 1 parameter (shared across all videos and frames)
+
+---
+
 ## When to Use Each Mode
 
 ### Different Parameters Per Sample (Recommended for Training)
@@ -95,28 +166,29 @@ for images, labels in train_loader:
 ### Batch-Wide Parameters (Specialized Use Cases)
 
 ✅ **Use when:**
-- Processing video frames (consistent augmentation across frames)
 - Debugging (easier to see effect of specific parameters)
 - Specific research requirements
+- All images should share exact same augmentation
 
 ```python
-# Video frame processing
 transform = ta.TritonFusedAugment(
     crop_size=112,
     horizontal_flip_p=0.5,
     brightness=0.2,
-    same_on_batch=True  # Same for all frames
+    same_on_batch=True  # Same for all images
 )
 
-video_frames = torch.rand(8, 3, 224, 224, device='cuda')  # 8 frames
-result = transform(video_frames)  # Consistent augmentation across frames ✅
+batch = torch.rand(32, 3, 224, 224, device='cuda')
+result = transform(batch)  # All images: same augmentation ✅
 ```
+
+**Note:** For video tensors `[N, T, C, H, W]`, use `same_on_frame=True` instead (or in addition) to control frame-level consistency.
 
 ---
 
 ## All Transforms Support Different Parameters Per Sample
 
-The following transforms all support `same_on_batch`:
+The following transforms all support `same_on_batch` (and `same_on_frame` for video tensors):
 
 - `TritonFusedAugment` - Complete pipeline (crop, flip, color, normalize)
 - `TritonRandomCropFlip` - Geometric operations only
@@ -132,6 +204,10 @@ Example:
 crop = ta.TritonRandomCrop(112, same_on_batch=False)
 flip = ta.TritonRandomHorizontalFlip(p=0.5, same_on_batch=False)
 jitter = ta.TritonColorJitter(brightness=0.2, same_on_batch=False)
+
+# Video transforms support same_on_frame
+video_crop = ta.TritonRandomCrop(112, same_on_batch=False, same_on_frame=True)
+video_flip = ta.TritonRandomHorizontalFlip(p=0.5, same_on_batch=False, same_on_frame=True)
 ```
 
 ---

@@ -189,13 +189,14 @@ Low-level functional interface for fine-grained control with fixed parameters. U
 All operations accept:
 
 - **Device**: CUDA (GPU) or CPU - *CPU tensors are automatically moved to GPU*
-- **Shape**: `(C, H, W)` or `(N, C, H, W)` - *3D tensors are automatically batched*
+- **Shape**: `(C, H, W)`, `(N, C, H, W)`, or `(N, T, C, H, W)` - *5D for video*
 - **Dtype**: float32 or float16
 - **Range**: [0, 1] for color operations (required)
 
 **Notes:**
 - After normalization, values can be outside [0, 1] range
-- 3D tensors `(C, H, W)` are automatically converted to `(1, C, H, W)` for processing
+- 5D tensors `(N, T, C, H, W)` are supported for video augmentation (batch, frames, channels, height, width)
+- For 5D inputs, use `same_on_frame=True` (default) for consistent augmentation across frames, or `same_on_frame=False` for independent per-frame augmentation
 - CPU tensors are automatically transferred to CUDA for GPU processing
 
 ---

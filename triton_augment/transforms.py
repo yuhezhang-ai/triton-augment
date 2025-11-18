@@ -515,8 +515,8 @@ class TritonColorJitterNormalize(nn.Module):
         contrast: How much to jitter contrast (same as TritonColorJitter)
         saturation: How much to jitter saturation (same as TritonColorJitter)
         grayscale_p: Probability of converting to grayscale (default: 0.0)
-        mean: Sequence of means for normalization (R, G, B)
-        std: Sequence of standard deviations for normalization (R, G, B)
+        mean: Sequence of means for normalization (R, G, B). If None, normalization is skipped.
+        std: Sequence of standard deviations for normalization (R, G, B). If None, normalization is skipped.
         same_on_batch: If True, all images in batch share the same random parameters
                              If False (default), each image in batch gets different random parameters
         
@@ -528,12 +528,17 @@ class TritonColorJitterNormalize(nn.Module):
             contrast=0.2,    # Range: [0.8, 1.2]
             saturation=0.2,  # Range: [0.8, 1.2]
             grayscale_p=0.1,  # 10% chance of grayscale (per-image)
-            mean=(0.485, 0.456, 0.406),
-            std=(0.229, 0.224, 0.225),
+            mean=(0.485, 0.456, 0.406),  # ImageNet normalization (optional)
+            std=(0.229, 0.224, 0.225),    # ImageNet normalization (optional)
             same_on_batch=False
         )
         img = torch.rand(4, 3, 224, 224, device='cuda')
         augmented = transform(img)  # Each image gets different augmentation
+        
+        # Without normalization (mean=None, std=None by default)
+        transform_no_norm = TritonColorJitterNormalize(
+            brightness=0.2, contrast=0.2, saturation=0.2
+        )
         ```
     """
     
@@ -543,8 +548,8 @@ class TritonColorJitterNormalize(nn.Module):
         contrast: Optional[Union[float, Sequence[float]]] = None,
         saturation: Optional[Union[float, Sequence[float]]] = None,
         grayscale_p: float = 0.0,
-        mean: Tuple[float, float, float] = (0.485, 0.456, 0.406),
-        std: Tuple[float, float, float] = (0.229, 0.224, 0.225),
+        mean: Optional[Tuple[float, float, float]] = None,
+        std: Optional[Tuple[float, float, float]] = None,
         same_on_batch: bool = False,
         same_on_frame: bool = True,
     ):
@@ -562,11 +567,20 @@ class TritonColorJitterNormalize(nn.Module):
             raise ValueError(f"grayscale_p must be in [0, 1], got {grayscale_p}")
         
         # Store normalization parameters
-        self.mean = tuple(mean)
-        self.std = tuple(std)
+        if (mean is None) != (std is None):
+            raise ValueError("mean and std must both be provided or both be None")
         
-        if len(self.mean) != 3 or len(self.std) != 3:
-            raise ValueError("mean and std must have 3 values for RGB channels")
+        if mean is not None:
+            mean = tuple(mean)
+            if len(mean) != 3:
+                raise ValueError("mean must have 3 values for RGB channels")
+        if std is not None:
+            std = tuple(std)
+            if len(std) != 3:
+                raise ValueError("std must have 3 values for RGB channels")
+        
+        self.mean = mean
+        self.std = std
     
     def _check_input(
         self,
@@ -703,7 +717,8 @@ class TritonColorJitterNormalize(nn.Module):
             f"grayscale_p={self.grayscale_p}, "
             f"mean={self.mean}, "
             f"std={self.std}, "
-            f"same_on_batch={self.same_on_batch})"
+            f"same_on_batch={self.same_on_batch}, "
+            f"same_on_frame={self.same_on_frame})"
         )
 
 
@@ -1231,8 +1246,8 @@ class TritonFusedAugment(nn.Module):
         contrast: How much to jitter contrast (same format as brightness)
         saturation: How much to jitter saturation (same format as brightness)
         grayscale_p: Probability of converting to grayscale (default: 0.0, no grayscale)
-        mean: Sequence of means for R, G, B channels
-        std: Sequence of stds for R, G, B channels
+        mean: Sequence of means for R, G, B channels. If None, normalization is skipped.
+        std: Sequence of stds for R, G, B channels. If None, normalization is skipped.
         same_on_batch: If True, all images in batch (N dimension) share the same random parameters.
                       If False (default), each image gets different random parameters.
         same_on_frame: If True, all frames in a video (T dimension) share the same random parameters.
@@ -1258,12 +1273,19 @@ class TritonFusedAugment(nn.Module):
             brightness=0.2,
             contrast=0.2,
             saturation=0.2,
-            mean=(0.485, 0.456, 0.406),
-            std=(0.229, 0.224, 0.225)
+            mean=(0.485, 0.456, 0.406),  # ImageNet normalization (optional)
+            std=(0.229, 0.224, 0.225)    # ImageNet normalization (optional)
         )
         
         img = torch.rand(4, 3, 224, 224, device='cuda')
         result = transform(img)  # Single kernel launch!
+        
+        # Without normalization (mean=None, std=None by default)
+        transform_no_norm = ta.TritonFusedAugment(
+            crop_size=112,
+            horizontal_flip_p=0.5,
+            brightness=0.2, contrast=0.2, saturation=0.2
+        )
         ```
     
     Note:
@@ -1280,8 +1302,8 @@ class TritonFusedAugment(nn.Module):
         contrast: float | tuple[float, float] = 0,
         saturation: float | tuple[float, float] = 0,
         grayscale_p: float = 0.0,
-        mean: tuple[float, float, float] = (0.485, 0.456, 0.406),
-        std: tuple[float, float, float] = (0.229, 0.224, 0.225),
+        mean: Optional[tuple[float, float, float]] = None,
+        std: Optional[tuple[float, float, float]] = None,
         same_on_batch: bool = False,
         same_on_frame: bool = True,
     ):
@@ -1301,6 +1323,19 @@ class TritonFusedAugment(nn.Module):
         self.saturation = self._check_input(saturation, 'saturation')
         
         self.grayscale_p = grayscale_p
+        
+        # Validate normalization parameters
+        if (mean is None) != (std is None):
+            raise ValueError("mean and std must both be provided or both be None")
+        
+        if mean is not None:
+            mean = tuple(mean)
+            if len(mean) != 3:
+                raise ValueError("mean must have 3 values for RGB channels")
+        if std is not None:
+            std = tuple(std)
+            if len(std) != 3:
+                raise ValueError("std must have 3 values for RGB channels")
         
         self.mean = mean
         self.std = std
@@ -1481,8 +1516,10 @@ class TritonFusedAugment(nn.Module):
             format_string += f', saturation={self.saturation}'
         if self.grayscale_p > 0:
             format_string += f', grayscale_p={self.grayscale_p}'
-        format_string += f', mean={self.mean}'
-        format_string += f', std={self.std}'
+        if self.mean is not None:
+            format_string += f', mean={self.mean}'
+        if self.std is not None:
+            format_string += f', std={self.std}'
         format_string += ')'
         return format_string
 

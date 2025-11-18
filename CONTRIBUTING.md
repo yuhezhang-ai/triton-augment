@@ -205,6 +205,7 @@ When adding new features or optimizing existing code, please include benchmark r
 
 ```bash
 python examples/benchmark.py
+python examples/benchmark_video.py
 ```
 
 Include benchmark results in your PR description, comparing before and after performance.

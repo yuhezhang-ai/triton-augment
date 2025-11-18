@@ -184,8 +184,8 @@ def print_table(results):
     
     # Header
     if has_kornia:
-        print("| Batch | Frames | Image Size | Crop Size | Torchvision   | Kornia VideoSeq   | Triton Sequential                  | Triton Fused                       |")
-        print("|-------|--------|------------|-----------|---------------|-------------------|------------------------------------|------------------------------------|")
+        print("| Batch | Frames | Image Size | Crop Size | Torchvision  | Kornia VideoSeq  | Triton Sequential                    | Triton Fused                         |")
+        print("|-------|--------|------------|-----------|--------------|------------------|--------------------------------------|--------------------------------------|")
     else:
         print("| Batch | Frames | Image Size | Crop Size | Torchvision   | Triton Sequential        | Triton Fused                        |")
         print("|-------|--------|------------|-----------|---------------|--------------------------|-------------------------------------|")
