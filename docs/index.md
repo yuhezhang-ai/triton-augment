@@ -323,6 +323,7 @@ for images, labels in train_loader:
 - [x] **Phase 1**: Fused color operations (brightness, contrast, saturation, normalize)
 - [x] **Phase 1.5**: Grayscale, float16 support, auto-tuning
 - [x] **Phase 2**: Basic Geometric operations (crop, flip) + Ultimate fusion 🚀
+- [x] **Phase 2.5**: 5D video tensor support `[N, T, C, H, W]` with `same_on_frame` parameter
 - [ ] **Phase 3**: Extended operations (resize, rotation, blur, erasing, mixup, etc.)
 - [ ] **Future**: Differentiable augmentation (autograd support, available in Kornia) - evaluate demand vs performance tradeoff
 
@@ -366,7 +367,7 @@ Apache License 2.0 - see [LICENSE](https://github.com/yuhezhang-ai/triton-augmen
 **Yuhe Zhang**
 
 - 💼 LinkedIn: [Yuhe Zhang](https://www.linkedin.com/in/yuhe-zhang-phd/)
-- 📧 <a href="mailto:yuhezhang.zju@gmail.com">Email me</a>
+- 📧 Email: yuhezhang.zju @ gmail.com
 
 *Research interests: Applied ML, Computer Vision, Efficient Deep Learning, GPU Acceleration*
 
