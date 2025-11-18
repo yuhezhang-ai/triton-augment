@@ -187,7 +187,7 @@ def main():
         brightness=0.2,                  # Brightness jitter ±20%
         contrast=0.2,                    # Contrast jitter ±20%
         saturation=0.2,                  # Saturation jitter ±20%
-        random_grayscale_p=0.1,          # 10% chance of grayscale
+        grayscale_p=0.1,          # 10% chance of grayscale
         mean=(0.4914, 0.4822, 0.4465),   # CIFAR-10 mean
         std=(0.2470, 0.2435, 0.2616),    # CIFAR-10 std
         same_on_batch=False        # Each image gets different random params

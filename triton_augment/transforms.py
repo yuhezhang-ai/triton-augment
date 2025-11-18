@@ -514,7 +514,7 @@ class TritonColorJitterNormalize(nn.Module):
         brightness: How much to jitter brightness (same as TritonColorJitter)
         contrast: How much to jitter contrast (same as TritonColorJitter)
         saturation: How much to jitter saturation (same as TritonColorJitter)
-        random_grayscale_p: Probability of converting to grayscale (default: 0.0)
+        grayscale_p: Probability of converting to grayscale (default: 0.0)
         mean: Sequence of means for normalization (R, G, B)
         std: Sequence of standard deviations for normalization (R, G, B)
         same_on_batch: If True, all images in batch share the same random parameters
@@ -527,7 +527,7 @@ class TritonColorJitterNormalize(nn.Module):
             brightness=0.2,  # Range: [0.8, 1.2]
             contrast=0.2,    # Range: [0.8, 1.2]
             saturation=0.2,  # Range: [0.8, 1.2]
-            random_grayscale_p=0.1,  # 10% chance of grayscale (per-image)
+            grayscale_p=0.1,  # 10% chance of grayscale (per-image)
             mean=(0.485, 0.456, 0.406),
             std=(0.229, 0.224, 0.225),
             same_on_batch=False
@@ -542,7 +542,7 @@ class TritonColorJitterNormalize(nn.Module):
         brightness: Optional[Union[float, Sequence[float]]] = None,
         contrast: Optional[Union[float, Sequence[float]]] = None,
         saturation: Optional[Union[float, Sequence[float]]] = None,
-        random_grayscale_p: float = 0.0,
+        grayscale_p: float = 0.0,
         mean: Tuple[float, float, float] = (0.485, 0.456, 0.406),
         std: Tuple[float, float, float] = (0.229, 0.224, 0.225),
         same_on_batch: bool = False,
@@ -554,12 +554,12 @@ class TritonColorJitterNormalize(nn.Module):
         self.brightness = self._check_input(brightness, "brightness")
         self.contrast = self._check_input(contrast, "contrast")
         self.saturation = self._check_input(saturation, "saturation")
-        self.random_grayscale_p = random_grayscale_p
+        self.grayscale_p = grayscale_p
         self.same_on_batch = same_on_batch
         self.same_on_frame = same_on_frame
         
-        if not (0.0 <= random_grayscale_p <= 1.0):
-            raise ValueError(f"random_grayscale_p must be in [0, 1], got {random_grayscale_p}")
+        if not (0.0 <= grayscale_p <= 1.0):
+            raise ValueError(f"grayscale_p must be in [0, 1], got {grayscale_p}")
         
         # Store normalization parameters
         self.mean = tuple(mean)
@@ -624,7 +624,7 @@ class TritonColorJitterNormalize(nn.Module):
         
         # Generate grayscale mask
         grayscale_mask = F._sample_bernoulli_tensor(
-            param_count, self.random_grayscale_p, device
+            param_count, self.grayscale_p, device
         )
         
         return brightness_factors, contrast_factors, saturation_factors, grayscale_mask
@@ -700,7 +700,7 @@ class TritonColorJitterNormalize(nn.Module):
             f"brightness={self.brightness}, "
             f"contrast={self.contrast}, "
             f"saturation={self.saturation}, "
-            f"random_grayscale_p={self.random_grayscale_p}, "
+            f"grayscale_p={self.grayscale_p}, "
             f"mean={self.mean}, "
             f"std={self.std}, "
             f"same_on_batch={self.same_on_batch})"
@@ -1230,7 +1230,7 @@ class TritonFusedAugment(nn.Module):
                    If tuple, chosen uniformly from [brightness[0], brightness[1]].
         contrast: How much to jitter contrast (same format as brightness)
         saturation: How much to jitter saturation (same format as brightness)
-        random_grayscale_p: Probability of converting to grayscale (default: 0.0, no grayscale)
+        grayscale_p: Probability of converting to grayscale (default: 0.0, no grayscale)
         mean: Sequence of means for R, G, B channels
         std: Sequence of stds for R, G, B channels
         same_on_batch: If True, all images in batch (N dimension) share the same random parameters.
@@ -1279,7 +1279,7 @@ class TritonFusedAugment(nn.Module):
         brightness: float | tuple[float, float] = 0,
         contrast: float | tuple[float, float] = 0,
         saturation: float | tuple[float, float] = 0,
-        random_grayscale_p: float = 0.0,
+        grayscale_p: float = 0.0,
         mean: tuple[float, float, float] = (0.485, 0.456, 0.406),
         std: tuple[float, float, float] = (0.229, 0.224, 0.225),
         same_on_batch: bool = False,
@@ -1300,7 +1300,7 @@ class TritonFusedAugment(nn.Module):
         self.contrast = self._check_input(contrast, 'contrast')
         self.saturation = self._check_input(saturation, 'saturation')
         
-        self.random_grayscale_p = random_grayscale_p
+        self.grayscale_p = grayscale_p
         
         self.mean = mean
         self.std = std
@@ -1387,8 +1387,8 @@ class TritonFusedAugment(nn.Module):
         
         # Sample grayscale decisions
         grayscale_mask = (
-            F._sample_bernoulli_tensor(param_count, self.random_grayscale_p, device)
-            if self.random_grayscale_p > 0
+            F._sample_bernoulli_tensor(param_count, self.grayscale_p, device)
+            if self.grayscale_p > 0
             else torch.zeros(param_count, device=device, dtype=torch.uint8)
         )
         
@@ -1479,8 +1479,8 @@ class TritonFusedAugment(nn.Module):
             format_string += f', contrast={self.contrast}'
         if self.saturation:
             format_string += f', saturation={self.saturation}'
-        if self.random_grayscale_p > 0:
-            format_string += f', random_grayscale_p={self.random_grayscale_p}'
+        if self.grayscale_p > 0:
+            format_string += f', grayscale_p={self.grayscale_p}'
         format_string += f', mean={self.mean}'
         format_string += f', std={self.std}'
         format_string += ')'
