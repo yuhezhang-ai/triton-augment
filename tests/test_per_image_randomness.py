@@ -80,7 +80,7 @@ class TestPerImageRandomnessTransforms:
             gradient = torch.linspace(0, 1, 224, device='cuda')
             img[i, 0, :, :] = gradient.unsqueeze(1)  # Vertical gradient
             img[i, 1, :, :] = gradient.unsqueeze(0)  # Horizontal gradient
-            img[i, 2, :, :] = (i + 1) * 0.25  # Unique constant per image
+            img[i, 2, :, :] = 0.5  # Same constant per image
         
         torch.manual_seed(42)
         result = transform(img)
