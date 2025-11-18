@@ -29,9 +29,9 @@ def _normalize_video_shape(
     Normalize input shape to [N, C, H, W] for processing, handling 3D, 4D, and 5D inputs.
     
     Supported shapes:
-    - [C, H, W] → [1, C, H, W]
-    - [N, C, H, W] → unchanged
-    - [N, T, C, H, W] → [N*T, C, H, W]
+    - [C, H, W] → [1, C, H, W], batch_size=None, num_frames=None
+    - [N, C, H, W] → unchanged, batch_size=N, num_frames=None
+    - [N, T, C, H, W] → [N*T, C, H, W], batch_size=N, num_frames=T
     
     Args:
         image: Input tensor of shape [C, H, W], [N, C, H, W], or [N, T, C, H, W]
@@ -93,19 +93,23 @@ def _compute_param_count(
     Returns:
         Number of parameter sets to generate
     """
-    # For 3D/4D inputs, same_on_frame is ignored
-    if batch_size is None or num_frames is None:
-        return 1  # Will be handled by the existing logic
+    # 3D input: [C, H, W] → always 1 param
+    if batch_size is None:
+        return 1
     
+    # 4D input: [N, C, H, W] → use same_on_batch for batch dimension
+    if num_frames is None:
+        return 1 if same_on_batch else batch_size
+
     # For 5D inputs
     if same_on_batch and same_on_frame:
-        return 1  # All videos and frames share
+        return 1
     elif same_on_batch and not same_on_frame:
-        return num_frames  # All videos share, but different per frame
+        return num_frames
     elif not same_on_batch and same_on_frame:
-        return batch_size  # Different per video, same across frames
+        return batch_size
     else:  # not same_on_batch and not same_on_frame
-        return batch_size * num_frames  # All independent
+        return batch_size * num_frames
 
 
 def _broadcast_params_to_all_samples(
@@ -125,10 +129,14 @@ def _broadcast_params_to_all_samples(
     - params shape [T] → repeat for each of N videos → [N*T]
     - params shape [N*T] → already correct shape
     
+    For [N, C, H, W] with total_samples=N:
+    - params shape [1] → broadcast to [N]
+    - params shape [N] → already correct shape
+    
     Args:
         params: Parameter tensor
-        batch_size: N dimension or None for 3D/4D
-        num_frames: T dimension or None for 3D/4D
+        batch_size: N dimension (None for 3D only)
+        num_frames: T dimension (None for 3D/4D)
         total_samples: Total flattened size (N*T for 5D, N for 4D, 1 for 3D)
         same_on_batch: Whether params are shared across batch
         same_on_frame: Whether params are shared across frames
@@ -140,18 +148,24 @@ def _broadcast_params_to_all_samples(
     if params.shape[0] == total_samples:
         return params
     
-    # Not a video (3D/4D), just broadcast
-    if batch_size is None or num_frames is None:
+    # 3D input: [C, H, W]
+    if batch_size is None:
         if params.shape[0] == 1:
-            return params.expand(total_samples)
+            return params.expand(total_samples).contiguous()
         return params
     
-    # Video broadcasting - use flags to determine which case we're in
+    # 4D input: [N, C, H, W]
+    if num_frames is None:
+        if params.shape[0] == 1:
+            return params.expand(total_samples).contiguous()
+        return params
+    
+    # 5D input: [N, T, C, H, W] - use flags to determine which case we're in
     N, T = batch_size, num_frames
     
     # Case 1: [1] → [N*T] (all same: same_on_batch=True, same_on_frame=True)
     if params.shape[0] == 1:
-        return params.expand(total_samples)
+        return params.expand(total_samples).contiguous()
     
     # Case 2: [N] → [N*T] (same_on_frame=True, not same_on_batch)
     # Each video's param broadcast to its T frames
@@ -161,7 +175,7 @@ def _broadcast_params_to_all_samples(
                 f"Expected {N} params for same_on_frame=True, got {params.shape[0]}"
             )
         # [N] → [N, 1] → [N, T] → [N*T]
-        return params.unsqueeze(1).expand(N, T).reshape(-1)
+        return params.unsqueeze(1).expand(N, T).reshape(-1).contiguous()
     
     # Case 3: [T] → [N*T] (same_on_batch=True, not same_on_frame)
     # Frame params repeated for each video
@@ -171,7 +185,7 @@ def _broadcast_params_to_all_samples(
                 f"Expected {T} params for same_on_batch=True, got {params.shape[0]}"
             )
         # [T] → [1, T] → [N, T] → [N*T]
-        return params.unsqueeze(0).expand(N, T).reshape(-1)
+        return params.unsqueeze(0).expand(N, T).reshape(-1).contiguous()
     
     # Case 4: Should not reach here (all other cases handled by earlier checks)
     raise ValueError(
@@ -371,8 +385,6 @@ class TritonColorJitter(nn.Module):
         
         # Compute how many parameter sets to generate
         param_count = _compute_param_count(batch_size, num_frames, self.same_on_batch, self.same_on_frame)
-        if batch_size is None:  # 3D/4D input, use existing logic
-            param_count = 1 if self.same_on_batch else total_samples
         
         # Sample random parameters
         brightness_factors, contrast_factors, saturation_factors = self._get_params(param_count, normalized_img.device)
@@ -644,9 +656,7 @@ class TritonColorJitterNormalize(nn.Module):
         
         # Compute how many parameter sets to generate
         param_count = _compute_param_count(batch_size, num_frames, self.same_on_batch, self.same_on_frame)
-        if batch_size is None:  # 3D/4D input, use existing logic
-            param_count = 1 if self.same_on_batch else total_samples
-        
+
         # Sample random parameters
         brightness_factors, contrast_factors, saturation_factors, grayscale_mask = self._get_params(param_count, normalized_img.device)
         
@@ -807,8 +817,6 @@ class TritonRandomGrayscale(nn.Module):
         
         # Compute how many parameter sets to generate
         param_count = _compute_param_count(batch_size, num_frames, self.same_on_batch, self.same_on_frame)
-        if batch_size is None:  # 3D/4D input, use existing logic
-            param_count = 1 if self.same_on_batch else total_samples
         
         # Generate grayscale mask
         grayscale_mask = F._sample_bernoulli_tensor(
