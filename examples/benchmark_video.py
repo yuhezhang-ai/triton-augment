@@ -191,11 +191,11 @@ def print_table(results):
     
     # Header
     if has_kornia:
-        print("| Batch | Frames | Image Size | Crop Size | Torchvision | Kornia VideoSeq | Triton Sequential | Triton Fused |")
-        print("|-------|--------|------------|-----------|-------------|-----------------|-------------------|--------------|")
+        print("| Batch | Frames | Image Size | Crop Size | Torchvision   | Kornia VideoSeq   | Triton Sequential               | Triton Fused                       |")
+        print("|-------|--------|------------|-----------|---------------|-------------------|----------------------------------|------------------------------------|")
     else:
-        print("| Batch | Frames | Image Size | Crop Size | Torchvision | Triton Sequential | Triton Fused |")
-        print("|-------|--------|------------|-----------|-------------|-------------------|--------------|")
+        print("| Batch | Frames | Image Size | Crop Size | Torchvision   | Triton Sequential         | Triton Fused             |")
+        print("|-------|--------|------------|-----------|---------------|---------------------------|--------------------------|")
     
     # Rows
     for r in results:
@@ -203,14 +203,14 @@ def print_table(results):
             triton_seq_str = f"{r['triton_sequential_time']:.2f}ms ({r['speedup_sequential_vs_tv']:.1f}x TV, {r['speedup_sequential_vs_kornia']:.1f}x Kornia)"
             triton_fused_str = f"{r['triton_fused_time']:.2f}ms ({r['speedup_fused_vs_tv']:.1f}x TV, {r['speedup_fused_vs_kornia']:.1f}x Kornia)"
             print(f"| {r['batch_size']:5d} | {r['num_frames']:6d} | {r['image_size']:10s} | {r['crop_size']:9s} | "
-                  f"{r['torchvision_time']:8.2f}ms | {r['kornia_time']:11.2f}ms | "
-                  f"{triton_seq_str:41s} | {triton_fused_str:39s} |")
+                  f"{r['torchvision_time']:10.2f}ms | {r['kornia_time']:14.2f}ms | "
+                  f"{triton_seq_str:<35s} | {triton_fused_str:<35s} |")
         else:
             triton_seq_str = f"{r['triton_sequential_time']:.2f}ms ({r['speedup_sequential_vs_tv']:.1f}x TV)"
             triton_fused_str = f"{r['triton_fused_time']:.2f}ms ({r['speedup_fused_vs_tv']:.1f}x TV)"
             print(f"| {r['batch_size']:5d} | {r['num_frames']:6d} | {r['image_size']:10s} | {r['crop_size']:9s} | "
-                  f"{r['torchvision_time']:8.2f}ms | "
-                  f"{triton_seq_str:23s} | {triton_fused_str:21s} |")
+                  f"{r['torchvision_time']:10.2f}ms | "
+                  f"{triton_seq_str:<25s} | {triton_fused_str:<25s} |")
     
     print("\n")
     print("**Notes**:")
