@@ -928,9 +928,7 @@ class TritonRandomCrop(nn.Module):
         
         # Compute how many parameter sets to generate
         param_count = _compute_param_count(batch_size, num_frames, self.same_on_batch, self.same_on_frame)
-        if batch_size is None:  # 3D/4D input, use existing logic
-            param_count = 1 if self.same_on_batch else total_samples
-        
+
         # Generate crop positions
         top_offsets = torch.randint(0, h - th + 1, (param_count,), device=normalized_img.device, dtype=torch.int32)
         left_offsets = torch.randint(0, w - tw + 1, (param_count,), device=normalized_img.device, dtype=torch.int32)
@@ -1058,9 +1056,7 @@ class TritonRandomHorizontalFlip(nn.Module):
         
         # Compute how many parameter sets to generate
         param_count = _compute_param_count(batch_size, num_frames, self.same_on_batch, self.same_on_frame)
-        if batch_size is None:  # 3D/4D input, use existing logic
-            param_count = 1 if self.same_on_batch else total_samples
-        
+
         # Generate flip decisions
         flip_mask = F._sample_bernoulli_tensor(param_count, self.p, normalized_img.device)
         
@@ -1170,8 +1166,6 @@ class TritonRandomCropFlip(nn.Module):
         
         # Compute how many parameter sets to generate
         param_count = _compute_param_count(batch_size, num_frames, self.same_on_batch, self.same_on_frame)
-        if batch_size is None:  # 3D/4D input, use existing logic
-            param_count = 1 if self.same_on_batch else total_samples
         
         # Generate crop offsets
         top_offsets = torch.randint(0, img_height - th + 1, (param_count,), device=normalized_img.device, dtype=torch.int32)
