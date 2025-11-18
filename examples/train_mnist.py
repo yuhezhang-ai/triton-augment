@@ -156,7 +156,7 @@ def test(model, test_loader, test_transform_func):
     test_loss = 0
     correct = 0
     total = 0
-    criterion = nn.NLLLoss()
+    criterion = nn.CrossEntropyLoss()
     
     with torch.no_grad():
         for images, labels in test_loader:

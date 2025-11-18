@@ -154,7 +154,7 @@ def test(model, test_loader, test_transform_func):
 def main():
     # Configuration
     batch_size = 128
-    epochs = 10
+    epochs = 20
     lr = 0.001
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
@@ -231,6 +231,11 @@ def main():
     optimizer = optim.Adam(model.parameters(), lr=lr)
     criterion = nn.CrossEntropyLoss()
     
+    # Learning rate scheduler: reduce LR by 0.3x at epochs 10 and 15
+    # This helps fine-tune the model and improve accuracy
+    # Start with higher LR, then reduce for fine-tuning
+    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[10, 15], gamma=0.3)
+    
     # Training loop
     print("=" * 80)
     print("Starting Training")
@@ -257,10 +262,15 @@ def main():
             torch.save(model.state_dict(), 'best_model.pth')
             print("  ✓ Saved new best model!")
         
+        # Update learning rate
+        scheduler.step()
+        current_lr = optimizer.param_groups[0]['lr']
+        
         # Print epoch summary
         print(f"\n  Epoch Summary:")
         print(f"    Train Loss: {train_loss:.4f}  Train Acc: {train_acc:.2f}%")
         print(f"    Test Loss:  {test_loss:.4f}  Test Acc:  {test_acc:.2f}%")
+        print(f"    Learning Rate: {current_lr:.6f}")
         print(f"    Time: {epoch_time:.2f}s")
         print(f"    Best Test Acc: {best_acc:.2f}%")
     
