@@ -1055,11 +1055,13 @@
 <a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="c1"># Apply transformation</span>
 <a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="n">augmented</span> <span class="o">=</span> <span class="n">transform</span><span class="p">(</span><span class="n">images</span><span class="p">)</span>  <span class="c1"># Single kernel launch for ALL operations!</span>
 </code></pre></div>
-<p><strong>What it does:</strong>
-- RandomCrop (112×112)
-- RandomHorizontalFlip (50% probability)
-- ColorJitter (brightness, contrast, saturation)
-- Normalize</p>
+<p><strong>What it does:</strong></p>
+<ul>
+<li>RandomCrop (112×112)</li>
+<li>RandomHorizontalFlip (50% probability)</li>
+<li>ColorJitter (brightness, contrast, saturation)</li>
+<li>Normalize</li>
+</ul>
 <p><strong>Performance</strong>: Up to 12x faster on large images (8.1x average on Tesla T4, scales dramatically with image size)</p>
 <hr />
 <h2 id="other-fusion-options">Other Fusion Options<a class="headerlink" href="#other-fusion-options" title="Permanent link">&para;</a></h2>
