@@ -155,7 +155,7 @@ def main():
     # Configuration
     batch_size = 128
     epochs = 20
-    lr = 0.001
+    lr = 0.01  # Higher LR for SGD + pretrained ResNet-18
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     print("=" * 80)
@@ -187,10 +187,10 @@ def main():
         brightness=0.2,                  # Brightness jitter ±20%
         contrast=0.2,                    # Contrast jitter ±20%
         saturation=0.2,                  # Saturation jitter ±20%
-        grayscale_p=0.1,          # 10% chance of grayscale
-        mean=(0.4914, 0.4822, 0.4465),   # CIFAR-10 mean
-        std=(0.2470, 0.2435, 0.2616),    # CIFAR-10 std
-        same_on_batch=False        # Each image gets different random params
+        grayscale_p=0.1,                 # 10% chance of grayscale
+        mean=(0.485, 0.456, 0.406),      # ImageNet mean (matches pretrained ResNet)
+        std=(0.229, 0.224, 0.225),       # ImageNet std
+        same_on_batch=False              # Each image gets different random params
     )
     
     # Test: use fused_augment for center crop + normalize in one kernel
@@ -209,8 +209,8 @@ def main():
             left=2,  # Center crop offset
             height=28,
             width=28,
-            mean=(0.4914, 0.4822, 0.4465),
-            std=(0.2470, 0.2435, 0.2616)
+            mean=(0.485, 0.456, 0.406),      # ImageNet mean
+            std=(0.229, 0.224, 0.225)        # ImageNet std
         )
     
     print("✓ Augmentation pipeline:")
@@ -221,20 +221,27 @@ def main():
     print()
     
     # Create model
-    print("Creating model...")
-    model = models.resnet18(num_classes=10)
+    print("Creating model (pretrained ResNet-18)...")
+    weights = models.ResNet18_Weights.IMAGENET1K_V1
+    model = models.resnet18(weights=weights)
+    model.fc = nn.Linear(model.fc.in_features, 10)
     model = model.cuda()
-    print("✓ Model: ResNet-18")
+    print("✓ Model: ResNet-18 (pretrained ImageNet)")
     print()
     
-    # Optimizer and loss
-    optimizer = optim.Adam(model.parameters(), lr=lr)
+    # Optimizer and loss (SGD with momentum, good for fine-tuning)
+    optimizer = optim.SGD(
+        model.parameters(),
+        lr=lr,
+        momentum=0.9,
+        weight_decay=5e-4,
+    )
     criterion = nn.CrossEntropyLoss()
     
-    # Learning rate scheduler: reduce LR by 0.3x at epochs 10 and 15
+    # Learning rate scheduler: reduce LR by 0.1x at epochs 10 and 15
     # This helps fine-tune the model and improve accuracy
     # Start with higher LR, then reduce for fine-tuning
-    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[10, 15], gamma=0.3)
+    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[10, 15], gamma=0.1)
     
     # Training loop
     print("=" * 80)
