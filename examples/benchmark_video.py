@@ -73,14 +73,7 @@ def benchmark_video(batch_size=8, num_frames=16, image_size=224, crop_size=112):
     ])
     
     def torchvision_fn():
-        # Torchvision doesn't natively support 5D, so we process frame-by-frame
-        N, T = img.shape[0], img.shape[1]
-        # Reshape to [N*T, C, H, W]
-        frames = img.reshape(N * T, *img.shape[2:])
-        # Apply transform
-        result = torchvision_transform(frames)
-        # Reshape back to [N, T, C, H', W']
-        return result.reshape(N, T, *result.shape[1:])
+        return torchvision_transform(img)
     
     torchvision_time = do_bench(torchvision_fn, warmup=25, rep=100)
     
@@ -191,11 +184,11 @@ def print_table(results):
     
     # Header
     if has_kornia:
-        print("| Batch | Frames | Image Size | Crop Size | Torchvision   | Kornia VideoSeq   | Triton Sequential               | Triton Fused                       |")
-        print("|-------|--------|------------|-----------|---------------|-------------------|----------------------------------|------------------------------------|")
+        print("| Batch | Frames | Image Size | Crop Size | Torchvision   | Kornia VideoSeq   | Triton Sequential                  | Triton Fused                       |")
+        print("|-------|--------|------------|-----------|---------------|-------------------|------------------------------------|------------------------------------|")
     else:
-        print("| Batch | Frames | Image Size | Crop Size | Torchvision   | Triton Sequential         | Triton Fused             |")
-        print("|-------|--------|------------|-----------|---------------|---------------------------|--------------------------|")
+        print("| Batch | Frames | Image Size | Crop Size | Torchvision   | Triton Sequential        | Triton Fused                        |")
+        print("|-------|--------|------------|-----------|---------------|--------------------------|-------------------------------------|")
     
     # Rows
     for r in results:
@@ -204,13 +197,13 @@ def print_table(results):
             triton_fused_str = f"{r['triton_fused_time']:.2f}ms ({r['speedup_fused_vs_tv']:.1f}x TV, {r['speedup_fused_vs_kornia']:.1f}x Kornia)"
             print(f"| {r['batch_size']:5d} | {r['num_frames']:6d} | {r['image_size']:10s} | {r['crop_size']:9s} | "
                   f"{r['torchvision_time']:10.2f}ms | {r['kornia_time']:14.2f}ms | "
-                  f"{triton_seq_str:<35s} | {triton_fused_str:<35s} |")
+                  f"{triton_seq_str:<36s} | {triton_fused_str:<36s} |")
         else:
             triton_seq_str = f"{r['triton_sequential_time']:.2f}ms ({r['speedup_sequential_vs_tv']:.1f}x TV)"
             triton_fused_str = f"{r['triton_fused_time']:.2f}ms ({r['speedup_fused_vs_tv']:.1f}x TV)"
             print(f"| {r['batch_size']:5d} | {r['num_frames']:6d} | {r['image_size']:10s} | {r['crop_size']:9s} | "
                   f"{r['torchvision_time']:10.2f}ms | "
-                  f"{triton_seq_str:<25s} | {triton_fused_str:<25s} |")
+                  f"{triton_seq_str:<26s} | {triton_fused_str:<34s} |")
     
     print("\n")
     print("**Notes**:")
