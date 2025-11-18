@@ -180,7 +180,8 @@ def print_table(results):
     print("\nRandom Augmentations:")
     print("  - RandomCrop + RandomHorizontalFlip(p=0.5)")
     print("  - ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2)")
-    print("  - RandomGrayscale(p=0.1) + Normalize(ImageNet)")
+    print("  - RandomGrayscale(p=0.1)")
+    print("  - Normalize()")
     print("\nInput Shape: [N, T, C, H, W]")
     print("Device:", torch.cuda.get_device_name(0))
     print("\n")
@@ -190,34 +191,35 @@ def print_table(results):
     
     # Header
     if has_kornia:
-        print("| Batch | Frames | Image Size |  Crop Size  | Torchvision (ms) | Kornia VideoSeq (ms) | Triton Sequential (ms) | Triton Fused (ms) | Speedup vs Kornia (Sequential) | Speedup vs Kornia (Fused) |")
-        print("|-------|--------|------------|-------------|------------------|----------------------|------------------------|-------------------|--------------------------------|---------------------------|")
+        print("| Batch | Frames | Image Size | Crop Size | Torchvision | Kornia VideoSeq | Triton Sequential | Triton Fused |")
+        print("|-------|--------|------------|-----------|-------------|-----------------|-------------------|--------------|")
     else:
-        print("| Batch | Frames | Image Size |  Crop Size  | Torchvision (ms) | Triton Sequential (ms) | Triton Fused (ms) | Speedup vs TV (Sequential) | Speedup vs TV (Fused) |")
-        print("|-------|--------|------------|-------------|------------------|------------------------|-------------------|----------------------------|------------------------|")
+        print("| Batch | Frames | Image Size | Crop Size | Torchvision | Triton Sequential | Triton Fused |")
+        print("|-------|--------|------------|-----------|-------------|-------------------|--------------|")
     
     # Rows
     for r in results:
         if has_kornia:
-            print(f"| {r['batch_size']:5d} | {r['num_frames']:6d} | {r['image_size']:10s} | {r['crop_size']:10s} | "
-                  f"{r['torchvision_time']:16.3f} | {r['kornia_time']:20.3f} | "
-                  f"{r['triton_sequential_time']:22.3f} | {r['triton_fused_time']:17.3f} | "
-                  f"{r['speedup_sequential_vs_kornia']:30.2f}x | {r['speedup_fused_vs_kornia']:25.2f}x |")
+            triton_seq_str = f"{r['triton_sequential_time']:.2f}ms ({r['speedup_sequential_vs_tv']:.1f}x TV, {r['speedup_sequential_vs_kornia']:.1f}x Kornia)"
+            triton_fused_str = f"{r['triton_fused_time']:.2f}ms ({r['speedup_fused_vs_tv']:.1f}x TV, {r['speedup_fused_vs_kornia']:.1f}x Kornia)"
+            print(f"| {r['batch_size']:5d} | {r['num_frames']:6d} | {r['image_size']:10s} | {r['crop_size']:9s} | "
+                  f"{r['torchvision_time']:8.2f}ms | {r['kornia_time']:11.2f}ms | "
+                  f"{triton_seq_str:41s} | {triton_fused_str:39s} |")
         else:
-            print(f"| {r['batch_size']:5d} | {r['num_frames']:6d} | {r['image_size']:10s} | {r['crop_size']:10s} | "
-                  f"{r['torchvision_time']:16.3f} | "
-                  f"{r['triton_sequential_time']:22.3f} | {r['triton_fused_time']:17.3f} | "
-                  f"{r['speedup_sequential_vs_tv']:26.2f}x | {r['speedup_fused_vs_tv']:22.2f}x |")
+            triton_seq_str = f"{r['triton_sequential_time']:.2f}ms ({r['speedup_sequential_vs_tv']:.1f}x TV)"
+            triton_fused_str = f"{r['triton_fused_time']:.2f}ms ({r['speedup_fused_vs_tv']:.1f}x TV)"
+            print(f"| {r['batch_size']:5d} | {r['num_frames']:6d} | {r['image_size']:10s} | {r['crop_size']:9s} | "
+                  f"{r['torchvision_time']:8.2f}ms | "
+                  f"{triton_seq_str:23s} | {triton_fused_str:21s} |")
     
     print("\n")
     print("**Notes**:")
-    print("Operations: RandomCrop + RandomHorizontalFlip + ColorJitter + RandomGrayscale + Normalize")
     print("  - Torchvision: Processes all batches and frames with the same augmentations in multiple kernels launches; no same_on_frame=False support")
     if has_kornia:
         print("  - Kornia VideoSequential: Native 5D support with same_on_frame=True (typically slower than Torchvision)")
-        print("  - Speedup shown is Triton vs Kornia (higher is better for Triton)")
     print("  - Triton Sequential: Individual transforms (5 kernel launches)")
     print("  - Triton Fused: Single kernel launch with same_on_frame=True (consistent augmentation)")
+    print("  - Speedup format: 'Xms (Yx TV, Wx Kornia)' means X milliseconds, Y times faster than Torchvision, W times faster than Kornia")
     print("  - Triton uses fast contrast (centered scaling), not torchvision's blend-with-mean")
     print("="*100)
 
