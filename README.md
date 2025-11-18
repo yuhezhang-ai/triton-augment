@@ -1,6 +1,6 @@
 # Triton-Augment
 
-**GPU-Accelerated Image Augmentation with Kernel Fusion**
+**GPU-Accelerated Image/Video Augmentation with Kernel Fusion**
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![PyTorch 2.0+](https://img.shields.io/badge/pytorch-2.0+-ee4c2c.svg)](https://pytorch.org/)
@@ -11,6 +11,7 @@ Triton-Augment is a high-performance image augmentation library that leverages [
 ## ⚡ **5 - 12x Faster** than Torchvision on typical image augmentation
 
 Replace your augmentation pipeline with a **single fused kernel** and get:
+
 - **8.1x average speedup** on Tesla T4 (Google Colab free tier)
 - **Up to 12x faster** on large images (1280×1280)
 - **5D video tensor support** with `same_on_batch=False, same_on_frame=True` control; speedup: **8.6x vs Torchvision, 73.7x vs Kornia**
@@ -220,6 +221,7 @@ transform = transforms.Compose([
 <summary><h3>Run Your Own Benchmarks</h3></summary>
 
 **Quick Benchmark** (Ultimate Fusion only):
+
 ```bash
 # Simple, clean table output - easy to run!
 python examples/benchmark.py
@@ -227,6 +229,7 @@ python examples/benchmark_video.py
 ```
 
 **Detailed Benchmark** (All operations):
+
 ```bash
 # Comprehensive analysis with visualizations
 python examples/benchmark_triton.py
@@ -245,10 +248,12 @@ All benchmark results shown above use default kernel configurations. Auto-tuning
 Triton kernels have tunable parameters (block sizes, warps per thread, etc.) that affect performance. Auto-tuning automatically searches for the optimal configuration for **your specific GPU and data sizes**.
 
 **When to use:**
+
 - ✅ **Dedicated GPUs** (local workstations, cloud instances): 10-30% additional speedup
 - ⚠️ **Shared services** (Colab, Kaggle): Limited benefits, but can help stabilize performance
 
 **Quick start:**
+
 ```python
 import triton_augment as ta
 
@@ -266,14 +271,17 @@ augmented = transform(images)  # First run: tests configs; subsequent: uses cach
 ## 🎯 When to Use Triton-Augment?
 
 **💡 Use Triton-Augment + Torchvision together:**
+
 - **Torchvision**: Data loading, resize, ToTensor, rotation, affine, etc.
 - **Triton-Augment**: Replace supported operations (currently: crop, flip, color jitter, grayscale, normalize; more coming) with fused GPU kernels
 
 **Best speedup when:**
+
 - Large images (500x500+) or large batches
 - Data augmentations are your bottleneck
 
 **Stick with Torchvision only if:**
+
 - CPU-only training
 - Experiencing **extreme latency variability** on **shared services** (e.g., consistent 10x+ spikes) - our optimized kernels are more sensitive to resource contention. Try auto-tuning first; if instability persists, Torchvision may be more stable
 

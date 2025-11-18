@@ -29,6 +29,7 @@ augmented = transform(images)  # Single kernel launch for ALL operations!
 ```
 
 **What it does:**
+
 - RandomCrop (112×112)
 - RandomHorizontalFlip (50% probability)
 - ColorJitter (brightness, contrast, saturation)

@@ -21,11 +21,14 @@ This project adheres to a code of conduct that all contributors are expected to 
 
 1. **Fork the repository** on GitHub
 2. **Clone your fork** locally:
+
    ```bash
    git clone https://github.com/yourusername/triton-augment.git
    cd triton-augment
    ```
+
 3. **Add the upstream repository**:
+
    ```bash
    git remote add upstream https://github.com/originalowner/triton-augment.git
    ```
@@ -86,6 +89,7 @@ We welcome code contributions! Here are some areas where you can help:
 ## Pull Request Process
 
 1. **Create a new branch** for your feature:
+
    ```bash
    git checkout -b feature/your-feature-name
    ```
@@ -95,22 +99,26 @@ We welcome code contributions! Here are some areas where you can help:
 3. **Add tests** for your changes (if applicable)
 
 4. **Run the test suite** to ensure everything passes:
+
    ```bash
    pytest tests/
    ```
 
 5. **Format your code**:
+
    ```bash
    black triton_augment/
    isort triton_augment/
    ```
 
 6. **Commit your changes** with a clear commit message:
+
    ```bash
    git commit -m "Add feature: description of your changes"
    ```
 
 7. **Push to your fork**:
+
    ```bash
    git push origin feature/your-feature-name
    ```
@@ -187,8 +195,8 @@ pytest tests/test_transforms.py::TestFunctionalAPI::test_apply_brightness
 ### Building Documentation
 
 ```bash
-cd docs/
-make html
+mkdocs serve # To test locally
+mkdocs gh-deploy # To deploy to github page
 ```
 
 ### Documentation Guidelines
@@ -221,4 +229,3 @@ If you have questions about contributing, feel free to:
 ---
 
 Thank you for contributing to Triton-Augment! Your efforts help make GPU-accelerated image augmentation accessible to everyone.
-
