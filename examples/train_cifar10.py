@@ -117,7 +117,7 @@ def train_epoch(model, train_loader, optimizer, criterion, train_transform, epoc
     return avg_loss, accuracy, epoch_time
 
 
-def test(model, test_loader, test_transform):
+def test(model, test_loader, test_transform_func):
     """Evaluate on test set"""
     model.eval()
     test_loss = 0
@@ -130,8 +130,8 @@ def test(model, test_loader, test_transform):
             images = images.cuda()
             labels = labels.cuda()
             
-            # Apply normalization
-            images = test_transform(images)
+            # Apply center crop + normalize in one fused kernel
+            images = test_transform_func(images)
             
             outputs = model(images)
             loss = criterion(outputs, labels)
@@ -193,10 +193,25 @@ def main():
         same_on_batch=False        # Each image gets different random params
     )
     
-    test_transform = ta.TritonNormalize(
-        mean=(0.4914, 0.4822, 0.4465),
-        std=(0.2470, 0.2435, 0.2616)
-    )
+    # Test: use fused_augment for center crop + normalize in one kernel
+    # Center crop: (32-28)/2 = 2 pixels from top and left
+    # 
+    # Alternative: Use torchvision v2 Resize + TritonNormalize to preserve all information:
+    #   import torchvision.transforms.v2 as transforms
+    #   test_transform_func = transforms.Compose([
+    #       transforms.Resize(28, antialias=True),
+    #       ta.TritonNormalize(mean=(0.4914, 0.4822, 0.4465), std=(0.2470, 0.2435, 0.2616))
+    #   ])
+    def test_transform_func(images):
+        return ta.functional.fused_augment(
+            images,
+            top=2,  # Center crop offset
+            left=2,  # Center crop offset
+            height=28,
+            width=28,
+            mean=(0.4914, 0.4822, 0.4465),
+            std=(0.2470, 0.2435, 0.2616)
+        )
     
     print("✓ Augmentation pipeline:")
     print("  - Data loading: CPU with 4 workers (async, fast!)")
@@ -234,7 +249,7 @@ def main():
         )
         
         # Test
-        test_loss, test_acc = test(model, test_loader, test_transform)
+        test_loss, test_acc = test(model, test_loader, test_transform_func)
         
         # Save best model
         if test_acc > best_acc:

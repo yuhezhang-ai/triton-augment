@@ -105,8 +105,17 @@ def train_epoch(model, train_loader, optimizer, criterion, train_transform, epoc
         images = images.cuda()
         labels = labels.cuda()
         
+        # Convert grayscale (1 channel) to RGB (3 channels) for Triton-Augment
+        # MNIST is single-channel, but Triton-Augment expects RGB (3 channels)
+        if images.shape[1] == 1:
+            images = images.repeat(1, 3, 1, 1)  # (N, 1, H, W) -> (N, 3, H, W)
+        
         # Apply Triton-Augment on GPU batch
         images = train_transform(images)
+        
+        # Convert back to 1 channel for model (all channels identical after augmentation)
+        if images.shape[1] == 3:
+            images = images[:, 0:1, :, :]  # (N, 3, H, W) -> (N, 1, H, W)
         
         optimizer.zero_grad()
         outputs = model(images)
@@ -131,7 +140,7 @@ def train_epoch(model, train_loader, optimizer, criterion, train_transform, epoc
     return avg_loss, accuracy, epoch_time
 
 
-def test(model, test_loader, test_transform):
+def test(model, test_loader, test_transform_func):
     """Evaluate on test set"""
     model.eval()
     test_loss = 0
@@ -143,7 +152,17 @@ def test(model, test_loader, test_transform):
         for images, labels in test_loader:
             images = images.cuda()
             labels = labels.cuda()
-            images = test_transform(images)
+            
+            # Convert grayscale (1 channel) to RGB (3 channels) for Triton-Augment
+            if images.shape[1] == 1:
+                images = images.repeat(1, 3, 1, 1)  # (N, 1, H, W) -> (N, 3, H, W)
+            
+            # Apply center crop + normalize in one fused kernel
+            images = test_transform_func(images)
+            
+            # Convert back to 1 channel for model (all channels identical after normalization)
+            if images.shape[1] == 3:
+                images = images[:, 0:1, :, :]  # (N, 3, H, W) -> (N, 1, H, W)
             
             outputs = model(images)
             loss = criterion(outputs, labels)
@@ -199,18 +218,27 @@ def main():
         contrast=0.2,
         saturation=0.0,
         grayscale_p=0.0,
-        mean=(0.1307,),
-        std=(0.3081,),
+        mean=(0.1307,0.1307,0.1307),
+        std=(0.3081,0.3081,0.3081),
         same_on_batch=False  # Each image gets different random params
     )
     
-    test_transform = ta.TritonNormalize(
-        mean=(0.1307,),
-        std=(0.3081,)
-    )
+    # Test: use fused_augment for center crop + normalize in one kernel
+    # Center crop: (28-24)/2 = 2 pixels from top and left
+    def test_transform_func(images):
+        return ta.functional.fused_augment(
+            images,
+            top=2,  # Center crop offset
+            left=2,  # Center crop offset
+            height=24,
+            width=24,
+            mean=(0.1307, 0.1307, 0.1307),
+            std=(0.3081, 0.3081, 0.3081)
+        )
     
     print("✓ Augmentation pipeline:")
     print("  - Data loading: CPU with 4 workers (async, fast!)")
+    print("  - Grayscale → RGB conversion: 1 channel repeated to 3 channels")
     print("  - Augmentation: GPU in training loop (batched, fused!)")
     print("  - All Triton ops fused in 1 kernel per batch! 🚀")
     print()
@@ -239,7 +267,7 @@ def main():
             model, train_loader, optimizer, criterion, train_transform, epoch
         )
         
-        test_loss, test_acc = test(model, test_loader, test_transform)
+        test_loss, test_acc = test(model, test_loader, test_transform_func)
         
         if test_acc > best_acc:
             best_acc = test_acc
