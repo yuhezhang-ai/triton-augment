@@ -190,18 +190,24 @@ def _reshape_to_original(
     Reshape output back to original input shape.
     
     Args:
-        output: Processed tensor of shape [N, C, H, W]
+        output: Processed tensor of shape [N, C, H', W'] (spatial dims may differ)
         original_shape: Original input shape
         was_3d: Whether input was 3D
         
     Returns:
-        Tensor reshaped to original_shape
+        Tensor reshaped to match original dimensions (3D→3D, 4D→4D, 5D→5D)
+        Note: Spatial dimensions (H', W') may differ from original due to cropping
     """
     if was_3d:
+        # 3D input: [C, H, W] → [1, C, H', W'] → [C, H', W']
         return output.squeeze(0)
-    elif output.shape != original_shape:
-        return output.reshape(original_shape)
-    return output
+    elif len(original_shape) == 5:
+        # 5D input: [N, T, C, H, W] → [N*T, C, H', W'] → [N, T, C, H', W']
+        N, T = original_shape[0], original_shape[1]
+        return output.reshape(N, T, *output.shape[1:])
+    else:
+        # 4D input: no reshaping needed, spatial dims may have changed
+        return output
 
 
 class TritonColorJitter(nn.Module):
