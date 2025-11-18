@@ -1291,7 +1291,7 @@ class TritonFusedAugment(nn.Module):
     Note:
         - Uses FAST contrast (centered scaling), not torchvision's blend-with-mean
         - By default, each image gets different random parameters (set same_on_batch=False for same params)
-        - Input must be (N, 3, H, W) float tensor on CUDA in [0, 1] range
+        - Input must be (C, H, W), (N, C, H, W), or (N, T, C, H, W) float tensor on CUDA in [0, 1] range
     """
     
     def __init__(
