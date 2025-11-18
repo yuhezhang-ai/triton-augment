@@ -147,8 +147,8 @@ def print_table(results):
     print("\n")
     
     # Header
-    print("| Image Size | Batch |  Crop Size  | Torchvision (ms) | Triton Sequential (ms) | Triton Fused (ms) | Speedup (Sequential) | Speedup (Fused) |")
-    print("|------------|-------|-------------|------------------|------------------------|-------------------|----------------------|-----------------|")
+    print("| Image Size | Batch |  Crop Size | Torchvision (ms) | Triton Sequential (ms) | Triton Fused (ms) | Speedup (Sequential)  | Speedup (Fused)  |")
+    print("|------------|-------|------------|------------------|------------------------|-------------------|-----------------------|------------------|")
     
     # Rows
     for r in results:

@@ -5,15 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] - Nov 18, 2025
 
-### Planned
-- Extended geometric operations (rotation, affine transforms)
-- Additional augmentations (Gaussian blur, random erasing, mixup)
-- Hue adjustment
-- Multi-GPU support
+### Added
+- **5D Video Tensor Support**: Native support for `[N, T, C, H, W]` video tensors with `same_on_frame` parameter for controlling augmentation consistency across frames
+- **`same_on_frame` Parameter**: Control whether augmentation parameters are shared across frames in video tensors (default: `True` for consistent augmentation)
+- Video benchmark script (`examples/benchmark_video.py`) comparing performance vs Torchvision and Kornia
 
-## [0.1.0] - TBD
+### Changed
+- **Normalization defaults**: `mean` and `std` parameters now default to `None` in `TritonColorJitterNormalize` and `TritonFusedAugment` (normalization is now optional)
+- Updated documentation to include 5D tensor support and `same_on_frame` parameter usage
+
+### Performance
+- Video augmentation benchmarks: **8.6x average speedup vs Torchvision, 73.7x vs Kornia** on Tesla T4
+
+## [0.1.0] - Nov 14, 2025
 
 ### Added
 
