@@ -47,12 +47,12 @@ class SimpleCNN(nn.Module):
         x = torch.relu(self.conv1(x))
         x = torch.relu(self.conv2(x))
         x = torch.max_pool2d(x, 2)
-        x = self.dropout1(x)
         x = torch.flatten(x, 1)
+        x = self.dropout1(x)  # Dropout after flattening, before FC layers
         x = torch.relu(self.fc1(x))
         x = self.dropout2(x)
         x = self.fc2(x)
-        return torch.log_softmax(x, dim=1)
+        return x  # Return raw logits (CrossEntropyLoss will apply log_softmax internally)
 
 
 # ============================================================================
@@ -196,7 +196,7 @@ def main():
     # Configuration
     batch_size = 128
     epochs = 5
-    lr = 0.01
+    lr = 0.001  # Adam optimizer works better with lower learning rates
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     print("=" * 80)
@@ -221,9 +221,10 @@ def main():
     print()
     
     # Create Triton-Augment transforms
+    # Note: No horizontal flip for MNIST (would change digit meaning: 6→9, etc.)
     train_transform = ta.TritonFusedAugment(
         crop_size=24,
-        horizontal_flip_p=0.5,
+        horizontal_flip_p=0.0,  # Disabled for MNIST digits
         brightness=0.2,
         contrast=0.2,
         saturation=0.0,
@@ -255,10 +256,10 @@ def main():
     
     # Create model
     print("Creating model...")
-    model = SimpleCNN().cuda()
+    model = SimpleCNN(input_size=24).cuda()  # Match crop size
     optimizer = optim.Adam(model.parameters(), lr=lr)
-    criterion = nn.NLLLoss()
-    print("✓ Model: SimpleCNN")
+    criterion = nn.CrossEntropyLoss() 
+    print("✓ Model: SimpleCNN (input_size=24)")
     print()
     
     # Training loop
