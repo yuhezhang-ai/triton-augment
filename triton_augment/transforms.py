@@ -54,7 +54,7 @@ def _normalize_video_shape(
     
     # Handle 4D: [N, C, H, W] - no change needed
     if image.ndim == 4:
-        return image, None, None, original_shape, was_3d
+        return image, image.shape[0], None, original_shape, was_3d
     
     # Handle 5D: [N, T, C, H, W] → [N*T, C, H, W]
     if image.ndim == 5:
@@ -329,7 +329,7 @@ class TritonColorJitter(nn.Module):
         
         return None if value[0] == value[1] == center else (float(value[0]), float(value[1]))
     
-    def _get_params(self, batch_size: int, device: torch.device):
+    def _get_params(self, param_count: int, device: torch.device):
         """
         Randomly sample transformation parameters (per-image or batch-wide).
         
@@ -339,26 +339,26 @@ class TritonColorJitter(nn.Module):
         # Generate brightness factors
         if self.brightness is not None:
             brightness_factors = F._sample_uniform_tensor(
-                batch_size, self.brightness[0], self.brightness[1], device, same_on_batch=self.same_on_batch
+                param_count, self.brightness[0], self.brightness[1], device
             )
         else:
-            brightness_factors = torch.ones(batch_size, device=device)
+            brightness_factors = torch.ones(param_count, device=device)
         
         # Generate contrast factors
         if self.contrast is not None:
             contrast_factors = F._sample_uniform_tensor(
-                batch_size, self.contrast[0], self.contrast[1], device, same_on_batch=self.same_on_batch
+                param_count, self.contrast[0], self.contrast[1], device
             )
         else:
-            contrast_factors = torch.ones(batch_size, device=device)
+            contrast_factors = torch.ones(param_count, device=device)
         
         # Generate saturation factors
         if self.saturation is not None:
             saturation_factors = F._sample_uniform_tensor(
-                batch_size, self.saturation[0], self.saturation[1], device, same_on_batch=self.same_on_batch
+                param_count, self.saturation[0], self.saturation[1], device
             )
         else:
-            saturation_factors = torch.ones(batch_size, device=device)
+            saturation_factors = torch.ones(param_count, device=device)
         
         return brightness_factors, contrast_factors, saturation_factors
     
@@ -596,35 +596,35 @@ class TritonColorJitterNormalize(nn.Module):
         
         return None if value[0] == value[1] == center else (float(value[0]), float(value[1]))
     
-    def _get_params(self, batch_size: int, device: torch.device):
+    def _get_params(self, param_count: int, device: torch.device):
         """Randomly sample transformation parameters (per-image or batch-wide)."""
         # Generate brightness factors
         if self.brightness is not None:
             brightness_factors = F._sample_uniform_tensor(
-                batch_size, self.brightness[0], self.brightness[1], device, same_on_batch=self.same_on_batch
+                param_count, self.brightness[0], self.brightness[1], device
             )
         else:
-            brightness_factors = torch.ones(batch_size, device=device)
+            brightness_factors = torch.ones(param_count, device=device)
         
         # Generate contrast factors
         if self.contrast is not None:
             contrast_factors = F._sample_uniform_tensor(
-                batch_size, self.contrast[0], self.contrast[1], device, same_on_batch=self.same_on_batch
+                param_count, self.contrast[0], self.contrast[1], device
             )
         else:
-            contrast_factors = torch.ones(batch_size, device=device)
+            contrast_factors = torch.ones(param_count, device=device)
         
         # Generate saturation factors
         if self.saturation is not None:
             saturation_factors = F._sample_uniform_tensor(
-                batch_size, self.saturation[0], self.saturation[1], device, same_on_batch=self.same_on_batch
+                param_count, self.saturation[0], self.saturation[1], device
             )
         else:
-            saturation_factors = torch.ones(batch_size, device=device)
+            saturation_factors = torch.ones(param_count, device=device)
         
         # Generate grayscale mask
         grayscale_mask = F._sample_bernoulli_tensor(
-            batch_size, self.random_grayscale_p, device, same_on_batch=self.same_on_batch
+            param_count, self.random_grayscale_p, device
         )
         
         return brightness_factors, contrast_factors, saturation_factors, grayscale_mask
@@ -820,7 +820,7 @@ class TritonRandomGrayscale(nn.Module):
         
         # Generate grayscale mask
         grayscale_mask = F._sample_bernoulli_tensor(
-            param_count, self.p, normalized_img.device, same_on_batch=self.same_on_batch
+            param_count, self.p, normalized_img.device
         )
         
         # Broadcast mask to all samples
@@ -1062,7 +1062,7 @@ class TritonRandomHorizontalFlip(nn.Module):
             param_count = 1 if self.same_on_batch else total_samples
         
         # Generate flip decisions
-        flip_mask = F._sample_bernoulli_tensor(param_count, self.p, normalized_img.device, self.same_on_batch)
+        flip_mask = F._sample_bernoulli_tensor(param_count, self.p, normalized_img.device)
         
         # Broadcast mask to all samples
         flip_mask = _broadcast_params_to_all_samples(
@@ -1179,7 +1179,7 @@ class TritonRandomCropFlip(nn.Module):
         
         # Generate flip decisions
         flip_mask = F._sample_bernoulli_tensor(
-            param_count, self.horizontal_flip_p, normalized_img.device, same_on_batch=self.same_on_batch
+            param_count, self.horizontal_flip_p, normalized_img.device
         )
         
         # Broadcast params to all samples
@@ -1343,19 +1343,18 @@ class TritonFusedAugment(nn.Module):
         return None if value[0] == value[1] == center else (float(value[0]), float(value[1]))
     
     
-    def _get_params(self, batch_size: int, image_height: int, image_width: int, device: torch.device):
+    def _get_params(self, param_count: int, image_height: int, image_width: int, device: torch.device):
         """
         Sample all random parameters for the ultimate transform.
         
         Args:
-            batch_size: Number of images in the batch
+            param_count: Number of parameter sets to generate
             image_height, image_width: Input image dimensions
             device: Device to create tensors on
         
         Returns:
             Tuple of (top_offsets, left_offsets, flip_mask, brightness_factors, contrast_factors, saturation_factors, grayscale_mask)
-            - All are tensors of shape (N,)
-            - If same_on_batch=False, tensors are filled with the same value for all images
+            - All are tensors of shape (param_count,)
         """
         # Validate crop size
         if self.crop_height > image_height or self.crop_width > image_width:
@@ -1365,46 +1364,38 @@ class TritonFusedAugment(nn.Module):
             )
         
         # Sample crop parameters (integer offsets)
-        if self.same_on_batch:
-            # Same offsets for all images
-            top = torch.randint(0, image_height - self.crop_height + 1, (1,)).item()
-            left = torch.randint(0, image_width - self.crop_width + 1, (1,)).item()
-            top_offsets = torch.full((batch_size,), top, device=device, dtype=torch.int32)
-            left_offsets = torch.full((batch_size,), left, device=device, dtype=torch.int32)
-        else:
-            # Different offsets per image
-            top_offsets = torch.randint(0, image_height - self.crop_height + 1, (batch_size,), device=device, dtype=torch.int32)
-            left_offsets = torch.randint(0, image_width - self.crop_width + 1, (batch_size,), device=device, dtype=torch.int32)
+        top_offsets = torch.randint(0, image_height - self.crop_height + 1, (param_count,), device=device, dtype=torch.int32)
+        left_offsets = torch.randint(0, image_width - self.crop_width + 1, (param_count,), device=device, dtype=torch.int32)
         
         # Sample flip decisions
         flip_mask = (
-            F._sample_bernoulli_tensor(batch_size, self.horizontal_flip_p, device, self.same_on_batch)
+            F._sample_bernoulli_tensor(param_count, self.horizontal_flip_p, device)
             if self.horizontal_flip_p > 0
-            else torch.zeros(batch_size, device=device, dtype=torch.uint8)
+            else torch.zeros(param_count, device=device, dtype=torch.uint8)
         )
         
         # Sample color jitter parameters
         brightness_factors = (
-            F._sample_uniform_tensor(batch_size, self.brightness[0], self.brightness[1], device, self.same_on_batch)
+            F._sample_uniform_tensor(param_count, self.brightness[0], self.brightness[1], device)
             if self.brightness is not None
-            else torch.ones(batch_size, device=device)
+            else torch.ones(param_count, device=device)
         )
         contrast_factors = (
-            F._sample_uniform_tensor(batch_size, self.contrast[0], self.contrast[1], device, self.same_on_batch)
+            F._sample_uniform_tensor(param_count, self.contrast[0], self.contrast[1], device)
             if self.contrast is not None
-            else torch.ones(batch_size, device=device)
+            else torch.ones(param_count, device=device)
         )
         saturation_factors = (
-            F._sample_uniform_tensor(batch_size, self.saturation[0], self.saturation[1], device, self.same_on_batch)
+            F._sample_uniform_tensor(param_count, self.saturation[0], self.saturation[1], device)
             if self.saturation is not None
-            else torch.ones(batch_size, device=device)
+            else torch.ones(param_count, device=device)
         )
         
         # Sample grayscale decisions
         grayscale_mask = (
-            F._sample_bernoulli_tensor(batch_size, self.random_grayscale_p, device, self.same_on_batch)
+            F._sample_bernoulli_tensor(param_count, self.random_grayscale_p, device)
             if self.random_grayscale_p > 0
-            else torch.zeros(batch_size, device=device, dtype=torch.uint8)
+            else torch.zeros(param_count, device=device, dtype=torch.uint8)
         )
         
         return top_offsets, left_offsets, flip_mask, brightness_factors, contrast_factors, saturation_factors, grayscale_mask
@@ -1436,9 +1427,7 @@ class TritonFusedAugment(nn.Module):
         
         # Compute how many parameter sets to generate
         param_count = _compute_param_count(batch_size, num_frames, self.same_on_batch, self.same_on_frame)
-        if batch_size is None:  # 3D/4D input, use existing logic
-            param_count = 1 if self.same_on_batch else total_samples
-        
+         
         # Sample all random parameters
         top_offsets, left_offsets, flip_mask, brightness_factors, contrast_factors, saturation_factors, grayscale_mask = self._get_params(
             param_count, img_height, img_width, normalized_img.device

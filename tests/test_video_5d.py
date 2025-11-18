@@ -89,7 +89,7 @@ class TestVideoShapeSupport:
         video = torch.rand(N, T, 3, H, W, device='cuda', dtype=torch.float32)
         
         transform = ta.TritonFusedAugment(
-            size=112,
+            crop_size=112,
             horizontal_flip_p=0.5,
             brightness=0.2,
             contrast=0.2,
@@ -297,7 +297,7 @@ class TestSameOnFrameBehavior:
         # Apply fused augment with both flags True
         torch.manual_seed(42)
         transform = ta.TritonFusedAugment(
-            size=96,
+            crop_size=96,
             horizontal_flip_p=0.5,
             brightness=0.3,
             contrast=0.3,
@@ -335,7 +335,7 @@ class TestSameOnFrameBehavior:
         # Apply fused augment with both flags False
         torch.manual_seed(42)
         transform = ta.TritonFusedAugment(
-            size=96,
+            crop_size=96,
             horizontal_flip_p=0.5,
             brightness=0.3,
             contrast=0.3,
@@ -381,7 +381,7 @@ class TestSameOnFrameBehavior:
         # Apply fused augment with same_on_frame=True
         torch.manual_seed(42)
         transform = ta.TritonFusedAugment(
-            size=96,
+            crop_size=96,
             horizontal_flip_p=0.5,
             brightness=0.3,
             contrast=0.3,
@@ -590,7 +590,7 @@ class TestEdgeCases:
         video = torch.rand(N, T, 3, H, W, device='cuda')
         
         transform = ta.TritonFusedAugment(
-            size=112,
+            crop_size=112,
             horizontal_flip_p=0.5,
             brightness=0.2,
             same_on_batch=False,
@@ -731,7 +731,7 @@ class TestEdgeCases:
         # Test 4: TritonFusedAugment (the ultimate test!)
         torch.manual_seed(42)
         transform_5d = ta.TritonFusedAugment(
-            size=96,
+            crop_size=96,
             horizontal_flip_p=0.5,
             brightness=0.3,
             contrast=0.3,
@@ -746,7 +746,7 @@ class TestEdgeCases:
         
         torch.manual_seed(42)
         transform_4d = ta.TritonFusedAugment(
-            size=96,
+            crop_size=96,
             horizontal_flip_p=0.5,
             brightness=0.3,
             contrast=0.3,
