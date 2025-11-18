@@ -4,8 +4,8 @@ Simple benchmark for video (5D tensor) augmentation.
 This script compares four approaches for video augmentation:
 1. Torchvision Compose (baseline - processes frames independently)
 2. Kornia VideoSequential (video-aware augmentation)
-3. Triton-Augment with same_on_frame=True (consistent across frames)
-4. Triton-Augment with same_on_frame=False (independent per frame)
+3. Triton-Augment Sequential (individual transforms)
+4. Triton-Augment Fused (single kernel - FASTEST!)
 
 Input shape: [N, T, C, H, W] where N=batch, T=num_frames
 
@@ -105,9 +105,25 @@ def benchmark_video(batch_size=8, num_frames=16, image_size=224, crop_size=112):
         kornia_time = do_bench(kornia_fn, warmup=25, rep=100)
     
     # ========================================================================
-    # 3. Triton-Augment with same_on_frame=True (consistent across frames)
+    # 3. Triton-Augment Sequential (Individual transform classes)
     # ========================================================================
-    triton_same_frame_transform = ta.TritonFusedAugment(
+    triton_sequential_transform = transforms.Compose([
+        ta.TritonRandomCrop(crop_size),
+        ta.TritonRandomHorizontalFlip(p=0.5),
+        ta.TritonColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
+        ta.TritonRandomGrayscale(p=0.1),
+        ta.TritonNormalize(mean=mean, std=std),
+    ])
+    
+    def triton_sequential_fn():
+        return triton_sequential_transform(img)
+    
+    triton_sequential_time = do_bench(triton_sequential_fn, warmup=25, rep=100)
+    
+    # ========================================================================
+    # 4. Triton-Augment Fused (Single kernel - FASTEST!)
+    # ========================================================================
+    triton_fused_transform = ta.TritonFusedAugment(
         crop_size=crop_size,
         horizontal_flip_p=0.5,
         brightness=0.2,
@@ -119,37 +135,21 @@ def benchmark_video(batch_size=8, num_frames=16, image_size=224, crop_size=112):
         same_on_frame=True,  # Same augmentation for all frames in a video
     )
     
-    def triton_same_frame_fn():
-        return triton_same_frame_transform(img)
+    def triton_fused_fn():
+        return triton_fused_transform(img)
     
-    triton_same_frame_time = do_bench(triton_same_frame_fn, warmup=25, rep=100)
-    
-    # ========================================================================
-    # 4. Triton-Augment with same_on_frame=False (independent per frame)
-    # ========================================================================
-    triton_diff_frame_transform = ta.TritonFusedAugment(
-        crop_size=crop_size,
-        horizontal_flip_p=0.5,
-        brightness=0.2,
-        contrast=0.2,
-        saturation=0.2,
-        grayscale_p=0.1,
-        mean=mean,
-        std=std,
-        same_on_frame=False,  # Different augmentation for each frame
-    )
-    
-    def triton_diff_frame_fn():
-        return triton_diff_frame_transform(img)
-    
-    triton_diff_frame_time = do_bench(triton_diff_frame_fn, warmup=25, rep=100)
+    triton_fused_time = do_bench(triton_fused_fn, warmup=25, rep=100)
     
     # ========================================================================
     # Calculate speedups
     # ========================================================================
-    speedup_same_frame = torchvision_time / triton_same_frame_time
-    speedup_diff_frame = torchvision_time / triton_diff_frame_time
-    speedup_kornia = torchvision_time / kornia_time if kornia_time else None
+    speedup_sequential_vs_tv = torchvision_time / triton_sequential_time
+    speedup_fused_vs_tv = torchvision_time / triton_fused_time
+    speedup_kornia_vs_tv = torchvision_time / kornia_time if kornia_time else None
+    
+    # Speedup vs Kornia (since Kornia is slower than Torchvision)
+    speedup_sequential_vs_kornia = kornia_time / triton_sequential_time if kornia_time else None
+    speedup_fused_vs_kornia = kornia_time / triton_fused_time if kornia_time else None
     
     result = {
         'batch_size': batch_size,
@@ -157,15 +157,17 @@ def benchmark_video(batch_size=8, num_frames=16, image_size=224, crop_size=112):
         'image_size': f"{image_size}x{image_size}",
         'crop_size': f"{crop_size}x{crop_size}",
         'torchvision_time': torchvision_time,
-        'triton_same_frame_time': triton_same_frame_time,
-        'triton_diff_frame_time': triton_diff_frame_time,
-        'speedup_same_frame': speedup_same_frame,
-        'speedup_diff_frame': speedup_diff_frame,
+        'triton_sequential_time': triton_sequential_time,
+        'triton_fused_time': triton_fused_time,
+        'speedup_sequential_vs_tv': speedup_sequential_vs_tv,
+        'speedup_fused_vs_tv': speedup_fused_vs_tv,
     }
     
     if kornia_time:
         result['kornia_time'] = kornia_time
-        result['speedup_kornia'] = speedup_kornia
+        result['speedup_kornia_vs_tv'] = speedup_kornia_vs_tv
+        result['speedup_sequential_vs_kornia'] = speedup_sequential_vs_kornia
+        result['speedup_fused_vs_kornia'] = speedup_fused_vs_kornia
     
     return result
 
@@ -188,33 +190,34 @@ def print_table(results):
     
     # Header
     if has_kornia:
-        print("| Batch | Frames | Image Size |  Crop Size  | Torchvision (ms) | Kornia VideoSeq (ms) | Triton same_on_frame=True (ms) | Triton same_on_frame=False (ms) | Speedup vs TV (Kornia) | Speedup vs TV (same) | Speedup vs TV (diff) |")
-        print("|-------|--------|------------|-------------|------------------|----------------------|--------------------------------|---------------------------------|------------------------|----------------------|----------------------|")
+        print("| Batch | Frames | Image Size |  Crop Size  | Torchvision (ms) | Kornia VideoSeq (ms) | Triton Sequential (ms) | Triton Fused (ms) | Speedup vs Kornia (Sequential) | Speedup vs Kornia (Fused) |")
+        print("|-------|--------|------------|-------------|------------------|----------------------|------------------------|-------------------|--------------------------------|---------------------------|")
     else:
-        print("| Batch | Frames | Image Size |  Crop Size  | Torchvision (ms) | Triton same_on_frame=True (ms) | Triton same_on_frame=False (ms) | Speedup vs TV (same) | Speedup vs TV (diff) |")
-        print("|-------|--------|------------|-------------|------------------|--------------------------------|---------------------------------|----------------------|----------------------|")
+        print("| Batch | Frames | Image Size |  Crop Size  | Torchvision (ms) | Triton Sequential (ms) | Triton Fused (ms) | Speedup vs TV (Sequential) | Speedup vs TV (Fused) |")
+        print("|-------|--------|------------|-------------|------------------|------------------------|-------------------|----------------------------|------------------------|")
     
     # Rows
     for r in results:
         if has_kornia:
             print(f"| {r['batch_size']:5d} | {r['num_frames']:6d} | {r['image_size']:10s} | {r['crop_size']:10s} | "
                   f"{r['torchvision_time']:16.3f} | {r['kornia_time']:20.3f} | "
-                  f"{r['triton_same_frame_time']:30.3f} | {r['triton_diff_frame_time']:31.3f} | "
-                  f"{r['speedup_kornia']:22.2f}x | {r['speedup_same_frame']:20.2f}x | "
-                  f"{r['speedup_diff_frame']:20.2f}x |")
+                  f"{r['triton_sequential_time']:22.3f} | {r['triton_fused_time']:17.3f} | "
+                  f"{r['speedup_sequential_vs_kornia']:30.2f}x | {r['speedup_fused_vs_kornia']:25.2f}x |")
         else:
             print(f"| {r['batch_size']:5d} | {r['num_frames']:6d} | {r['image_size']:10s} | {r['crop_size']:10s} | "
                   f"{r['torchvision_time']:16.3f} | "
-                  f"{r['triton_same_frame_time']:30.3f} | {r['triton_diff_frame_time']:31.3f} | "
-                  f"{r['speedup_same_frame']:20.2f}x | {r['speedup_diff_frame']:20.2f}x |")
+                  f"{r['triton_sequential_time']:22.3f} | {r['triton_fused_time']:17.3f} | "
+                  f"{r['speedup_sequential_vs_tv']:26.2f}x | {r['speedup_fused_vs_tv']:22.2f}x |")
     
     print("\n")
     print("**Notes**:")
-    print("  - Torchvision: Processes frames independently (no native 5D support)")
+    print("Operations: RandomCrop + RandomHorizontalFlip + ColorJitter + RandomGrayscale + Normalize")
+    print("  - Torchvision: Processes all batches and frames with the same augmentations in multiple kernels launches; no same_on_frame=False support")
     if has_kornia:
-        print("  - Kornia VideoSequential: Native 5D support with same_on_frame=True")
-    print("  - Triton same_on_frame=True: All frames in a video get same augmentation (like Kornia)")
-    print("  - Triton same_on_frame=False: Each frame gets independent augmentation (like Torchvision)")
+        print("  - Kornia VideoSequential: Native 5D support with same_on_frame=True (typically slower than Torchvision)")
+        print("  - Speedup shown is Triton vs Kornia (higher is better for Triton)")
+    print("  - Triton Sequential: Individual transforms (5 kernel launches)")
+    print("  - Triton Fused: Single kernel launch with same_on_frame=True (consistent augmentation)")
     print("  - Triton uses fast contrast (centered scaling), not torchvision's blend-with-mean")
     print("="*100)
 
@@ -247,16 +250,22 @@ def main():
     print_table(results)
     
     # Print summary
-    avg_speedup_same = sum(r['speedup_same_frame'] for r in results) / len(results)
-    avg_speedup_diff = sum(r['speedup_diff_frame'] for r in results) / len(results)
+    avg_speedup_sequential_vs_tv = sum(r['speedup_sequential_vs_tv'] for r in results) / len(results)
+    avg_speedup_fused_vs_tv = sum(r['speedup_fused_vs_tv'] for r in results) / len(results)
     
     print(f"\n🚀 Average Speedup Summary:")
-    print(f"   - Triton (same_on_frame=True) vs Torchvision: {avg_speedup_same:.2f}x")
-    print(f"   - Triton (same_on_frame=False) vs Torchvision: {avg_speedup_diff:.2f}x")
+    print(f"   Triton vs Torchvision:")
+    print(f"     - Sequential: {avg_speedup_sequential_vs_tv:.2f}x")
+    print(f"     - Fused: {avg_speedup_fused_vs_tv:.2f}x")
     
-    if KORNIA_AVAILABLE and 'speedup_kornia' in results[0]:
-        avg_speedup_kornia = sum(r['speedup_kornia'] for r in results) / len(results)
-        print(f"   - Kornia VideoSequential vs Torchvision: {avg_speedup_kornia:.2f}x")
+    if KORNIA_AVAILABLE and 'speedup_kornia_vs_tv' in results[0]:
+        avg_speedup_kornia_vs_tv = sum(r['speedup_kornia_vs_tv'] for r in results) / len(results)
+        avg_speedup_sequential_vs_kornia = sum(r['speedup_sequential_vs_kornia'] for r in results) / len(results)
+        avg_speedup_fused_vs_kornia = sum(r['speedup_fused_vs_kornia'] for r in results) / len(results)
+        print(f"   Kornia vs Torchvision: {avg_speedup_kornia_vs_tv:.2f}x (Kornia is slower)")
+        print(f"   Triton vs Kornia:")
+        print(f"     - Sequential: {avg_speedup_sequential_vs_kornia:.2f}x")
+        print(f"     - Fused: {avg_speedup_fused_vs_kornia:.2f}x")
     
     print()
 
