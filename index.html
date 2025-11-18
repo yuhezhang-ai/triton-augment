@@ -542,10 +542,21 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#benchmark-results" class="md-nav__link">
+  <a href="#image-augmentation-benchmark-results" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Benchmark Results
+        Image Augmentation Benchmark Results
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#video-5d-tensor-benchmarks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Video (5D Tensor) Benchmarks
       
     </span>
   </a>
@@ -1176,10 +1187,21 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#benchmark-results" class="md-nav__link">
+  <a href="#image-augmentation-benchmark-results" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Benchmark Results
+        Image Augmentation Benchmark Results
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#video-5d-tensor-benchmarks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Video (5D Tensor) Benchmarks
       
     </span>
   </a>
@@ -1341,6 +1363,9 @@
 <li>
 <p><strong>Up to 12x faster</strong> on large images (1280×1280)</p>
 </li>
+<li>
+<p><strong>5D video tensor support</strong> with <code>same_on_batch=False, same_on_frame=True</code> control; speedup: <strong>8.6x vs Torchvision, 73.7x vs Kornia</strong></p>
+</li>
 </ul>
 <p><a href="#-performance">📊 See full benchmarks →</a></p>
 <p><strong>Key Idea</strong>: Fuse multiple GPU operations into a single kernel → eliminate intermediate memory transfers → faster augmentation.</p>
@@ -1354,6 +1379,7 @@
 <h2 id="features">🚀 Features<a class="headerlink" href="#features" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>One Kernel, All Operations</strong>: Fuse crop, flip, color jitter, grayscale, and normalize in a single kernel - significantly faster, scales with image size! 🚀</li>
+<li><strong>5D Video Tensor Support</strong>: Native support for <code>[N, T, C, H, W]</code> video tensors with <code>same_on_frame</code> control for consistent augmentation across frames</li>
 <li><strong>Different Parameters Per Sample</strong>: Each image in batch gets different random augmentations (not just batch-wide)</li>
 <li><strong>Zero Memory Overhead</strong>: No intermediate buffers between operations</li>
 <li><strong>Drop-in Replacement</strong>: torchvision-like transforms &amp; functional APIs, easy migration</li>
@@ -1386,46 +1412,56 @@
 <a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>    <span class="n">brightness</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span>
 <a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>    <span class="n">contrast</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span>
 <a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>    <span class="n">saturation</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span>
-<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>    <span class="n">random_grayscale_p</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>    <span class="n">grayscale_p</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>
 <a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>    <span class="n">mean</span><span class="o">=</span><span class="p">(</span><span class="mf">0.485</span><span class="p">,</span> <span class="mf">0.456</span><span class="p">,</span> <span class="mf">0.406</span><span class="p">),</span>
 <a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>    <span class="n">std</span><span class="o">=</span><span class="p">(</span><span class="mf">0.229</span><span class="p">,</span> <span class="mf">0.224</span><span class="p">,</span> <span class="mf">0.225</span><span class="p">)</span>
 <a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="p">)</span>
 <a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a>
 <a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a><span class="n">augmented</span> <span class="o">=</span> <span class="n">transform</span><span class="p">(</span><span class="n">images</span><span class="p">)</span>  <span class="c1"># 🚀 Single kernel for entire pipeline!</span>
 </code></pre></div>
-<p><strong>Need only some operations?</strong> Set unused parameters to their default values:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Example: Only saturation adjustment + normalization</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">transform</span> <span class="o">=</span> <span class="n">ta</span><span class="o">.</span><span class="n">TritonFusedAugment</span><span class="p">(</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="n">crop_size</span><span class="o">=</span><span class="mi">224</span><span class="p">,</span>          <span class="c1"># No crop (same size as input)</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="n">brightness</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>         <span class="c1"># No brightness change</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="n">contrast</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>           <span class="c1"># No contrast change (default)</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="n">saturation</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span>         <span class="c1"># Only saturation jitter</span>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="n">horizontal_flip_p</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>  <span class="c1"># No flip</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>    <span class="n">mean</span><span class="o">=</span><span class="p">(</span><span class="mf">0.485</span><span class="p">,</span> <span class="mf">0.456</span><span class="p">,</span> <span class="mf">0.406</span><span class="p">),</span>
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>    <span class="n">std</span><span class="o">=</span><span class="p">(</span><span class="mf">0.229</span><span class="p">,</span> <span class="mf">0.224</span><span class="p">,</span> <span class="mf">0.225</span><span class="p">)</span>
+<p><strong>Video (5D) Support</strong>: Native support for video tensors <code>[N, T, C, H, W]</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Video batch: 8 videos × 16 frames × 3 channels × 224×224</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">videos</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s1">&#39;cuda&#39;</span><span class="p">)</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="n">transform</span> <span class="o">=</span> <span class="n">ta</span><span class="o">.</span><span class="n">TritonFusedAugment</span><span class="p">(</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="n">crop_size</span><span class="o">=</span><span class="mi">112</span><span class="p">,</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="n">horizontal_flip_p</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="n">brightness</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span> <span class="n">contrast</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span> <span class="n">saturation</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>    <span class="n">same_on_frame</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>  <span class="c1"># Same augmentation for all frames (default)</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>    <span class="n">mean</span><span class="o">=</span><span class="p">(</span><span class="mf">0.485</span><span class="p">,</span> <span class="mf">0.456</span><span class="p">,</span> <span class="mf">0.406</span><span class="p">),</span> <span class="n">std</span><span class="o">=</span><span class="p">(</span><span class="mf">0.229</span><span class="p">,</span> <span class="mf">0.224</span><span class="p">,</span> <span class="mf">0.225</span><span class="p">)</span>
 <a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="p">)</span>
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="n">augmented</span> <span class="o">=</span> <span class="n">transform</span><span class="p">(</span><span class="n">videos</span><span class="p">)</span>  <span class="c1"># Shape: [8, 16, 3, 112, 112]</span>
+</code></pre></div>
+<p><strong>Need only some operations?</strong> Set unused parameters to their default values:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Example: Only saturation adjustment + horizontal flip</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">transform</span> <span class="o">=</span> <span class="n">ta</span><span class="o">.</span><span class="n">TritonFusedAugment</span><span class="p">(</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="n">crop_size</span><span class="o">=</span><span class="mi">224</span><span class="p">,</span>          <span class="c1"># No crop (same size as input)</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">saturation</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span>         <span class="c1"># Only saturation jitter</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="n">horizontal_flip_p</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span>  <span class="c1"># Only random flip</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="p">)</span>
 </code></pre></div>
 <p><strong>Specialized APIs</strong>: For convenience, also available: <code>TritonColorJitterNormalize</code>, <code>TritonRandomCropFlip</code>, etc.</p>
 <h3 id="combine-with-torchvision-transforms">🔗 Combine with Torchvision Transforms<a class="headerlink" href="#combine-with-torchvision-transforms" title="Permanent link">&para;</a></h3>
 <p>For operations not yet supported by Triton-Augment (like rotation, perspective transforms, etc.), combine with torchvision transforms:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">torchvision.transforms.v2</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">transforms</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="c1"># Triton-Augment + Torchvision (per-image randomness + unsupported ops)</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="n">transform</span> <span class="o">=</span> <span class="n">transforms</span><span class="o">.</span><span class="n">Compose</span><span class="p">([</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="n">transforms</span><span class="o">.</span><span class="n">RandomRotation</span><span class="p">(</span><span class="n">degrees</span><span class="o">=</span><span class="mi">15</span><span class="p">),</span>  <span class="c1"># Torchvision (no per-image randomness)</span>
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    <span class="n">ta</span><span class="o">.</span><span class="n">TritonColorJitterNormalize</span><span class="p">(</span>         <span class="c1"># Triton-Augment (per-image randomness)</span>
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>        <span class="n">brightness</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span> <span class="n">contrast</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span> <span class="n">saturation</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span>
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>        <span class="n">mean</span><span class="o">=</span><span class="p">(</span><span class="mf">0.485</span><span class="p">,</span> <span class="mf">0.456</span><span class="p">,</span> <span class="mf">0.406</span><span class="p">),</span> <span class="n">std</span><span class="o">=</span><span class="p">(</span><span class="mf">0.229</span><span class="p">,</span> <span class="mf">0.224</span><span class="p">,</span> <span class="mf">0.225</span><span class="p">)</span>
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>    <span class="p">)</span>
-<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="p">])</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">torchvision.transforms.v2</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">transforms</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="c1"># Triton-Augment + Torchvision (per-image randomness + unsupported ops)</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="n">transform</span> <span class="o">=</span> <span class="n">transforms</span><span class="o">.</span><span class="n">Compose</span><span class="p">([</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>    <span class="n">transforms</span><span class="o">.</span><span class="n">RandomRotation</span><span class="p">(</span><span class="n">degrees</span><span class="o">=</span><span class="mi">15</span><span class="p">),</span>  <span class="c1"># Torchvision (no per-image randomness)</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    <span class="n">ta</span><span class="o">.</span><span class="n">TritonColorJitterNormalize</span><span class="p">(</span>         <span class="c1"># Triton-Augment (per-image randomness)</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>        <span class="n">brightness</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span> <span class="n">contrast</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span> <span class="n">saturation</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>        <span class="n">mean</span><span class="o">=</span><span class="p">(</span><span class="mf">0.485</span><span class="p">,</span> <span class="mf">0.456</span><span class="p">,</span> <span class="mf">0.406</span><span class="p">),</span> <span class="n">std</span><span class="o">=</span><span class="p">(</span><span class="mf">0.229</span><span class="p">,</span> <span class="mf">0.224</span><span class="p">,</span> <span class="mf">0.225</span><span class="p">)</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>    <span class="p">)</span>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="p">])</span>
 </code></pre></div>
-<p><strong>Note</strong>: Torchvision transforms.v2 apply the same random parameters to all images in a batch, while Triton-Augment provides true per-image randomness. <a href="https://kornia.readthedocs.io/">Kornia</a> also supports per-image randomness.</p>
+<p><strong>Note</strong>: Torchvision transforms.v2 apply the same random parameters to all images in a batch, while Triton-Augment provides true per-image randomness. <a href="https://kornia.readthedocs.io/">Kornia</a> also supports per-image randomness, but is slower in our benchmarks.</p>
 <p><a href="quickstart/">→ More Examples</a></p>
 <h3 id="input-requirements">⚠️ Input Requirements<a class="headerlink" href="#input-requirements" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>Range</strong>: Images must be in <code>[0, 1]</code> range (e.g., use <code>torchvision.transforms.ToTensor()</code>)</li>
 <li><strong>Device</strong>: GPU (CUDA) - <em>CPU tensors automatically moved to GPU</em></li>
-<li><strong>Shape</strong>: <code>(C, H, W)</code> or <code>(N, C, H, W)</code> - <em>3D tensors automatically batched</em></li>
+<li><strong>Shape</strong>: <code>(C, H, W)</code>, <code>(N, C, H, W)</code>, or <code>(N, T, C, H, W)</code> - <em>5D for video</em></li>
 <li><strong>Dtype</strong>: <code>float32</code> or <code>float16</code></li>
 </ul>
 <hr />
@@ -1477,7 +1513,7 @@
 <h2 id="performance">⚡ Performance<a class="headerlink" href="#performance" title="Permanent link">&para;</a></h2>
 <p><strong>📊 <a href="https://colab.research.google.com/drive/1aN0V3zjtINXZmj2gZPv9zwNiPrD48qcW">Run benchmarks yourself on Google Colab</a></strong> - Verify correctness and performance on free GPU<br />
 <em>Note: Colab performance may vary due to shared resources</em></p>
-<h3 id="benchmark-results">Benchmark Results<a class="headerlink" href="#benchmark-results" title="Permanent link">&para;</a></h3>
+<h3 id="image-augmentation-benchmark-results">Image Augmentation Benchmark Results<a class="headerlink" href="#image-augmentation-benchmark-results" title="Permanent link">&para;</a></h3>
 <p><strong>Real training scenario with random augmentations on Tesla T4 (Google Colab Free Tier):</strong></p>
 <table>
 <thead>
@@ -1586,14 +1622,80 @@
 <blockquote>
 <p><strong>Why better speedup on T4?</strong> Kernel fusion reduces memory bandwidth bottlenecks, which matters more on bandwidth-limited GPUs like T4 (320 GB/s) vs A100 (1,555 GB/s). This means <strong>greater benefits on consumer and mid-range hardware</strong>.</p>
 </blockquote>
+<h3 id="video-5d-tensor-benchmarks">Video (5D Tensor) Benchmarks<a class="headerlink" href="#video-5d-tensor-benchmarks" title="Permanent link">&para;</a></h3>
+<p><strong>Video augmentation on Tesla T4 (Google Colab Free Tier) - Input shape <code>[N, T, C, H, W]</code>:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Batch</th>
+<th>Frames</th>
+<th>Image Size</th>
+<th>Crop Size</th>
+<th>Torchvision</th>
+<th>Kornia VideoSeq</th>
+<th>Triton Fused</th>
+<th>Speedup vs TV</th>
+<th>Speedup vs Kornia</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>8</td>
+<td>16</td>
+<td>256×256</td>
+<td>224×224</td>
+<td>8.86 ms</td>
+<td>78.20 ms</td>
+<td>1.21 ms</td>
+<td><strong>7.3x</strong></td>
+<td><strong>64.6x</strong></td>
+</tr>
+<tr>
+<td>4</td>
+<td>32</td>
+<td>256×256</td>
+<td>224×224</td>
+<td>8.84 ms</td>
+<td>78.39 ms</td>
+<td>1.08 ms</td>
+<td><strong>8.2x</strong></td>
+<td><strong>72.6x</strong></td>
+</tr>
+<tr>
+<td>16</td>
+<td>8</td>
+<td>256×256</td>
+<td>224×224</td>
+<td>9.06 ms</td>
+<td>78.69 ms</td>
+<td>1.07 ms</td>
+<td><strong>8.5x</strong></td>
+<td><strong>73.5x</strong></td>
+</tr>
+<tr>
+<td>8</td>
+<td>16</td>
+<td>512×512</td>
+<td>448×448</td>
+<td>33.75 ms</td>
+<td>272.59 ms</td>
+<td>3.24 ms</td>
+<td><strong>10.4x</strong></td>
+<td><strong>84.1x</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Average Speedup vs Torchvision: 8.6x</strong><br />
+<strong>Average Speedup vs Kornia: 73.7x</strong> 🚀</p>
 <h3 id="run-your-own-benchmarks">Run Your Own Benchmarks<a class="headerlink" href="#run-your-own-benchmarks" title="Permanent link">&para;</a></h3>
 <p><strong>Quick Benchmark</strong> (Ultimate Fusion only):
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Simple, clean table output - easy to run!</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>python<span class="w"> </span>examples/benchmark.py
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># Simple, clean table output - easy to run!</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>python<span class="w"> </span>examples/benchmark.py
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>python<span class="w"> </span>examples/benchmark_video.py
 </code></pre></div></p>
 <p><strong>Detailed Benchmark</strong> (All operations):
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># Comprehensive analysis with visualizations</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>python<span class="w"> </span>examples/benchmark_triton.py
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># Comprehensive analysis with visualizations</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>python<span class="w"> </span>examples/benchmark_triton.py
 </code></pre></div></p>
 <hr />
 <h2 id="auto-tuning">💡 Auto-Tuning<a class="headerlink" href="#auto-tuning" title="Permanent link">&para;</a></h2>
@@ -1610,11 +1712,11 @@
 </li>
 </ul>
 <p><strong>Quick start:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">triton_augment</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">ta</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="n">ta</span><span class="o">.</span><span class="n">set_autotune</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>  <span class="c1"># Enable auto-tuning (one-time cost, results cached)</span>
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="n">transform</span> <span class="o">=</span> <span class="n">ta</span><span class="o">.</span><span class="n">TritonFusedAugment</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
-<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="n">augmented</span> <span class="o">=</span> <span class="n">transform</span><span class="p">(</span><span class="n">images</span><span class="p">)</span>  <span class="c1"># First run: tests configs; subsequent: uses cache</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">triton_augment</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">ta</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="n">ta</span><span class="o">.</span><span class="n">set_autotune</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>  <span class="c1"># Enable auto-tuning (one-time cost, results cached)</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="n">transform</span> <span class="o">=</span> <span class="n">ta</span><span class="o">.</span><span class="n">TritonFusedAugment</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="n">augmented</span> <span class="o">=</span> <span class="n">transform</span><span class="p">(</span><span class="n">images</span><span class="p">)</span>  <span class="c1"># First run: tests configs; subsequent: uses cache</span>
 </code></pre></div></p>
 <p><strong>⚠️ Performance Variability</strong>: Our highly optimized kernels are more sensitive to resource contention. If you experience <strong>sudden latency spikes</strong> on shared services, this is expected due to competing workloads. Auto-tuning can help find more stable configurations.</p>
 <p>📖 <strong>Full guide</strong>: <a href="auto-tuning/">Auto-Tuning Guide</a> - Detailed instructions, cache management, and warm-up strategies</p>
@@ -1646,17 +1748,17 @@
 <li>Why this architecture is fast</li>
 </ul>
 <p>Quick snippet:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># Step 1: Load data on CPU with workers</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="n">train_loader</span> <span class="o">=</span> <span class="n">DataLoader</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">num_workers</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>
-<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
-<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="c1"># Step 2: Create GPU augmentation (once)</span>
-<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="n">augment</span> <span class="o">=</span> <span class="n">ta</span><span class="o">.</span><span class="n">TritonFusedAugment</span><span class="p">(</span><span class="n">crop_size</span><span class="o">=</span><span class="mi">28</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
-<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>
-<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="c1"># Step 3: Apply in training loop on GPU batches</span>
-<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="k">for</span> <span class="n">images</span><span class="p">,</span> <span class="n">labels</span> <span class="ow">in</span> <span class="n">train_loader</span><span class="p">:</span>
-<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>    <span class="n">images</span> <span class="o">=</span> <span class="n">images</span><span class="o">.</span><span class="n">cuda</span><span class="p">()</span>
-<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>    <span class="n">images</span> <span class="o">=</span> <span class="n">augment</span><span class="p">(</span><span class="n">images</span><span class="p">)</span>  <span class="c1"># 🚀 1 kernel for all ops!</span>
-<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>    <span class="n">outputs</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">images</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1"># Step 1: Load data on CPU with workers</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="n">train_loader</span> <span class="o">=</span> <span class="n">DataLoader</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">num_workers</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="c1"># Step 2: Create GPU augmentation (once)</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="n">augment</span> <span class="o">=</span> <span class="n">ta</span><span class="o">.</span><span class="n">TritonFusedAugment</span><span class="p">(</span><span class="n">crop_size</span><span class="o">=</span><span class="mi">28</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="c1"># Step 3: Apply in training loop on GPU batches</span>
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="k">for</span> <span class="n">images</span><span class="p">,</span> <span class="n">labels</span> <span class="ow">in</span> <span class="n">train_loader</span><span class="p">:</span>
+<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>    <span class="n">images</span> <span class="o">=</span> <span class="n">images</span><span class="o">.</span><span class="n">cuda</span><span class="p">()</span>
+<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a>    <span class="n">images</span> <span class="o">=</span> <span class="n">augment</span><span class="p">(</span><span class="n">images</span><span class="p">)</span>  <span class="c1"># 🚀 1 kernel for all ops!</span>
+<a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a>    <span class="n">outputs</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">images</span><span class="p">)</span>
 </code></pre></div>
 <p><a href="quickstart/">→ Full Training Guide</a></p>
 <hr />
@@ -1665,6 +1767,7 @@
 <li>[x] <strong>Phase 1</strong>: Fused color operations (brightness, contrast, saturation, normalize)</li>
 <li>[x] <strong>Phase 1.5</strong>: Grayscale, float16 support, auto-tuning</li>
 <li>[x] <strong>Phase 2</strong>: Basic Geometric operations (crop, flip) + Ultimate fusion 🚀</li>
+<li>[x] <strong>Phase 2.5</strong>: 5D video tensor support <code>[N, T, C, H, W]</code> with <code>same_on_frame</code> parameter</li>
 <li>[ ] <strong>Phase 3</strong>: Extended operations (resize, rotation, blur, erasing, mixup, etc.)</li>
 <li>[ ] <strong>Future</strong>: Differentiable augmentation (autograd support, available in Kornia) - evaluate demand vs performance tradeoff</li>
 </ul>
@@ -1672,12 +1775,12 @@
 <hr />
 <h2 id="contributing">🤝 Contributing<a class="headerlink" href="#contributing" title="Permanent link">&para;</a></h2>
 <p>Contributions welcome! Please see <a href="https://github.com/yuhezhang-ai/triton-augment/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a> for guidelines.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1"># Development setup</span>
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s2">&quot;.[dev]&quot;</span>
-<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
-<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="c1"># Useful commands</span>
-<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>make<span class="w"> </span><span class="nb">help</span><span class="w">        </span><span class="c1"># Show all available commands</span>
-<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>make<span class="w"> </span><span class="nb">test</span><span class="w">        </span><span class="c1"># Run tests</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># Development setup</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s2">&quot;.[dev]&quot;</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="c1"># Useful commands</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>make<span class="w"> </span><span class="nb">help</span><span class="w">        </span><span class="c1"># Show all available commands</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>make<span class="w"> </span><span class="nb">test</span><span class="w">        </span><span class="c1"># Run tests</span>
 </code></pre></div>
 <p><a href="https://github.com/yuhezhang-ai/triton-augment/blob/main/CONTRIBUTING.md">→ Complete Contributing Guide</a></p>
 <hr />
@@ -1695,7 +1798,7 @@
 <p><strong>Yuhe Zhang</strong></p>
 <ul>
 <li>💼 LinkedIn: <a href="https://www.linkedin.com/in/yuhe-zhang-phd/">Yuhe Zhang</a></li>
-<li>📧 Email: yuhezhang.zju@gmail.com</li>
+<li>📧 Email: yuhezhang.zju @ gmail.com</li>
 </ul>
 <p><em>Research interests: Applied ML, Computer Vision, Efficient Deep Learning, GPU Acceleration</em></p>
 <hr />

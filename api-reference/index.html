@@ -1127,17 +1127,6 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#triton_augment.TritonRandomCrop.get_params" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        get_params
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#triton_augment.TritonRandomCrop.forward" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1432,6 +1421,34 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Input Requirements">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#transform-classes_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Transform Classes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#functional-api_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Functional API
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -1897,17 +1914,6 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#triton_augment.TritonRandomCrop.get_params" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        get_params
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#triton_augment.TritonRandomCrop.forward" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2203,6 +2209,34 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Input Requirements">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#transform-classes_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Transform Classes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#functional-api_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Functional API
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2402,7 +2436,7 @@ No intermediate memory allocations or kernel launch overhead.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                <code>random_grayscale_p</code>
+                <code>grayscale_p</code>
             </td>
             <td>
                   <code><span title="float">float</span></code>
@@ -2421,15 +2455,15 @@ No intermediate memory allocations or kernel launch overhead.</p>
                 <code>mean</code>
             </td>
             <td>
-                  <code><span title="tuple">tuple</span>[<span title="float">float</span>, <span title="float">float</span>, <span title="float">float</span>]</code>
+                  <code><span title="typing.Optional">Optional</span>[<span title="tuple">tuple</span>[<span title="float">float</span>, <span title="float">float</span>, <span title="float">float</span>]]</code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Sequence of means for R, G, B channels</p>
+                <p>Sequence of means for R, G, B channels. If None, normalization is skipped.</p>
               </div>
             </td>
             <td>
-                  <code>(0.485, 0.456, 0.406)</code>
+                  <code>None</code>
             </td>
           </tr>
           <tr class="doc-section-item">
@@ -2437,15 +2471,15 @@ No intermediate memory allocations or kernel launch overhead.</p>
                 <code>std</code>
             </td>
             <td>
-                  <code><span title="tuple">tuple</span>[<span title="float">float</span>, <span title="float">float</span>, <span title="float">float</span>]</code>
+                  <code><span title="typing.Optional">Optional</span>[<span title="tuple">tuple</span>[<span title="float">float</span>, <span title="float">float</span>, <span title="float">float</span>]]</code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Sequence of stds for R, G, B channels</p>
+                <p>Sequence of stds for R, G, B channels. If None, normalization is skipped.</p>
               </div>
             </td>
             <td>
-                  <code>(0.229, 0.224, 0.225)</code>
+                  <code>None</code>
             </td>
           </tr>
           <tr class="doc-section-item">
@@ -2457,12 +2491,30 @@ No intermediate memory allocations or kernel launch overhead.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If True, all images in the batch share the same parameters.
-                 If False (default), each image in the batch gets different random parameters.</p>
+                <p>If True, all images in batch (N dimension) share the same random parameters.
+          If False (default), each image gets different random parameters.</p>
               </div>
             </td>
             <td>
                   <code>False</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>same_on_frame</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If True, all frames in a video (T dimension) share the same random parameters.
+          If False, each frame gets different random parameters.
+          Only applies to 5D input [N, T, C, H, W]. Default: True (consistent augmentation across frames).</p>
+              </div>
+            </td>
+            <td>
+                  <code>True</code>
             </td>
           </tr>
       </tbody>
@@ -2488,12 +2540,19 @@ No intermediate memory allocations or kernel launch overhead.</p>
 <a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>    <span class="n">brightness</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span>
 <a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>    <span class="n">contrast</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span>
 <a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>    <span class="n">saturation</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span>
-<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>    <span class="n">mean</span><span class="o">=</span><span class="p">(</span><span class="mf">0.485</span><span class="p">,</span> <span class="mf">0.456</span><span class="p">,</span> <span class="mf">0.406</span><span class="p">),</span>
-<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>    <span class="n">std</span><span class="o">=</span><span class="p">(</span><span class="mf">0.229</span><span class="p">,</span> <span class="mf">0.224</span><span class="p">,</span> <span class="mf">0.225</span><span class="p">)</span>
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>    <span class="n">mean</span><span class="o">=</span><span class="p">(</span><span class="mf">0.485</span><span class="p">,</span> <span class="mf">0.456</span><span class="p">,</span> <span class="mf">0.406</span><span class="p">),</span>  <span class="c1"># ImageNet normalization (optional)</span>
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>    <span class="n">std</span><span class="o">=</span><span class="p">(</span><span class="mf">0.229</span><span class="p">,</span> <span class="mf">0.224</span><span class="p">,</span> <span class="mf">0.225</span><span class="p">)</span>    <span class="c1"># ImageNet normalization (optional)</span>
 <a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="p">)</span>
 <a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>
 <a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="n">img</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s1">&#39;cuda&#39;</span><span class="p">)</span>
 <a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="n">result</span> <span class="o">=</span> <span class="n">transform</span><span class="p">(</span><span class="n">img</span><span class="p">)</span>  <span class="c1"># Single kernel launch!</span>
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a><span class="c1"># Without normalization (mean=None, std=None by default)</span>
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a><span class="n">transform_no_norm</span> <span class="o">=</span> <span class="n">ta</span><span class="o">.</span><span class="n">TritonFusedAugment</span><span class="p">(</span>
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>    <span class="n">crop_size</span><span class="o">=</span><span class="mi">112</span><span class="p">,</span>
+<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>    <span class="n">horizontal_flip_p</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span>
+<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>    <span class="n">brightness</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span> <span class="n">contrast</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span> <span class="n">saturation</span><span class="o">=</span><span class="mf">0.2</span>
+<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a><span class="p">)</span>
 </code></pre></div>
 </details>
 
@@ -2502,7 +2561,7 @@ No intermediate memory allocations or kernel launch overhead.</p>
   <ul>
 <li>Uses FAST contrast (centered scaling), not torchvision's blend-with-mean</li>
 <li>By default, each image gets different random parameters (set same_on_batch=False for same params)</li>
-<li>Input must be (N, 3, H, W) float tensor on CUDA in [0, 1] range</li>
+<li>Input must be (C, H, W), (N, C, H, W), or (N, T, C, H, W) float tensor on CUDA in [0, 1] range</li>
 </ul>
 </details>
 
@@ -2562,7 +2621,7 @@ No intermediate memory allocations or kernel launch overhead.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Input tensor of shape (N, C, H, W) or (C, H, W)
+                <p>Input tensor of shape (C, H, W), (N, C, H, W), or (N, T, C, H, W)
    Can be on CPU or CUDA (will be moved to CUDA automatically)</p>
               </div>
             </td>
@@ -2694,7 +2753,7 @@ recommended way to apply color augmentations and normalization.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                <code>random_grayscale_p</code>
+                <code>grayscale_p</code>
             </td>
             <td>
                   <code><span title="float">float</span></code>
@@ -2713,15 +2772,15 @@ recommended way to apply color augmentations and normalization.</p>
                 <code>mean</code>
             </td>
             <td>
-                  <code><span title="typing.Tuple">Tuple</span>[<span title="float">float</span>, <span title="float">float</span>, <span title="float">float</span>]</code>
+                  <code><span title="typing.Optional">Optional</span>[<span title="typing.Tuple">Tuple</span>[<span title="float">float</span>, <span title="float">float</span>, <span title="float">float</span>]]</code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Sequence of means for normalization (R, G, B)</p>
+                <p>Sequence of means for normalization (R, G, B). If None, normalization is skipped.</p>
               </div>
             </td>
             <td>
-                  <code>(0.485, 0.456, 0.406)</code>
+                  <code>None</code>
             </td>
           </tr>
           <tr class="doc-section-item">
@@ -2729,15 +2788,15 @@ recommended way to apply color augmentations and normalization.</p>
                 <code>std</code>
             </td>
             <td>
-                  <code><span title="typing.Tuple">Tuple</span>[<span title="float">float</span>, <span title="float">float</span>, <span title="float">float</span>]</code>
+                  <code><span title="typing.Optional">Optional</span>[<span title="typing.Tuple">Tuple</span>[<span title="float">float</span>, <span title="float">float</span>, <span title="float">float</span>]]</code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Sequence of standard deviations for normalization (R, G, B)</p>
+                <p>Sequence of standard deviations for normalization (R, G, B). If None, normalization is skipped.</p>
               </div>
             </td>
             <td>
-                  <code>(0.229, 0.224, 0.225)</code>
+                  <code>None</code>
             </td>
           </tr>
           <tr class="doc-section-item">
@@ -2768,13 +2827,18 @@ recommended way to apply color augmentations and normalization.</p>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">brightness</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span>  <span class="c1"># Range: [0.8, 1.2]</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">contrast</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span>    <span class="c1"># Range: [0.8, 1.2]</span>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">saturation</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span>  <span class="c1"># Range: [0.8, 1.2]</span>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">random_grayscale_p</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>  <span class="c1"># 10% chance of grayscale (per-image)</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">mean</span><span class="o">=</span><span class="p">(</span><span class="mf">0.485</span><span class="p">,</span> <span class="mf">0.456</span><span class="p">,</span> <span class="mf">0.406</span><span class="p">),</span>
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="n">std</span><span class="o">=</span><span class="p">(</span><span class="mf">0.229</span><span class="p">,</span> <span class="mf">0.224</span><span class="p">,</span> <span class="mf">0.225</span><span class="p">),</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">grayscale_p</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>  <span class="c1"># 10% chance of grayscale (per-image)</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">mean</span><span class="o">=</span><span class="p">(</span><span class="mf">0.485</span><span class="p">,</span> <span class="mf">0.456</span><span class="p">,</span> <span class="mf">0.406</span><span class="p">),</span>  <span class="c1"># ImageNet normalization (optional)</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="n">std</span><span class="o">=</span><span class="p">(</span><span class="mf">0.229</span><span class="p">,</span> <span class="mf">0.224</span><span class="p">,</span> <span class="mf">0.225</span><span class="p">),</span>    <span class="c1"># ImageNet normalization (optional)</span>
 <a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="n">same_on_batch</span><span class="o">=</span><span class="kc">False</span>
 <a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="p">)</span>
 <a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="n">img</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s1">&#39;cuda&#39;</span><span class="p">)</span>
 <a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="n">augmented</span> <span class="o">=</span> <span class="n">transform</span><span class="p">(</span><span class="n">img</span><span class="p">)</span>  <span class="c1"># Each image gets different augmentation</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="c1"># Without normalization (mean=None, std=None by default)</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="n">transform_no_norm</span> <span class="o">=</span> <span class="n">TritonColorJitterNormalize</span><span class="p">(</span>
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>    <span class="n">brightness</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span> <span class="n">contrast</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span> <span class="n">saturation</span><span class="o">=</span><span class="mf">0.2</span>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="p">)</span>
 </code></pre></div>
 </details>
 
@@ -2834,7 +2898,7 @@ recommended way to apply color augmentations and normalization.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Input tensor of shape (N, C, H, W) or (C, H, W)
+                <p>Input tensor of shape (C, H, W), (N, C, H, W), or (N, T, C, H, W)
  Can be on CPU or CUDA (will be moved to CUDA automatically)</p>
               </div>
             </td>
@@ -2957,12 +3021,30 @@ kernel launch, eliminating intermediate memory transfers.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If True, all images in batch share the same random parameters
-                 If False (default), each image in batch gets different random parameters</p>
+                <p>If True, all images in batch (N dimension) share the same random parameters.
+          If False (default), each image gets different random parameters.</p>
               </div>
             </td>
             <td>
                   <code>False</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>same_on_frame</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If True, all frames in a video (T dimension) share the same random parameters.
+          If False, each frame gets different random parameters.
+          Only applies to 5D input [N, T, C, H, W]. Default: True.</p>
+              </div>
+            </td>
+            <td>
+                  <code>True</code>
             </td>
           </tr>
       </tbody>
@@ -3046,7 +3128,7 @@ zero overhead when flip is not triggered.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Input tensor of shape (N, C, H, W)</p>
+                <p>Input tensor of shape (C, H, W), (N, C, H, W), or (N, T, C, H, W)</p>
               </div>
             </td>
             <td>
@@ -3072,7 +3154,7 @@ zero overhead when flip is not triggered.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Randomly cropped (and optionally flipped) tensor of shape (N, C, size[0], size[1])</p>
+                <p>Randomly cropped (and optionally flipped) tensor of shape matching input</p>
               </div>
             </td>
           </tr>
@@ -3195,12 +3277,30 @@ NOT torchvision's blend-with-mean approach. This is much faster and provides sim
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If True, all images in batch share the same random parameters
-                 If False (default), each image in batch gets different random parameters</p>
+                <p>If True, all images in batch (N dimension) share the same random parameters.
+          If False (default), each image gets different random parameters.</p>
               </div>
             </td>
             <td>
                   <code>False</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>same_on_frame</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If True, all frames in a video (T dimension) share the same random parameters.
+          If False, each frame gets different random parameters.
+          Only applies to 5D input [N, T, C, H, W]. Default: True (consistent augmentation across frames).</p>
+              </div>
+            </td>
+            <td>
+                  <code>True</code>
             </td>
           </tr>
       </tbody>
@@ -3293,7 +3393,7 @@ NOT torchvision's blend-with-mean approach. This is much faster and provides sim
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Input image tensor of shape (N, C, H, W) on CUDA</p>
+                <p>Input image tensor of shape (C, H, W), (N, C, H, W), or (N, T, C, H, W)</p>
               </div>
             </td>
             <td>
@@ -3477,7 +3577,7 @@ that uses a Triton kernel for improved performance.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Input tensor of shape (N, C, H, W) or (C, H, W)
+                <p>Input tensor of shape (C, H, W), (N, C, H, W), or (N, T, C, H, W)
  Can be on CPU or CUDA (will be moved to CUDA automatically)</p>
               </div>
             </td>
@@ -3599,12 +3699,30 @@ that uses a Triton kernel for improved performance.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If True, all images in batch make the same grayscale decision
-                 If False (default), each image in batch independently decides grayscale conversion</p>
+                <p>If True, all images in batch (N dimension) make the same grayscale decision.
+          If False (default), each image independently decides grayscale conversion.</p>
               </div>
             </td>
             <td>
                   <code>False</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>same_on_frame</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If True, all frames in a video (T dimension) make the same grayscale decision.
+          If False, each frame independently decides.
+          Only applies to 5D input [N, T, C, H, W]. Default: True.</p>
+              </div>
+            </td>
+            <td>
+                  <code>True</code>
             </td>
           </tr>
       </tbody>
@@ -3679,7 +3797,7 @@ that uses a Triton kernel for improved performance.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Input tensor of shape (N, 3, H, W)</p>
+                <p>Input tensor of shape (C, H, W), (N, 3, H, W), or (N, T, 3, H, W)</p>
               </div>
             </td>
             <td>
@@ -3844,7 +3962,7 @@ Uses weights: 0.2989<em>R + 0.587</em>G + 0.114*B</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Input tensor of shape (N, 3, H, W)</p>
+                <p>Input tensor of shape (C, H, W), (N, 3, H, W), or (N, T, 3, H, W)</p>
               </div>
             </td>
             <td>
@@ -3870,7 +3988,7 @@ Uses weights: 0.2989<em>R + 0.587</em>G + 0.114*B</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Grayscale tensor of shape (N, num_output_channels, H, W)</p>
+                <p>Grayscale tensor of shape matching input structure</p>
               </div>
             </td>
           </tr>
@@ -3948,12 +4066,30 @@ Uses weights: 0.2989<em>R + 0.587</em>G + 0.114*B</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If True, all images in batch crop at the same position.
-                 If False (default), each image in batch gets different random crop position.</p>
+                <p>If True, all images in batch (N dimension) crop at the same position.
+          If False (default), each image gets different random crop position.</p>
               </div>
             </td>
             <td>
                   <code>False</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>same_on_frame</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If True, all frames in a video (T dimension) crop at the same position.
+          If False, each frame gets different random crop.
+          Only applies to 5D input [N, T, C, H, W]. Default: True.</p>
+              </div>
+            </td>
+            <td>
+                  <code>True</code>
             </td>
           </tr>
       </tbody>
@@ -3999,100 +4135,6 @@ Future versions will support padding, pad_if_needed, fill, padding_mode.</p>
 <div class="doc doc-object doc-function">
 
 
-<h4 id="triton_augment.TritonRandomCrop.get_params" class="doc doc-heading">
-            <span class="doc doc-object-name doc-function-name">get_params</span>
-
-
-  <span class="doc doc-labels">
-      <small class="doc doc-label doc-label-staticmethod"><code>staticmethod</code></small>
-  </span>
-
-<a href="#triton_augment.TritonRandomCrop.get_params" class="headerlink" title="Permanent link">&para;</a></h4>
-<div class="doc-signature highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">get_params</span><span class="p">(</span><span class="n">image</span><span class="p">:</span> <span class="n">Tensor</span><span class="p">,</span> <span class="n">output_size</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span>
-</code></pre></div>
-
-    <div class="doc doc-contents ">
-
-        <p>Get parameters for random crop.</p>
-
-
-<p><span class="doc-section-title">Parameters:</span></p>
-    <table>
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Type</th>
-          <th>Description</th>
-          <th>Default</th>
-        </tr>
-      </thead>
-      <tbody>
-          <tr class="doc-section-item">
-            <td>
-                <code>image</code>
-            </td>
-            <td>
-                  <code><span title="torch.Tensor">Tensor</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Input image tensor (N, C, H, W)</p>
-              </div>
-            </td>
-            <td>
-                <em>required</em>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                <code>output_size</code>
-            </td>
-            <td>
-                  <code><span title="typing.Tuple">Tuple</span>[<span title="int">int</span>, <span title="int">int</span>]</code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Desired output size (height, width)</p>
-              </div>
-            </td>
-            <td>
-                <em>required</em>
-            </td>
-          </tr>
-      </tbody>
-    </table>
-
-
-    <p><span class="doc-section-title">Returns:</span></p>
-    <table>
-      <thead>
-        <tr>
-          <th>Type</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-          <tr class="doc-section-item">
-            <td>
-                  <code><span title="typing.Tuple">Tuple</span>[<span title="int">int</span>, <span title="int">int</span>, <span title="int">int</span>, <span title="int">int</span>]</code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Tuple (top, left, height, width) for cropping</p>
-              </div>
-            </td>
-          </tr>
-      </tbody>
-    </table>
-
-
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-function">
-
-
 <h4 id="triton_augment.TritonRandomCrop.forward" class="doc doc-heading">
             <span class="doc doc-object-name doc-function-name">forward</span>
 
@@ -4125,7 +4167,7 @@ Future versions will support padding, pad_if_needed, fill, padding_mode.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Input tensor of shape (N, C, H, W) or (C, H, W)</p>
+                <p>Input tensor of shape (C, H, W), (N, C, H, W), or (N, T, C, H, W)</p>
               </div>
             </td>
             <td>
@@ -4151,7 +4193,7 @@ Future versions will support padding, pad_if_needed, fill, padding_mode.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Randomly cropped tensor of shape (N, C, size[0], size[1])</p>
+                <p>Randomly cropped tensor of shape matching input</p>
               </div>
             </td>
           </tr>
@@ -4289,7 +4331,7 @@ torch.Size([4, 3, 112, 112])</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Input tensor of shape (N, C, H, W)</p>
+                <p>Input tensor of shape (C, H, W), (N, C, H, W), or (N, T, C, H, W)</p>
               </div>
             </td>
             <td>
@@ -4315,7 +4357,7 @@ torch.Size([4, 3, 112, 112])</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Center-cropped tensor of shape (N, C, size[0], size[1])</p>
+                <p>Center-cropped tensor of shape matching input</p>
               </div>
             </td>
           </tr>
@@ -4393,12 +4435,30 @@ torch.Size([4, 3, 112, 112])</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If True, all images in batch share the same decision.
-                 If False (default), each image in batch gets different random decision.</p>
+                <p>If True, all images in batch (N dimension) share the same flip decision.
+          If False (default), each image gets different random decision.</p>
               </div>
             </td>
             <td>
                   <code>False</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>same_on_frame</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If True, all frames in a video (T dimension) share the same flip decision.
+          If False, each frame gets different random decision.
+          Only applies to 5D input [N, T, C, H, W]. Default: True.</p>
+              </div>
+            </td>
+            <td>
+                  <code>True</code>
             </td>
           </tr>
       </tbody>
@@ -4468,7 +4528,7 @@ torch.Size([4, 3, 112, 112])</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Input tensor of shape (N, C, H, W) or (C, H, W)</p>
+                <p>Input tensor of shape (C, H, W), (N, C, H, W), or (N, T, C, H, W)</p>
               </div>
             </td>
             <td>
@@ -6199,17 +6259,39 @@ the 5-10 second delay on first use.</p>
 
 </div><hr />
 <h2 id="input-requirements">Input Requirements<a class="headerlink" href="#input-requirements" title="Permanent link">&para;</a></h2>
-<p>All operations accept:</p>
+<h3 id="transform-classes_1">Transform Classes<a class="headerlink" href="#transform-classes_1" title="Permanent link">&para;</a></h3>
+<p>Transform classes (e.g., <code>TritonFusedAugment</code>, <code>TritonColorJitter</code>, etc.) accept:</p>
 <ul>
 <li><strong>Device</strong>: CUDA (GPU) or CPU - <em>CPU tensors are automatically moved to GPU</em></li>
-<li><strong>Shape</strong>: <code>(C, H, W)</code> or <code>(N, C, H, W)</code> - <em>3D tensors are automatically batched</em></li>
+<li><strong>Shape</strong>: <code>(C, H, W)</code>, <code>(N, C, H, W)</code>, or <code>(N, T, C, H, W)</code> - <em>3D, 4D, or 5D (video)</em></li>
 <li><strong>Dtype</strong>: float32 or float16</li>
 <li><strong>Range</strong>: [0, 1] for color operations (required)</li>
 </ul>
-<p><strong>Notes:</strong>
-- After normalization, values can be outside [0, 1] range
-- 3D tensors <code>(C, H, W)</code> are automatically converted to <code>(1, C, H, W)</code> for processing
-- CPU tensors are automatically transferred to CUDA for GPU processing</p>
+<p><strong>Notes:</strong></p>
+<ul>
+<li>3D tensors <code>(C, H, W)</code> are automatically converted to <code>(1, C, H, W)</code> internally for processing</li>
+<li>
+<p>5D tensors <code>(N, T, C, H, W)</code> are supported for video augmentation (batch, frames, channels, height, width)</p>
+</li>
+<li>
+<p>For 5D inputs, use <code>same_on_frame=True</code> (default) for consistent augmentation across frames, or <code>same_on_frame=False</code> for independent per-frame augmentation</p>
+</li>
+<li>
+<p>After normalization, values can be outside [0, 1] range</p>
+</li>
+<li>
+<p>CPU tensors are automatically transferred to CUDA for GPU processing</p>
+</li>
+</ul>
+<h3 id="functional-api_1">Functional API<a class="headerlink" href="#functional-api_1" title="Permanent link">&para;</a></h3>
+<p>Functional functions (e.g., <code>fused_augment()</code>, <code>crop()</code>, <code>normalize()</code>, etc.) expect:</p>
+<ul>
+<li><strong>Device</strong>: CUDA (GPU) - <em>must be on CUDA device</em></li>
+<li><strong>Shape</strong>: <code>(N, C, H, W)</code> - <em>4D tensors only</em></li>
+<li><strong>Dtype</strong>: float32 or float16</li>
+<li><strong>Range</strong>: [0, 1] for color operations (required)</li>
+</ul>
+<p><strong>Note:</strong> Transform classes handle 3D/5D normalization internally. If using the functional API directly, ensure inputs are already in 4D format <code>(N, C, H, W)</code>.</p>
 <hr />
 <h2 id="performance-tips">Performance Tips<a class="headerlink" href="#performance-tips" title="Permanent link">&para;</a></h2>
 <h3 id="1-use-fused-kernel-even-for-partial-operations">1. Use Fused Kernel Even for Partial Operations<a class="headerlink" href="#1-use-fused-kernel-even-for-partial-operations" title="Permanent link">&para;</a></h3>
