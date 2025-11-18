@@ -24,13 +24,23 @@ import time
 
 class SimpleCNN(nn.Module):
     """Simple CNN for MNIST"""
-    def __init__(self):
+    def __init__(self, input_size=24):
+        """
+        Args:
+            input_size: Input image size (default: 24 for cropped MNIST)
+        """
         super().__init__()
         self.conv1 = nn.Conv2d(1, 32, 3, 1)
         self.conv2 = nn.Conv2d(32, 64, 3, 1)
         self.dropout1 = nn.Dropout(0.25)
         self.dropout2 = nn.Dropout(0.5)
-        self.fc1 = nn.Linear(9216, 128)
+        
+        # Calculate flattened size: (input_size - 2) // 2 * (input_size - 2) // 2 * 64
+        # After conv1: input_size - 2 (3x3 kernel, stride 1)
+        # After conv2: input_size - 4 (3x3 kernel, stride 1)
+        # After max_pool2d(2): (input_size - 4) // 2
+        flattened_size = ((input_size - 4) // 2) ** 2 * 64
+        self.fc1 = nn.Linear(flattened_size, 128)
         self.fc2 = nn.Linear(128, 10)
 
     def forward(self, x):
