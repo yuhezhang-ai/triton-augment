@@ -68,6 +68,8 @@ from .transforms import (
 
 # Import commonly used functional operations
 from .functional import (
+    # Enums
+    InterpolationMode,
     # Color operations
     adjust_brightness,
     adjust_contrast,
@@ -95,7 +97,10 @@ __all__ = [
     'transforms',
     'utils',
     'config',
-    
+
+    # Enums
+    'InterpolationMode',
+
     # Utilities
     'warmup_cache',
     'enable_autotune',

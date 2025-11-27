@@ -16,6 +16,7 @@ from typing import Optional, Tuple, Union, Sequence
 import collections.abc
 
 from . import functional as F
+from .functional import InterpolationMode
 
 
 # ============================================================================
@@ -1523,6 +1524,261 @@ class TritonFusedAugment(nn.Module):
         format_string += ')'
         return format_string
 
+class TritonRandomAffine(nn.Module):
+    """
+    Random affine transformation of the image keeping center invariant.
+    
+    Args:
+        degrees: Range of degrees to select from. If degrees is a number instead of sequence like (min, max),
+                 the range of degrees will be (-degrees, +degrees). Set to 0 to deactivate rotations.
+        translate: Tuple of maximum absolute fraction for horizontal and vertical translations.
+                   For example translate=(a, b), then horizontal shift is randomly sampled in the range
+                   -img_width * a < dx < img_width * a and vertical shift is randomly sampled in the range
+                   -img_height * b < dy < img_height * b. Will not translate by default.
+        scale: Scaling factor interval, e.g (a, b), then scale is randomly sampled from the range
+               a <= scale <= b. Will keep original scale by default.
+        shear: Range of degrees to select from. If shear is a number, a shear parallel to the x axis in the range
+               (-shear, +shear) will be applied. Else if shear is a tuple or list of 2 values, a x-axis shear in
+               (shear[0], shear[1]) will be applied. Else if shear is a tuple or list of 4 values, a x-axis shear in
+               (shear[0], shear[1]) and y-axis shear in (shear[2], shear[3]) will be applied. Will not apply shear by default.
+        interpolation: Interpolation mode. Either InterpolationMode.NEAREST or InterpolationMode.BILINEAR. Default: InterpolationMode.NEAREST.
+        fill: Constant fill value for areas outside the transformed image. Default: 0.
+        center: Optional center of rotation (x, y). Origin is the upper left corner.
+                Default is the center of the image.
+        same_on_batch: If True, all images in batch share the same random parameters.
+        same_on_frame: If True, all frames in a video share the same random parameters.
+    """
+    
+    def __init__(
+        self,
+        degrees: Union[float, Sequence[float]],
+        translate: Optional[Tuple[float, float]] = None,
+        scale: Optional[Tuple[float, float]] = None,
+        shear: Optional[Union[float, Sequence[float]]] = None,
+        interpolation = InterpolationMode.NEAREST,
+        fill: float = 0.0,
+        center: Optional[Tuple[int, int]] = None,
+        same_on_batch: bool = False,
+        same_on_frame: bool = True,
+    ):
+        super().__init__()
+        
+        # Process degrees
+        if isinstance(degrees, (int, float)):
+            if degrees < 0:
+                raise ValueError("If degrees is a single number, it must be positive.")
+            self.degrees = (-float(degrees), float(degrees))
+        else:
+            if len(degrees) != 2:
+                raise ValueError("If degrees is a sequence, it must be of length 2.")
+            self.degrees = (float(degrees[0]), float(degrees[1]))
+            
+        # Process translate
+        if translate is not None:
+            if len(translate) != 2:
+                raise ValueError("translate should be a sequence of length 2.")
+            if not (0.0 <= translate[0] <= 1.0 and 0.0 <= translate[1] <= 1.0):
+                raise ValueError("translation values should be between 0 and 1")
+            self.translate = (float(translate[0]), float(translate[1]))
+        else:
+            self.translate = None
+            
+        # Process scale
+        if scale is not None:
+            if len(scale) != 2:
+                raise ValueError("scale should be a sequence of length 2.")
+            if scale[0] > scale[1]:
+                raise ValueError("scale should be (min, max)")
+            self.scale = (float(scale[0]), float(scale[1]))
+        else:
+            self.scale = None
+            
+        # Process shear
+        if shear is not None:
+            if isinstance(shear, (int, float)):
+                if shear < 0:
+                    raise ValueError("If shear is a single number, it must be positive.")
+                self.shear = (-float(shear), float(shear), 0.0, 0.0)
+            else:
+                if len(shear) == 2:
+                    self.shear = (float(shear[0]), float(shear[1]), 0.0, 0.0)
+                elif len(shear) == 4:
+                    self.shear = (float(shear[0]), float(shear[1]), float(shear[2]), float(shear[3]))
+                else:
+                    raise ValueError("shear should be a single number or a sequence of length 2 or 4.")
+        else:
+            self.shear = None
+            
+        self.interpolation = interpolation
+        self.fill = float(fill)
+        self.center = center
+        self.same_on_batch = same_on_batch
+        self.same_on_frame = same_on_frame
+
+    def _get_params(self, param_count: int, device: torch.device, img_size: Tuple[int, int]):
+        """Get parameters for affine transformation."""
+        height, width = img_size
+        
+        # Angle
+        angle = F._sample_uniform_tensor(
+            param_count, self.degrees[0], self.degrees[1], device
+        )
+        
+        # Translate
+        if self.translate is not None:
+            max_dx = float(self.translate[0] * width)
+            max_dy = float(self.translate[1] * height)
+            tx = F._sample_uniform_tensor(param_count, -max_dx, max_dx, device)
+            ty = F._sample_uniform_tensor(param_count, -max_dy, max_dy, device)
+            translate = torch.stack([tx, ty], dim=1)
+        else:
+            translate = torch.zeros((param_count, 2), device=device)
+            
+        # Scale
+        if self.scale is not None:
+            scale = F._sample_uniform_tensor(
+                param_count, self.scale[0], self.scale[1], device
+            )
+        else:
+            scale = torch.ones(param_count, device=device)
+            
+        # Shear
+        if self.shear is not None:
+            sx = F._sample_uniform_tensor(
+                param_count, self.shear[0], self.shear[1], device
+            )
+            sy = F._sample_uniform_tensor(
+                param_count, self.shear[2], self.shear[3], device
+            )
+            shear = torch.stack([sx, sy], dim=1)
+        else:
+            shear = torch.zeros((param_count, 2), device=device)
+            
+        return angle, translate, scale, shear
+
+    def forward(self, img: torch.Tensor) -> torch.Tensor:
+        """
+        Apply affine transformation.
+        """
+        # Normalize shape
+        normalized_img, batch_size, num_frames, original_shape, was_3d = _normalize_video_shape(img)
+        
+        if not normalized_img.is_cuda:
+            if not torch.cuda.is_available():
+                raise RuntimeError("Triton-Augment requires CUDA")
+            normalized_img = normalized_img.cuda()
+            
+        total_samples = normalized_img.shape[0]
+        _, _, height, width = normalized_img.shape
+        
+        # Compute param count
+        param_count = _compute_param_count(batch_size, num_frames, self.same_on_batch, self.same_on_frame)
+        
+        # Sample params
+        angle, translate, scale, shear = self._get_params(param_count, normalized_img.device, (height, width))
+        
+        # Broadcast params
+        angle = _broadcast_params_to_all_samples(
+            angle, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame
+        )
+        # Handle 2D params (translate, shear)
+        # [N, 2] -> [total, 2]
+        if translate.shape[0] != total_samples:
+            # We need to broadcast the first dim only
+            # Split into x and y, broadcast, then stack?
+            # Or use expand on (N, 1, 2) -> (N, T, 2) -> (N*T, 2)
+            # Let's use the helper on each component
+            tx = _broadcast_params_to_all_samples(translate[:, 0], batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame)
+            ty = _broadcast_params_to_all_samples(translate[:, 1], batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame)
+            translate = torch.stack([tx, ty], dim=1)
+            
+            sx = _broadcast_params_to_all_samples(shear[:, 0], batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame)
+            sy = _broadcast_params_to_all_samples(shear[:, 1], batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame)
+            shear = torch.stack([sx, sy], dim=1)
+            
+        scale = _broadcast_params_to_all_samples(
+            scale, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame
+        )
+        
+        # Center
+        if self.center is not None:
+            center_tensor = torch.tensor(self.center, device=normalized_img.device, dtype=torch.float32).repeat(total_samples, 1)
+        else:
+            cx = width * 0.5
+            cy = height * 0.5
+            center_tensor = torch.tensor([cx, cy], device=normalized_img.device, dtype=torch.float32).repeat(total_samples, 1)
+            
+        # Compute Matrix
+        matrix = F._get_inverse_affine_matrix(center_tensor, angle, translate, scale, shear)
+        
+        # Apply
+        output = F._apply_affine_matrix(normalized_img, matrix, interpolation=self.interpolation, fill=self.fill)
+        
+        return _reshape_to_original(output, original_shape, was_3d)
+        
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}("
+            f"degrees={self.degrees}, "
+            f"translate={self.translate}, "
+            f"scale={self.scale}, "
+            f"shear={self.shear}, "
+            f"interpolation={self.interpolation}, "
+            f"fill={self.fill}, "
+            f"same_on_batch={self.same_on_batch}, "
+            f"same_on_frame={self.same_on_frame})"
+        )
+
+
+class TritonRandomRotation(TritonRandomAffine):
+    """
+    Random rotation of the image.
+    
+    Args:
+        degrees: Range of degrees to select from.
+        interpolation: Interpolation mode. Either InterpolationMode.NEAREST or InterpolationMode.BILINEAR. Default: InterpolationMode.NEAREST.
+        expand: Not supported yet.
+        center: Optional center of rotation.
+        fill: Constant fill value.
+        same_on_batch: If True, all images in batch share the same random parameters.
+        same_on_frame: If True, all frames in a video share the same random parameters.
+    """
+    
+    def __init__(
+        self,
+        degrees: Union[float, Sequence[float]],
+        interpolation = InterpolationMode.NEAREST,
+        expand: bool = False,
+        center: Optional[Tuple[int, int]] = None,
+        fill: float = 0.0,
+        same_on_batch: bool = False,
+        same_on_frame: bool = True,
+    ):
+        if expand:
+            raise NotImplementedError("expand=True is not yet supported in Triton-Augment")
+            
+        super().__init__(
+            degrees=degrees,
+            translate=None,
+            scale=None,
+            shear=None,
+            interpolation=interpolation,
+            fill=fill,
+            center=center,
+            same_on_batch=same_on_batch,
+            same_on_frame=same_on_frame,
+        )
+    
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}("
+            f"degrees={self.degrees}, "
+            f"interpolation={self.interpolation}, "
+            f"fill={self.fill}, "
+            f"same_on_batch={self.same_on_batch}, "
+            f"same_on_frame={self.same_on_frame})"
+        )
+
 
 __all__ = [
     # Color transforms
@@ -1536,6 +1792,8 @@ __all__ = [
     'TritonCenterCrop',
     'TritonRandomHorizontalFlip',
     'TritonRandomCropFlip',
+    'TritonRandomRotation',
+    'TritonRandomAffine',
     # Ultimate fusion
     'TritonUltimateAugment',
 ]

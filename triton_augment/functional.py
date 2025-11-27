@@ -13,6 +13,7 @@ Author: yuhezhang-ai
 import torch
 import triton
 import sys
+from typing import Sequence
 from .kernels.color_normalize_kernel import (
     brightness_kernel,
     contrast_kernel,
@@ -24,10 +25,26 @@ from .kernels.color_normalize_kernel import (
 from .kernels.geometric_kernel import (
     crop_kernel,
     horizontal_flip_kernel,
+    affine_transform_kernel,
 )
 from .kernels.fused_kernel import ultimate_fused_kernel
 from .utils import should_show_autotune_message
 from .config import ENABLE_AUTOTUNE
+
+
+# Default block size for Triton kernels
+# This is a good balance for most operations on modern GPUs
+DEFAULT_BLOCK_SIZE = 1024
+
+
+# Interpolation modes (similar to torchvision.transforms.InterpolationMode)
+class InterpolationMode:
+    """Interpolation modes for image transformations.
+
+    Matches torchvision's InterpolationMode enum for compatibility.
+    """
+    NEAREST = "nearest"
+    BILINEAR = "bilinear"
 
 
 def _validate_image_tensor(tensor: torch.Tensor, name: str = "tensor") -> None:
@@ -230,7 +247,7 @@ def rgb_to_grayscale(
     # Calculate grid size (spatial processing: N*H*W)
     spatial_size = height * width
     total_spatial = batch_size * spatial_size
-    BLOCK_SIZE = 1024
+    BLOCK_SIZE = DEFAULT_BLOCK_SIZE
     grid = lambda meta: (triton.cdiv(total_spatial, meta['BLOCK_SIZE']),)
     
     # Launch kernel
@@ -294,7 +311,7 @@ def adjust_brightness(
     
     # Calculate grid size
     n_elements = image.numel()
-    BLOCK_SIZE = 1024
+    BLOCK_SIZE = DEFAULT_BLOCK_SIZE
     grid = lambda meta: (triton.cdiv(n_elements, meta['BLOCK_SIZE']),)
     
     # Launch kernel
@@ -367,7 +384,7 @@ def adjust_contrast(
     total_elements = batch_size * channels * spatial_size
     
     # Calculate grid size
-    BLOCK_SIZE = 256
+    BLOCK_SIZE = DEFAULT_BLOCK_SIZE
     grid = lambda meta: (triton.cdiv(total_elements, meta['BLOCK_SIZE']),)
     
     # Launch kernel
@@ -438,7 +455,7 @@ def adjust_contrast_fast(
     n_elements = image.numel()
     
     # Calculate grid size
-    BLOCK_SIZE = 256
+    BLOCK_SIZE = DEFAULT_BLOCK_SIZE
     grid = lambda meta: (triton.cdiv(n_elements, meta['BLOCK_SIZE']),)
     
     # Launch kernel
@@ -506,7 +523,7 @@ def adjust_saturation(
     total_spatial_elements = batch_size * spatial_size
     
     # Calculate grid size  
-    BLOCK_SIZE = 1024  # Fixed block size for simple operations
+    BLOCK_SIZE = DEFAULT_BLOCK_SIZE
     grid = lambda meta: (triton.cdiv(total_spatial_elements, meta['BLOCK_SIZE']),)
     
     # Launch kernel
@@ -567,7 +584,7 @@ def normalize(
     n_elements = image.numel()
     batch_size, n_channels, height, width = image.shape
     spatial_size = height * width
-    BLOCK_SIZE = 1024  # Fixed block size for simple operations
+    BLOCK_SIZE = DEFAULT_BLOCK_SIZE
     grid = lambda meta: (triton.cdiv(n_elements, meta['BLOCK_SIZE']),)
     
     # Launch kernel
@@ -651,7 +668,7 @@ def crop(
     
     # Calculate total elements and grid size
     total_elements = batch_size * channels * height * width
-    BLOCK_SIZE = 1024
+    BLOCK_SIZE = DEFAULT_BLOCK_SIZE
     grid = lambda meta: (triton.cdiv(total_elements, meta['BLOCK_SIZE']),)
     
     # Launch kernel
@@ -785,7 +802,7 @@ def horizontal_flip(
     
     # Calculate total elements and grid size
     total_elements = batch_size * channels * height * width
-    BLOCK_SIZE = 1024
+    BLOCK_SIZE = DEFAULT_BLOCK_SIZE
     grid = lambda meta: (triton.cdiv(total_elements, meta['BLOCK_SIZE']),)
     
     # Launch kernel
@@ -802,6 +819,323 @@ def horizontal_flip(
     )
     
     return output
+
+
+def _get_inverse_affine_matrix(
+    center: torch.Tensor,
+    angle: torch.Tensor,
+    translate: torch.Tensor,
+    scale: torch.Tensor,
+    shear: torch.Tensor,
+) -> torch.Tensor:
+    """
+    Compute inverse affine matrix for rotation, translation, scale, and shear.
+    
+    Args:
+        center: Center of rotation [N, 2] (x, y)
+        angle: Rotation angle in degrees [N]
+        translate: Translation [N, 2] (dx, dy)
+        scale: Scale factor [N]
+        shear: Shear angle in degrees [N, 2] (sx, sy)
+        
+    Returns:
+        Inverse affine matrix [N, 6] (a, b, c, d, e, f)
+    """
+    # Convert angles to radians
+    angle_rad = angle * (3.141592653589793 / 180.0)
+    shear_rad = shear * (3.141592653589793 / 180.0)
+    
+    # Let's compute components directly
+    
+    cx, cy = center[:, 0], center[:, 1]
+    tx, ty = translate[:, 0], translate[:, 1]
+    sx, sy = scale, scale  # Isotropic scale for now
+    shx, shy = shear[:, 0], shear[:, 1]
+    
+    # Rotation
+    cos_a = torch.cos(angle_rad)
+    sin_a = torch.sin(angle_rad)
+    
+    # Shear
+    tan_shx = torch.tan(shear_rad[:, 0])
+    tan_shy = torch.tan(shear_rad[:, 1])
+    
+    # Scale (Inverse)
+    # inv_sx = 1.0 / sx
+    # inv_sy = 1.0 / sy
+    
+    # Build Inverse Matrix Elements
+    # We construct 3x3 matrices and invert them.
+    
+    batch_size = center.shape[0]
+    device = center.device
+    dtype = center.dtype
+    
+    # 1. Translate to center (T1)
+    # [[1, 0, -cx], [0, 1, -cy], [0, 0, 1]]
+    T1 = torch.eye(3, device=device, dtype=dtype).unsqueeze(0).repeat(batch_size, 1, 1)
+    T1[:, 0, 2] = -cx
+    T1[:, 1, 2] = -cy
+    
+    # 2. Rotate (R)
+    # [[cos, -sin, 0], [sin, cos, 0], [0, 0, 1]]
+    R = torch.eye(3, device=device, dtype=dtype).unsqueeze(0).repeat(batch_size, 1, 1)
+    R[:, 0, 0] = cos_a
+    R[:, 0, 1] = -sin_a
+    R[:, 1, 0] = sin_a
+    R[:, 1, 1] = cos_a
+    
+    # 3. Shear (Sh)
+    # [[1, tan_x, 0], [tan_y, 1, 0], [0, 0, 1]]
+    Sh = torch.eye(3, device=device, dtype=dtype).unsqueeze(0).repeat(batch_size, 1, 1)
+    Sh[:, 0, 1] = tan_shx
+    Sh[:, 1, 0] = tan_shy
+    
+    # 4. Scale (S)
+    # [[sx, 0, 0], [0, sy, 0], [0, 0, 1]]
+    S = torch.eye(3, device=device, dtype=dtype).unsqueeze(0).repeat(batch_size, 1, 1)
+    S[:, 0, 0] = sx
+    S[:, 1, 1] = sy
+    
+    # 5. Translate back + offset (T2)
+    # [[1, 0, cx + tx], [0, 1, cy + ty], [0, 0, 1]]
+    T2 = torch.eye(3, device=device, dtype=dtype).unsqueeze(0).repeat(batch_size, 1, 1)
+    T2[:, 0, 2] = cx + tx
+    T2[:, 1, 2] = cy + ty
+    
+    # Compose: M = T2 @ S @ Sh @ R @ T1
+    # Note: Matrix multiplication order depends on column vs row vectors.
+    # PyTorch uses column vectors: v' = M v
+    # So we apply from right to left: T2 * (S * (Sh * (R * (T1 * v))))
+    
+    M = torch.bmm(T2, torch.bmm(S, torch.bmm(Sh, torch.bmm(R, T1))))
+    
+    # Invert to get input -> output mapping for the kernel (inverse warping).
+    M_inv = torch.linalg.inv(M)
+    
+    # Extract first 2 rows (2x3)
+    # [a, b, c]
+    # [d, e, f]
+    return M_inv[:, :2, :].reshape(batch_size, 6)
+
+
+def _apply_affine_matrix(
+    image: torch.Tensor,
+    matrix: torch.Tensor,
+    interpolation: str = "bilinear",
+    fill: float | Sequence[float] | None = 0.0,
+) -> torch.Tensor:
+    """
+    Apply affine transformation given an inverse affine matrix (internal helper).
+    
+    Args:
+        image: Input image tensor [N, C, H, W]
+        matrix: Inverse affine matrix [N, 6] or [6]
+                Layout: [a, b, c, d, e, f]
+        interpolation: Interpolation mode. Either "nearest" or "bilinear".
+        fill: Fill value for out-of-bounds pixels. Default: 0.0
+        
+    Returns:
+        Transformed image [N, C, H, W]
+        
+    Note:
+        This is an internal function. Use `affine()` for the public API.
+    """
+    _validate_image_tensor(image, "image")
+    
+    # Accept both strings and InterpolationMode enum values
+    valid_modes = ["nearest", "bilinear"]
+    if str(interpolation).lower() not in valid_modes:
+        raise ValueError(f"Only 'nearest' and 'bilinear' interpolation are supported, got {interpolation}")
+
+    # Convert to string and then to integer mode for kernel
+    interpolation_str = str(interpolation).lower()
+    interpolation_mode = 0 if interpolation_str == "nearest" else 1
+    
+    batch_size, channels, height, width = image.shape
+    
+    # Handle matrix
+    if matrix.ndim == 1 and matrix.shape[0] == 6:
+        # Broadcast to batch
+        matrix = matrix.unsqueeze(0).repeat(batch_size, 1)
+    elif matrix.ndim == 2 and matrix.shape == (batch_size, 6):
+        pass
+    else:
+        raise ValueError(f"matrix must be shape (6,) or ({batch_size}, 6), got {matrix.shape}")
+    
+    matrix = matrix.to(dtype=torch.float32, device=image.device)
+    
+    # Handle fill value
+    if isinstance(fill, (list, tuple)):
+        # If multiple values provided, take the first one for now (since kernel supports scalar fill)
+        # TODO: Support per-channel fill values
+        fill_val = float(fill[0])
+    elif fill is None:
+        fill_val = 0.0
+    else:
+        fill_val = float(fill)
+    
+    # Allocate output
+    output = torch.empty_like(image)
+    
+    # Grid
+    total_elements = batch_size * channels * height * width
+    BLOCK_SIZE = DEFAULT_BLOCK_SIZE
+    grid = lambda meta: (triton.cdiv(total_elements, meta['BLOCK_SIZE']),)
+    
+    # Launch kernel
+    affine_transform_kernel[grid](
+        image,
+        output,
+        batch_size,
+        channels,
+        height,
+        width,
+        height,
+        width,
+        matrix,
+        fill_val,
+        interpolation_mode,
+        BLOCK_SIZE=BLOCK_SIZE,
+    )
+    
+    return output
+
+
+def affine(
+    image: torch.Tensor,
+    angle: float | torch.Tensor,
+    translate: list[float] | torch.Tensor,
+    scale: float | torch.Tensor,
+    shear: list[float] | torch.Tensor,
+    interpolation = InterpolationMode.BILINEAR,
+    fill: float | Sequence[float] | None = 0.0,
+    center: list[float] | None = None,
+) -> torch.Tensor:
+    """
+    Apply affine transformation to the image.
+    
+    Matches torchvision.transforms.v2.functional.affine API.
+    Reference: torchvision/transforms/v2/functional/_geometry.py
+    
+    Args:
+        image: Input image tensor [N, C, H, W]
+        angle: Rotation angle in degrees (scalar or [N])
+        translate: Translation [dx, dy] or [N, 2]
+        scale: Scale factor (scalar or [N])
+        shear: Shear angles [sx, sy] or [N, 2] in degrees
+        interpolation: "bilinear" (default)
+        fill: Fill value for out-of-bounds pixels
+        center: Center of rotation [x, y]. Default is center of image.
+        
+    Returns:
+        Transformed image [N, C, H, W]
+        
+    Example:
+        ```python
+        img = torch.rand(2, 3, 224, 224, device='cuda')
+        # Rotate 45 degrees, translate, scale
+        result = affine(img, angle=45, translate=[10, 20], scale=1.2, shear=[0, 0])
+        ```
+    """
+    _validate_image_tensor(image, "image")
+    
+    batch_size, _, height, width = image.shape
+    
+    # Convert parameters to tensors
+    angle_tensor = _convert_to_tensor(angle, batch_size, torch.float32, image.device, "angle")
+    
+    # Handle translate
+    if isinstance(translate, torch.Tensor):
+        if translate.ndim == 1 and translate.shape[0] == 2:
+            translate_tensor = translate.unsqueeze(0).repeat(batch_size, 1).to(device=image.device, dtype=torch.float32)
+        elif translate.ndim == 2 and translate.shape == (batch_size, 2):
+            translate_tensor = translate.to(device=image.device, dtype=torch.float32)
+        else:
+            raise ValueError(f"translate tensor must be shape (2,) or ({batch_size}, 2), got {translate.shape}")
+    else:
+        if len(translate) != 2:
+            raise ValueError(f"translate must have 2 values, got {len(translate)}")
+        translate_tensor = torch.tensor([translate], device=image.device, dtype=torch.float32).repeat(batch_size, 1)
+    
+    scale_tensor = _convert_to_tensor(scale, batch_size, torch.float32, image.device, "scale")
+    
+    # Handle shear
+    if isinstance(shear, torch.Tensor):
+        if shear.ndim == 1 and shear.shape[0] == 2:
+            shear_tensor = shear.unsqueeze(0).repeat(batch_size, 1).to(device=image.device, dtype=torch.float32)
+        elif shear.ndim == 2 and shear.shape == (batch_size, 2):
+            shear_tensor = shear.to(device=image.device, dtype=torch.float32)
+        else:
+            raise ValueError(f"shear tensor must be shape (2,) or ({batch_size}, 2), got {shear.shape}")
+    else:
+        if len(shear) != 2:
+            raise ValueError(f"shear must have 2 values, got {len(shear)}")
+        shear_tensor = torch.tensor([shear], device=image.device, dtype=torch.float32).repeat(batch_size, 1)
+    
+    # Handle center
+    if center is None:
+        cx = width * 0.5
+        cy = height * 0.5
+        center_tensor = torch.tensor([cx, cy], device=image.device, dtype=torch.float32).repeat(batch_size, 1)
+    else:
+        if len(center) != 2:
+            raise ValueError(f"center must have 2 values, got {len(center)}")
+        center_tensor = torch.tensor([center], device=image.device, dtype=torch.float32).repeat(batch_size, 1)
+    
+    # Compute inverse affine matrix
+    matrix = _get_inverse_affine_matrix(
+        center_tensor,
+        angle_tensor,
+        translate_tensor,
+        scale_tensor,
+        shear_tensor
+    )
+    
+    return _apply_affine_matrix(image, matrix, interpolation=interpolation, fill=fill)
+
+
+def rotate(
+    image: torch.Tensor,
+    angle: float | torch.Tensor,
+    interpolation = InterpolationMode.BILINEAR,
+    expand: bool = False,
+    center: list[float] | None = None,
+    fill: float | Sequence[float] | None = 0.0,
+) -> torch.Tensor:
+    """
+    Rotate the image by angle.
+    
+    Args:
+        image: Input image [N, C, H, W]
+        angle: Rotation angle in degrees (scalar or [N])
+        interpolation: "bilinear" (default)
+        expand: Whether to expand the output to hold the whole image (not yet impl)
+        center: Center of rotation [x, y]. Default is center of image.
+        fill: Fill value
+        
+    Returns:
+        Rotated image
+    """
+    _validate_image_tensor(image, "image")
+    
+    if expand:
+        raise NotImplementedError("expand=True is not yet supported in Triton-Augment")
+    
+    batch_size, _, height, width = image.shape
+    
+    # Use affine with rotation only (no translation, scale=1, shear=0)
+    return affine(
+        image,
+        angle=angle,
+        translate=[0.0, 0.0],
+        scale=1.0,
+        shear=[0.0, 0.0],
+        interpolation=interpolation,
+        fill=fill,
+        center=center
+    )
+
 
 
 def fused_augment(
@@ -1000,6 +1334,8 @@ __all__ = [
     'crop',
     'center_crop',
     'horizontal_flip',
+    'affine',
+    'rotate',
     # Fused operations
     'fused_augment',
 ]

@@ -173,3 +173,160 @@ def horizontal_flip_kernel(
     # Load from flipped input position, store to output
     pixel = tl.load(input_ptr + input_offset, mask=mask, other=0.0)
     tl.store(output_ptr + offsets, pixel, mask=mask)
+
+
+@triton.jit
+def affine_transform_kernel(
+    input_ptr,
+    output_ptr,
+    batch_size,
+    channels,
+    input_height,
+    input_width,
+    output_height,
+    output_width,
+    matrix_ptr,       # Pointer to inverse affine matrices [N, 6] (float32)
+    fill_value,       # Constant value for out-of-bounds pixels
+    interpolation_mode,  # 0: nearest, 1: bilinear
+    BLOCK_SIZE: tl.constexpr,
+):
+    """
+    Apply affine transformation to a batch of images.
+    
+    The transformation is defined by a 2x3 matrix M (inverse affine matrix).
+    For each output pixel (x', y'), we compute the input coordinate (x, y):
+        [x, y, 1]^T = M * [x', y', 1]^T
+    
+    Then we sample the input image at (x, y) using bilinear interpolation.
+    
+    Args:
+        input_ptr: Pointer to input tensor [N, C, H_in, W_in]
+        output_ptr: Pointer to output tensor [N, C, H_out, W_out]
+        batch_size: Number of images
+        channels: Number of channels
+        input_height, input_width: Input dimensions
+        output_height, output_width: Output dimensions
+        matrix_ptr: Pointer to inverse affine matrices [N, 6]
+                    Layout: [a, b, c, d, e, f] corresponding to:
+                    [[a, b, c],
+                     [d, e, f]]
+        fill_value: Value to use for out-of-bounds pixels
+        BLOCK_SIZE: Block size for Triton kernel
+    """
+    # Total number of elements in output
+    total_elements = batch_size * channels * output_height * output_width
+    
+    # Get program ID
+    pid = tl.program_id(axis=0)
+    block_start = pid * BLOCK_SIZE
+    offsets = block_start + tl.arange(0, BLOCK_SIZE)
+    mask = offsets < total_elements
+    
+    # Decompose flat offset into (n, c, h_out, w_out)
+    output_spatial_size = output_height * output_width
+    n = offsets // (channels * output_spatial_size)
+    remainder = offsets % (channels * output_spatial_size)
+    c = remainder // output_spatial_size
+    remainder = remainder % output_spatial_size
+    y_out = remainder // output_width  # Row index (height)
+    x_out = remainder % output_width   # Column index (width)
+    
+    # Load affine matrix for this image
+    # Matrix layout: [N, 6] where each row is [a, b, c, d, e, f]
+    # Note: Threads may access different matrix rows (non-coalesced), but the small
+    # size (24 bytes) and GPU caching make this acceptable.
+
+    
+    # Pointer arithmetic for matrix
+    # matrix_ptr + n * 6 + offset
+    mat_base = matrix_ptr + n * 6
+    
+    # Load matrix elements
+    a = tl.load(mat_base + 0, mask=mask, other=1.0)
+    b = tl.load(mat_base + 1, mask=mask, other=0.0)
+    c_tx = tl.load(mat_base + 2, mask=mask, other=0.0)
+    d = tl.load(mat_base + 3, mask=mask, other=0.0)
+    e = tl.load(mat_base + 4, mask=mask, other=1.0)
+    f_ty = tl.load(mat_base + 5, mask=mask, other=0.0)
+    
+    # Calculate input coordinates
+    # Note: We use center-based coordinates for rotation usually, but the matrix passed in
+    # should already handle the center offset adjustments.
+    # The standard definition is:
+    # x_in = a * x_out + b * y_out + c
+    # y_in = d * x_out + e * y_out + f
+    
+    # Cast to float32 for calculation
+    x_out_f = x_out.to(tl.float32)
+    y_out_f = y_out.to(tl.float32)
+    
+    x_in = a * x_out_f + b * y_out_f + c_tx
+    y_in = d * x_out_f + e * y_out_f + f_ty
+
+    input_batch_offset = n * channels * input_height * input_width
+    input_channel_offset = c * input_height * input_width
+    base_offset = input_batch_offset + input_channel_offset
+
+    # Choose interpolation method
+    if interpolation_mode == 0:  # Nearest neighbor
+        # Round to nearest integer coordinates
+        x_nearest = tl.math.round(x_in).to(tl.int32)
+        y_nearest = tl.math.round(y_in).to(tl.int32)
+
+        # Check bounds
+        valid = (x_nearest >= 0) & (x_nearest < input_width) & (y_nearest >= 0) & (y_nearest < input_height)
+
+        # Load nearest pixel
+        mask_valid = mask & valid
+        idx = base_offset + y_nearest * input_width + x_nearest
+        pixel = tl.load(input_ptr + idx, mask=mask_valid, other=fill_value)
+
+    else:  # Bilinear interpolation (mode == 1)
+        # 1. Get integer coordinates (floor)
+        x0 = tl.math.floor(x_in).to(tl.int32)
+        y0 = tl.math.floor(y_in).to(tl.int32)
+        x1 = x0 + 1
+        y1 = y0 + 1
+
+        # 2. Get fractional parts
+        dx = x_in - x0
+        dy = y_in - y0
+
+        # 3. Check bounds for 4 neighbors
+        valid_x0 = (x0 >= 0) & (x0 < input_width)
+        valid_y0 = (y0 >= 0) & (y0 < input_height)
+        valid_x1 = (x1 >= 0) & (x1 < input_width)
+        valid_y1 = (y1 >= 0) & (y1 < input_height)
+
+        # Load 4 neighbors with fill_value for out-of-bounds pixels
+        # Top-left (x0, y0)
+        mask_00 = mask & valid_x0 & valid_y0
+        idx_00 = base_offset + y0 * input_width + x0
+        p00 = tl.load(input_ptr + idx_00, mask=mask_00, other=fill_value)
+
+        # Top-right (x1, y0)
+        mask_10 = mask & valid_x1 & valid_y0
+        idx_10 = base_offset + y0 * input_width + x1
+        p10 = tl.load(input_ptr + idx_10, mask=mask_10, other=fill_value)
+
+        # Bottom-left (x0, y1)
+        mask_01 = mask & valid_x0 & valid_y1
+        idx_01 = base_offset + y1 * input_width + x0
+        p01 = tl.load(input_ptr + idx_01, mask=mask_01, other=fill_value)
+
+        # Bottom-right (x1, y1)
+        mask_11 = mask & valid_x1 & valid_y1
+        idx_11 = base_offset + y1 * input_width + x1
+        p11 = tl.load(input_ptr + idx_11, mask=mask_11, other=fill_value)
+
+        # Bilinear interpolation weights
+        w00 = (1.0 - dx) * (1.0 - dy)
+        w10 = dx * (1.0 - dy)
+        w01 = (1.0 - dx) * dy
+        w11 = dx * dy
+
+        # Perform bilinear interpolation
+        pixel = p00 * w00 + p10 * w10 + p01 * w01 + p11 * w11
+
+    # Store result
+    tl.store(output_ptr + offsets, pixel, mask=mask)
