@@ -251,16 +251,14 @@ def round_rne(val):
     Round to nearest integer using Round-to-Nearest-Even (RNE).
     Matches PyTorch/CUDA behavior for tie-breaking (e.g., 0.5->0, 1.5->2).
     """
-    # 1. Floor and Fraction
+    # Floor and fraction
     val_floor = tl.math.floor(val)
     val_frac = val - val_floor
     
-    # 2. Check if close to 0.5 (within epsilon)
-    # Use 1e-4 to handle accumulated float32 errors in complex transformations
-    # (rotation + translation + shear can accumulate errors beyond 1e-5)
+    # Check if close to 0.5 (within epsilon for float32 precision)
     is_half = tl.abs(val_frac - 0.5) < 1e-4
     
-    # Snap path: Round to nearest even integer based on floor
+    # RNE path: Round to nearest even integer
     # If floor is even, keep floor (e.g. 0.5 -> 0)
     # If floor is odd, round up (e.g. 1.5 -> 2)
     val_floor_int = val_floor.to(tl.int32)
@@ -270,7 +268,7 @@ def round_rne(val):
     # Standard path: Standard round-half-up (floor(x + 0.5))
     standard_result = tl.math.floor(val + 0.5).to(tl.int32)
     
-    # Select based on is_half using tl.where (element-wise)
+    # Select based on is_half
     return tl.where(is_half, snap_result, standard_result)
 
 
