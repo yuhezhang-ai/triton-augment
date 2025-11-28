@@ -256,7 +256,8 @@ def round_rne(val):
     val_frac = val - val_floor
     
     # 2. Check if close to 0.5 (within epsilon)
-    # Use 1e-4 to handle float32 noise
+    # Use 1e-4 to handle accumulated float32 errors in complex transformations
+    # (rotation + translation + shear can accumulate errors beyond 1e-5)
     is_half = tl.abs(val_frac - 0.5) < 1e-4
     
     # Snap path: Round to nearest even integer based on floor
