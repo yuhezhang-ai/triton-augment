@@ -401,23 +401,24 @@ def affine_transform_kernel(
     y_out_f = y_out.to(tl.float32)
 
     # Step 1: Convert to centered coordinates (matching torchvision's base_grid)
-    half_w = output_width * 0.5
-    half_h = output_height * 0.5
-    x_centered = x_out_f - half_w + 0.5
-    y_centered = y_out_f - half_h + 0.5
+    # base_grid uses output dimensions
+    half_ow = output_width * 0.5
+    half_oh = output_height * 0.5
+    x_centered = x_out_f - half_ow + 0.5
+    y_centered = y_out_f - half_oh + 0.5
 
     # Step 2: Apply matrix with rescaling (as torchvision does)
-    # torchvision: rescaled_theta = theta.T / [0.5*w, 0.5*h]
+    # CRITICAL: torchvision rescales by INPUT dimensions, not output!
+    # rescaled_theta = theta.T / [0.5*input_w, 0.5*input_h]
     # output_grid = base_grid @ rescaled_theta
-    # This means: x_norm = (a*x + b*y + c) / (0.5*w)
-    #             y_norm = (d*x + e*y + f) / (0.5*h)
-    x_norm = (a * x_centered + b * y_centered + c_tx) / half_w
-    y_norm = (d * x_centered + e * y_centered + f_ty) / half_h
+    half_iw = input_width * 0.5
+    half_ih = input_height * 0.5
+    x_norm = (a * x_centered + b * y_centered + c_tx) / half_iw
+    y_norm = (d * x_centered + e * y_centered + f_ty) / half_ih
 
     # Step 3: Convert normalized coords to input pixel coords
     # grid_sample with align_corners=False:
     # pixel = ((normalized + 1) * size - 1) / 2
-    # For input image of same size as output:
     x_in = ((x_norm + 1.0) * input_width - 1.0) * 0.5
     y_in = ((y_norm + 1.0) * input_height - 1.0) * 0.5
 
