@@ -246,6 +246,28 @@ def sample_bilinear(
 
 
 @triton.jit
+def round_rne(val):
+    """
+    Round to nearest integer using Round-to-Nearest-Even (RNE).
+    Matches PyTorch/CUDA behavior for tie-breaking (e.g., 0.5->0, 1.5->2).
+    """
+    # 1. Standard round-half-up (floor(x + 0.5))
+    val_floor = tl.math.floor(val)
+    val_frac = val - val_floor
+    val_half_up = tl.math.floor(val + 0.5)
+    
+    # 2. Check if exactly 0.5 (within epsilon)
+    is_half = tl.abs(val_frac - 0.5) < 1e-6
+    
+    # 3. Check if rounded value is odd
+    val_half_up_int = val_half_up.to(tl.int32)
+    is_odd = (val_half_up_int % 2) != 0
+    
+    # 4. If half and odd, subtract 1 to round to even
+    return val_half_up_int - (is_half & is_odd).to(tl.int32)
+
+
+@triton.jit
 def sample_nearest(
     input_ptr,
     x_in, y_in,
@@ -270,24 +292,6 @@ def sample_nearest(
     """
     # Round to nearest integer coordinates using Round-to-Nearest-Even (RNE)
     # This matches PyTorch/CUDA behavior for tie-breaking (e.g., 0.5->0, 1.5->2)
-    
-    # Helper for RNE
-    def round_rne(val):
-        # 1. Standard round-half-up (floor(x + 0.5))
-        val_floor = tl.math.floor(val)
-        val_frac = val - val_floor
-        val_half_up = tl.math.floor(val + 0.5)
-        
-        # 2. Check if exactly 0.5 (within epsilon)
-        is_half = tl.abs(val_frac - 0.5) < 1e-6
-        
-        # 3. Check if rounded value is odd
-        val_half_up_int = val_half_up.to(tl.int32)
-        is_odd = (val_half_up_int % 2) != 0
-        
-        # 4. If half and odd, subtract 1 to round to even
-        return val_half_up_int - (is_half & is_odd).to(tl.int32)
-
     x_nearest = round_rne(x_in)
     y_nearest = round_rne(y_in)
 
