@@ -246,33 +246,6 @@ def sample_bilinear(
 
 
 @triton.jit
-def round_rne(val):
-    """
-    Round to nearest integer using Round-to-Nearest-Even (RNE).
-    Matches PyTorch/CUDA behavior for tie-breaking (e.g., 0.5->0, 1.5->2).
-    """
-    # Floor and fraction
-    val_floor = tl.math.floor(val)
-    val_frac = val - val_floor
-    
-    # Check if close to 0.5 (within epsilon for float32 precision)
-    is_half = tl.abs(val_frac - 0.5) < 1e-4
-    
-    # RNE path: Round to nearest even integer
-    # If floor is even, keep floor (e.g. 0.5 -> 0)
-    # If floor is odd, round up (e.g. 1.5 -> 2)
-    val_floor_int = val_floor.to(tl.int32)
-    is_odd = (val_floor_int % 2) != 0
-    snap_result = val_floor_int + is_odd.to(tl.int32)
-    
-    # Standard path: Standard round-half-up (floor(x + 0.5))
-    standard_result = tl.math.floor(val + 0.5).to(tl.int32)
-    
-    # Select based on is_half
-    return tl.where(is_half, snap_result, standard_result)
-
-
-@triton.jit
 def sample_nearest(
     input_ptr,
     x_in, y_in,
@@ -295,10 +268,10 @@ def sample_nearest(
     Returns:
         Nearest pixel value
     """
-    # Round to nearest integer coordinates using Round-to-Nearest-Even (RNE)
-    # This matches PyTorch/CUDA behavior for tie-breaking (e.g., 0.5->0, 1.5->2)
-    x_nearest = round_rne(x_in)
-    y_nearest = round_rne(y_in)
+    # Round to nearest integer using round-half-up: floor(x + 0.5)
+    # This matches PyTorch's grid_sample nearest neighbor behavior
+    x_nearest = tl.math.floor(x_in + 0.5).to(tl.int32)
+    y_nearest = tl.math.floor(y_in + 0.5).to(tl.int32)
 
     # Check bounds
     valid = (x_nearest >= 0) & (x_nearest < input_width) & (y_nearest >= 0) & (y_nearest < input_height)

@@ -78,56 +78,43 @@ if device == 'cuda':
             print(f"({x_out:3}, {y_out:3})      {tv_str:<20} {ta_str:<20}")
         
         print()
-        print("=== Detailed Analysis of First Mismatch ===")
-        n, c, y_out, x_out = indices[0][0].item(), indices[1][0].item(), indices[2][0].item(), indices[3][0].item()
-        
-        tv_val = tv_result[n, c, y_out, x_out].item()
-        ta_val = ta_result[n, c, y_out, x_out].item()
-        
-        tv_src = decode_pixel(tv_val)
-        ta_src = decode_pixel(ta_val)
-        
-        print(f"Output pixel: ({x_out}, {y_out})")
-        print(f"Torchvision sampled from: {tv_src} (value={tv_val})")
-        print(f"Triton sampled from: {ta_src} (value={ta_val})")
-        print()
-        
-        # Manual calculation of where we SHOULD sample from
-        # For 90-degree rotation around center:
-        # The inverse transform maps (x_out, y_out) -> (x_in, y_in)
-        # For 90 deg CCW rotation: x_in = y_out - cy + cx, y_in = -x_out + cx + cy
-        # But we need the INVERSE (to find where to sample from)
-        # For 90 deg rotation, inverse is -90 deg: x_in = -y_out + cy + cx, y_in = x_out - cx + cy
-        # Actually let's just trace through the math...
+        print("=== Detailed Analysis of First 5 Mismatches ===")
         
         cx, cy = width / 2, height / 2  # 50, 55.5
         
-        # Step 1: Center the output coordinate
-        x_centered = x_out - cx + 0.5  # Torchvision's base_grid formula
-        y_centered = y_out - cy + 0.5
-        
-        # Step 2: Apply inverse rotation (90 deg rotation -> inverse is [[0,1],[-1,0]])
-        # With center=[0,0] in translated coords, matrix is [0, 1, 0, -1, 0, 0]
-        # x_transformed = 0*x + 1*y + 0 = y_centered
-        # y_transformed = -1*x + 0*y + 0 = -x_centered
-        x_transformed = y_centered
-        y_transformed = -x_centered
-        
-        # Step 3: Normalize by half dimensions
-        x_norm = x_transformed / (width / 2)
-        y_norm = y_transformed / (height / 2)
-        
-        # Step 4: Convert normalized to pixel coords (grid_sample formula)
-        x_in = ((x_norm + 1) * width - 1) / 2
-        y_in = ((y_norm + 1) * height - 1) / 2
-        
-        print(f"Manual calculation:")
-        print(f"  Step 1 - Centered: ({x_centered}, {y_centered})")
-        print(f"  Step 2 - After matrix: ({x_transformed}, {y_transformed})")
-        print(f"  Step 3 - Normalized: ({x_norm:.6f}, {y_norm:.6f})")
-        print(f"  Step 4 - Input pixel coords: ({x_in:.6f}, {y_in:.6f})")
-        print(f"  Rounded (Python): ({round(x_in)}, {round(y_in)})")
-        print(f"  Floor+0.5: ({int(x_in + 0.5)}, {int(y_in + 0.5)})")
+        for idx in range(min(5, len(indices[0]))):
+            n, c, y_out, x_out = indices[0][idx].item(), indices[1][idx].item(), indices[2][idx].item(), indices[3][idx].item()
+            
+            tv_val = tv_result[n, c, y_out, x_out].item()
+            ta_val = ta_result[n, c, y_out, x_out].item()
+            
+            tv_src = decode_pixel(tv_val)
+            ta_src = decode_pixel(ta_val)
+            
+            print(f"\n--- Mismatch #{idx+1}: Output pixel ({x_out}, {y_out}) ---")
+            print(f"Torchvision sampled from: {tv_src}")
+            print(f"Triton sampled from: {ta_src}")
+            
+            # Step 1: Center the output coordinate
+            x_centered = x_out - cx + 0.5  # Torchvision's base_grid formula
+            y_centered = y_out - cy + 0.5
+            
+            # Step 2: Apply inverse rotation (90 deg rotation -> inverse is [[0,1],[-1,0]])
+            # With center=[0,0] in translated coords, matrix is [0, 1, 0, -1, 0, 0]
+            x_transformed = y_centered
+            y_transformed = -x_centered
+            
+            # Step 3: Normalize by half dimensions
+            x_norm = x_transformed / (width / 2)
+            y_norm = y_transformed / (height / 2)
+            
+            # Step 4: Convert normalized to pixel coords (grid_sample formula)
+            x_in = ((x_norm + 1) * width - 1) / 2
+            y_in = ((y_norm + 1) * height - 1) / 2
+            
+            print(f"Input coords: ({x_in:.6f}, {y_in:.6f})")
+            print(f"  floor(x+0.5)={int(x_in + 0.5 if x_in >= 0 else x_in - 0.5)}, floor(y+0.5)={int(y_in + 0.5 if y_in >= 0 else y_in - 0.5)}")
+            print(f"  Python round: ({round(x_in)}, {round(y_in)})")
         
     else:
         print("All pixels match!")
