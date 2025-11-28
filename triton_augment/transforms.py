@@ -1740,19 +1740,17 @@ class TritonRandomAffine(nn.Module):
             scale, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame
         )
         
-        # Center
-        if self.center is not None:
-            center_tensor = torch.tensor(self.center, device=normalized_img.device, dtype=torch.float32).repeat(total_samples, 1)
-        else:
-            cx = width * 0.5
-            cy = height * 0.5
-            center_tensor = torch.tensor([cx, cy], device=normalized_img.device, dtype=torch.float32).repeat(total_samples, 1)
-            
-        # Compute Matrix
-        matrix = F._get_inverse_affine_matrix(center_tensor, angle, translate, scale, shear)
-        
-        # Apply
-        output = F._apply_affine_matrix(normalized_img, matrix, interpolation=self.interpolation, fill=self.fill)
+        # Apply affine transform using F.affine
+        output = F.affine(
+            normalized_img,
+            angle=angle,
+            translate=translate,
+            scale=scale,
+            shear=shear,
+            interpolation=self.interpolation,
+            fill=self.fill,
+            center=self.center
+        )
         
         return _reshape_to_original(output, original_shape, was_3d)
         
