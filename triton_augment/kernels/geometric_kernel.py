@@ -268,15 +268,28 @@ def sample_nearest(
     Returns:
         Nearest pixel value
     """
-    # Round to nearest integer coordinates
-    # We use round-half-away-from-zero to match PyTorch/CUDA behavior
-    # floor(x + 0.5) implements round-half-up, which differs for negative numbers (e.g. -0.5 -> 0 instead of -1)
-    # So we use: x + 0.5 if x >= 0 else x - 0.5, then truncate
-    x_rounded = x_in + tl.where(x_in >= 0, 0.5, -0.5)
-    y_rounded = y_in + tl.where(y_in >= 0, 0.5, -0.5)
+    # Round to nearest integer coordinates using Round-to-Nearest-Even (RNE)
+    # This matches PyTorch/CUDA behavior for tie-breaking (e.g., 0.5->0, 1.5->2)
     
-    x_nearest = x_rounded.to(tl.int32)
-    y_nearest = y_rounded.to(tl.int32)
+    # Helper for RNE
+    def round_rne(val):
+        # 1. Standard round-half-up (floor(x + 0.5))
+        val_floor = tl.math.floor(val)
+        val_frac = val - val_floor
+        val_half_up = tl.math.floor(val + 0.5)
+        
+        # 2. Check if exactly 0.5 (within epsilon)
+        is_half = tl.abs(val_frac - 0.5) < 1e-6
+        
+        # 3. Check if rounded value is odd
+        val_half_up_int = val_half_up.to(tl.int32)
+        is_odd = (val_half_up_int % 2) != 0
+        
+        # 4. If half and odd, subtract 1 to round to even
+        return val_half_up_int - (is_half & is_odd).to(tl.int32)
+
+    x_nearest = round_rne(x_in)
+    y_nearest = round_rne(y_in)
 
     # Check bounds
     valid = (x_nearest >= 0) & (x_nearest < input_width) & (y_nearest >= 0) & (y_nearest < input_height)
