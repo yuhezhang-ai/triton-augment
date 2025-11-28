@@ -270,8 +270,8 @@ def sample_nearest(
     """
     # Round to nearest integer using round-to-nearest-even (banker's rounding)
     # tl.math.rint() matches Python's round() behavior
-    x_nearest = tl.math.rint(x_in).to(tl.int32)
-    y_nearest = tl.math.rint(y_in).to(tl.int32)
+    x_nearest = tl.extra.cuda.libdevice.rint(x_in).to(tl.int32)
+    y_nearest = tl.extra.cuda.libdevice.rint(y_in).to(tl.int32)
 
     # Check bounds
     valid = (x_nearest >= 0) & (x_nearest < input_width) & (y_nearest >= 0) & (y_nearest < input_height)
