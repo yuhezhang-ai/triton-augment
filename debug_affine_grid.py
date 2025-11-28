@@ -78,6 +78,18 @@ if device == 'cuda':
             print(f"({x_out:3}, {y_out:3})      {tv_str:<20} {ta_str:<20}")
         
         print()
+        
+        # Get the actual matrix that triton uses
+        from triton_augment.functional import _get_inverse_affine_matrix
+        center_t = torch.tensor([[0.0, 0.0]], device=device)
+        angle_t = torch.tensor([angle], device=device)
+        translate_t = torch.tensor([translate], device=device)
+        scale_t = torch.tensor([scale], device=device)
+        shear_t = torch.tensor([shear], device=device)
+        matrix = _get_inverse_affine_matrix(center_t, angle_t, translate_t, scale_t, shear_t)
+        a, b, c_tx, d, e, f_ty = matrix[0].tolist()
+        print(f"Triton matrix: [{a}, {b}, {c_tx}, {d}, {e}, {f_ty}]")
+        
         print("=== Detailed Analysis of First 5 Mismatches ===")
         
         cx, cy = width / 2, height / 2  # 50, 55.5
@@ -95,26 +107,28 @@ if device == 'cuda':
             print(f"Torchvision sampled from: {tv_src}")
             print(f"Triton sampled from: {ta_src}")
             
-            # Step 1: Center the output coordinate
-            x_centered = x_out - cx + 0.5  # Torchvision's base_grid formula
-            y_centered = y_out - cy + 0.5
+            # Trace through EXACTLY what the kernel does:
+            # Step 1: Center the output coordinate (kernel lines 403-406)
+            half_ow = width * 0.5
+            half_oh = height * 0.5
+            x_centered = x_out - half_ow + 0.5
+            y_centered = y_out - half_oh + 0.5
             
-            # Step 2: Apply inverse rotation (90 deg rotation -> inverse is [[0,1],[-1,0]])
-            # With center=[0,0] in translated coords, matrix is [0, 1, 0, -1, 0, 0]
-            x_transformed = y_centered
-            y_transformed = -x_centered
+            # Step 2: Apply matrix with rescaling (kernel lines 414-417)
+            half_iw = width * 0.5
+            half_ih = height * 0.5
+            x_norm = (a * x_centered + b * y_centered + c_tx) / half_iw
+            y_norm = (d * x_centered + e * y_centered + f_ty) / half_ih
             
-            # Step 3: Normalize by half dimensions
-            x_norm = x_transformed / (width / 2)
-            y_norm = y_transformed / (height / 2)
+            # Step 3: Convert normalized to pixel coords (kernel lines 422-423)
+            x_in = ((x_norm + 1.0) * width - 1.0) * 0.5
+            y_in = ((y_norm + 1.0) * height - 1.0) * 0.5
             
-            # Step 4: Convert normalized to pixel coords (grid_sample formula)
-            x_in = ((x_norm + 1) * width - 1) / 2
-            y_in = ((y_norm + 1) * height - 1) / 2
-            
-            print(f"Input coords: ({x_in:.6f}, {y_in:.6f})")
+            print(f"Input coords: ({x_in:.10f}, {y_in:.10f})")
+            print(f"  y_in fraction: {y_in - int(y_in):.10f}")
             print(f"  floor(x+0.5)={int(x_in + 0.5 if x_in >= 0 else x_in - 0.5)}, floor(y+0.5)={int(y_in + 0.5 if y_in >= 0 else y_in - 0.5)}")
             print(f"  Python round: ({round(x_in)}, {round(y_in)})")
+            print(f"  int(y_in): {int(y_in)}, y_in is exactly .5? {abs(y_in - int(y_in) - 0.5) < 1e-9}")
         
     else:
         print("All pixels match!")
