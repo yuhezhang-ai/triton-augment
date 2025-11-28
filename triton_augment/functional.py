@@ -830,93 +830,61 @@ def _get_inverse_affine_matrix(
 ) -> torch.Tensor:
     """
     Compute inverse affine matrix for rotation, translation, scale, and shear.
-    
+
+    Matches torchvision's _get_inverse_affine_matrix exactly.
+    Reference: torchvision/transforms/functional.py
+
     Args:
         center: Center of rotation [N, 2] (x, y)
         angle: Rotation angle in degrees [N]
         translate: Translation [N, 2] (dx, dy)
         scale: Scale factor [N]
         shear: Shear angle in degrees [N, 2] (sx, sy)
-        
+
     Returns:
         Inverse affine matrix [N, 6] (a, b, c, d, e, f)
     """
     # Convert angles to radians
-    angle_rad = angle * (3.141592653589793 / 180.0)
-    shear_rad = shear * (3.141592653589793 / 180.0)
-    
-    # Let's compute components directly
-    
+    rot = angle * (3.141592653589793 / 180.0)
+    sx = shear[:, 0] * (3.141592653589793 / 180.0)
+    sy = shear[:, 1] * (3.141592653589793 / 180.0)
+
     cx, cy = center[:, 0], center[:, 1]
     tx, ty = translate[:, 0], translate[:, 1]
-    sx, sy = scale, scale  # Isotropic scale for now
-    shx, shy = shear[:, 0], shear[:, 1]
-    
-    # Rotation
-    cos_a = torch.cos(angle_rad)
-    sin_a = torch.sin(angle_rad)
-    
-    # Shear
-    tan_shx = torch.tan(shear_rad[:, 0])
-    tan_shy = torch.tan(shear_rad[:, 1])
-    
-    # Scale (Inverse)
-    # inv_sx = 1.0 / sx
-    # inv_sy = 1.0 / sy
-    
-    # Build Inverse Matrix Elements
-    # We construct 3x3 matrices and invert them.
-    
-    batch_size = center.shape[0]
-    device = center.device
-    dtype = center.dtype
-    
-    # 1. Translate to center (T1)
-    # [[1, 0, -cx], [0, 1, -cy], [0, 0, 1]]
-    T1 = torch.eye(3, device=device, dtype=dtype).unsqueeze(0).repeat(batch_size, 1, 1)
-    T1[:, 0, 2] = -cx
-    T1[:, 1, 2] = -cy
-    
-    # 2. Rotate (R)
-    # [[cos, -sin, 0], [sin, cos, 0], [0, 0, 1]]
-    R = torch.eye(3, device=device, dtype=dtype).unsqueeze(0).repeat(batch_size, 1, 1)
-    R[:, 0, 0] = cos_a
-    R[:, 0, 1] = -sin_a
-    R[:, 1, 0] = sin_a
-    R[:, 1, 1] = cos_a
-    
-    # 3. Shear (Sh)
-    # [[1, tan_x, 0], [tan_y, 1, 0], [0, 0, 1]]
-    Sh = torch.eye(3, device=device, dtype=dtype).unsqueeze(0).repeat(batch_size, 1, 1)
-    Sh[:, 0, 1] = tan_shx
-    Sh[:, 1, 0] = tan_shy
-    
-    # 4. Scale (S)
-    # [[sx, 0, 0], [0, sy, 0], [0, 0, 1]]
-    S = torch.eye(3, device=device, dtype=dtype).unsqueeze(0).repeat(batch_size, 1, 1)
-    S[:, 0, 0] = sx
-    S[:, 1, 1] = sy
-    
-    # 5. Translate back + offset (T2)
-    # [[1, 0, cx + tx], [0, 1, cy + ty], [0, 0, 1]]
-    T2 = torch.eye(3, device=device, dtype=dtype).unsqueeze(0).repeat(batch_size, 1, 1)
-    T2[:, 0, 2] = cx + tx
-    T2[:, 1, 2] = cy + ty
-    
-    # Compose: M = T2 @ S @ Sh @ R @ T1
-    # Note: Matrix multiplication order depends on column vs row vectors.
-    # PyTorch uses column vectors: v' = M v
-    # So we apply from right to left: T2 * (S * (Sh * (R * (T1 * v))))
-    
-    M = torch.bmm(T2, torch.bmm(S, torch.bmm(Sh, torch.bmm(R, T1))))
-    
-    # Invert to get input -> output mapping for the kernel (inverse warping).
-    M_inv = torch.linalg.inv(M)
-    
-    # Extract first 2 rows (2x3)
-    # [a, b, c]
-    # [d, e, f]
-    return M_inv[:, :2, :].reshape(batch_size, 6)
+
+    # Compute RSS (Rotation-Scale-Shear) matrix elements
+    # This matches torchvision's formula exactly:
+    # a = cos(rot - sy) / cos(sy)
+    # b = -cos(rot - sy) * tan(sx) / cos(sy) - sin(rot)
+    # c = sin(rot - sy) / cos(sy)
+    # d = -sin(rot - sy) * tan(sx) / cos(sy) + cos(rot)
+    cos_sy = torch.cos(sy)
+    a = torch.cos(rot - sy) / cos_sy
+    b = -torch.cos(rot - sy) * torch.tan(sx) / cos_sy - torch.sin(rot)
+    c = torch.sin(rot - sy) / cos_sy
+    d = -torch.sin(rot - sy) * torch.tan(sx) / cos_sy + torch.cos(rot)
+
+    # Inverted rotation matrix with scale and shear
+    # det([[a, b], [c, d]]) == 1, since det(rotation) = 1 and det(shear) = 1
+    # Inverse of [[a, b], [c, d]] is [[d, -b], [-c, a]] / det
+    # Since det = 1, inverse is just [[d, -b], [-c, a]]
+    m0 = d / scale  # matrix[0]
+    m1 = -b / scale  # matrix[1]
+    m3 = -c / scale  # matrix[3]
+    m4 = a / scale  # matrix[4]
+
+    # Apply inverse of translation and of center translation: RSS^-1 * C^-1 * T^-1
+    m2 = m0 * (-cx - tx) + m1 * (-cy - ty)
+    m5 = m3 * (-cx - tx) + m4 * (-cy - ty)
+
+    # Apply center translation: C * RSS^-1 * C^-1 * T^-1
+    m2 = m2 + cx
+    m5 = m5 + cy
+
+    # Stack into [N, 6] tensor
+    matrix = torch.stack([m0, m1, m2, m3, m4, m5], dim=1)
+
+    return matrix
 
 
 def _apply_affine_matrix(

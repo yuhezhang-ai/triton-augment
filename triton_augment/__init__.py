@@ -62,6 +62,8 @@ from .transforms import (
     TritonCenterCrop,
     TritonRandomHorizontalFlip,
     TritonRandomCropFlip,
+    TritonRandomAffine,
+    TritonRandomRotation,
     # Fused augmentation
     TritonFusedAugment,
 )
@@ -85,6 +87,8 @@ from .functional import (
     crop,
     center_crop,
     horizontal_flip,
+    affine,
+    rotate,
     # Fused operations
     fused_augment,
 )
@@ -118,6 +122,8 @@ __all__ = [
     'TritonCenterCrop',
     'TritonRandomHorizontalFlip',
     'TritonRandomCropFlip',
+    'TritonRandomAffine',
+    'TritonRandomRotation',
     # Transform classes - Fused Augmentation
     'TritonFusedAugment',
     
@@ -137,7 +143,9 @@ __all__ = [
     'crop',
     'center_crop',
     'horizontal_flip',
-    
+    'affine',
+    'rotate',
+
     # Functional API - Fused operations
     'fused_augment',
 ]
