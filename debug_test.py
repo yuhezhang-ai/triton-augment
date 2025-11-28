@@ -4,9 +4,10 @@ import triton_augment.functional as F
 import torchvision.transforms.v2.functional as tvF
 
 # Reproduce the failing test case
-batch_size = 8
-height = 111
-width = 100
+# test_affine_matches_torchvision[nearest-15.0-translate4-1.0-shear4-1-224-224]
+batch_size = 1  # batch_size parameter from test
+height = 224    # height parameter from test
+width = 224     # width parameter from test
 angle = 15.0
 translate = [5.0, 5.0]  # translate4
 scale = 1.0
