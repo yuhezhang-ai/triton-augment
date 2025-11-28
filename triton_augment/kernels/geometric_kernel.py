@@ -268,10 +268,11 @@ def sample_nearest(
     Returns:
         Nearest pixel value
     """
-    # Round to nearest integer coordinates
-    # Use floor(x + 0.5) since tl.math.round may not be available in all Triton versions
-    x_nearest = tl.math.floor(x_in + 0.5).to(tl.int32)
-    y_nearest = tl.math.floor(y_in + 0.5).to(tl.int32)
+    # Get nearest integer coordinates
+    # PyTorch's grid_sample with mode='nearest' uses floor, not round
+    # This matches the behavior where we take the pixel that the coordinate falls into
+    x_nearest = tl.math.floor(x_in).to(tl.int32)
+    y_nearest = tl.math.floor(y_in).to(tl.int32)
 
     # Check bounds
     valid = (x_nearest >= 0) & (x_nearest < input_width) & (y_nearest >= 0) & (y_nearest < input_height)
