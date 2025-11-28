@@ -289,13 +289,15 @@ class TestAffineMatrixCorrectness:
             pytest.skip("torchvision internal function not available")
             
         batch_size = 4
-        
-        # Random parameters
+
+        # Random parameters - center is in translated coords where [0,0] = image center
+        # Use smaller range centered around 0 to match torchvision's coordinate system
         angles = torch.rand(batch_size, device='cuda') * 360
         translates = torch.rand(batch_size, 2, device='cuda') * 50
         scales = torch.rand(batch_size, device='cuda') + 0.5
         shears = torch.rand(batch_size, 2, device='cuda') * 30
-        centers = torch.rand(batch_size, 2, device='cuda') * 224
+        # center is in translated coords where [0,0] = image center (internal format for _get_inverse_affine_matrix)
+        centers = (torch.rand(batch_size, 2, device='cuda') - 0.5) * 100  # Range [-50, 50]
         
         # Calculate batched
         triton_matrices = F._get_inverse_affine_matrix(

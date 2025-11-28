@@ -834,8 +834,13 @@ def _get_inverse_affine_matrix(
     Matches torchvision's _get_inverse_affine_matrix exactly.
     Reference: torchvision/transforms/functional.py
 
+    Note:
+        This is an internal function. The `center` parameter uses a translated
+        coordinate system where [0, 0] corresponds to the image center.
+        Use `affine()` for the public API which accepts pixel coordinates.
+
     Args:
-        center: Center of rotation [N, 2] (x, y)
+        center: Center of rotation [N, 2] in translated coords where [0,0] = image center
         angle: Rotation angle in degrees [N]
         translate: Translation [N, 2] (dx, dy)
         scale: Scale factor [N]
@@ -982,10 +987,10 @@ def affine(
 ) -> torch.Tensor:
     """
     Apply affine transformation to the image.
-    
+
     Matches torchvision.transforms.v2.functional.affine API.
     Reference: torchvision/transforms/v2/functional/_geometry.py
-    
+
     Args:
         image: Input image tensor [N, C, H, W]
         angle: Rotation angle in degrees (scalar or [N])
@@ -994,8 +999,9 @@ def affine(
         shear: Shear angles [sx, sy] or [N, 2] in degrees
         interpolation: Interpolation mode. Either InterpolationMode.NEAREST or InterpolationMode.BILINEAR. Default: InterpolationMode.NEAREST.
         fill: Fill value for out-of-bounds pixels
-        center: Center of rotation [x, y]. Default is center of image.
-        
+        center: Center of rotation [x, y] in pixel coordinates. Origin is the upper left corner.
+                Default is the center of the image.
+
     Returns:
         Transformed image [N, C, H, W]
         
@@ -1041,15 +1047,20 @@ def affine(
             raise ValueError(f"shear must have 2 values, got {len(shear)}")
         shear_tensor = torch.tensor([shear], device=image.device, dtype=torch.float32).repeat(batch_size, 1)
     
-    # Handle center
+    # Handle center - convert to torchvision's translated coordinate system
+    # where [0, 0] corresponds to image center
+    # See torchvision/transforms/functional.py rotate():
+    #   center_f = [1.0 * (c - s * 0.5) for c, s in zip(center, [width, height])]
     if center is None:
-        cx = width * 0.5
-        cy = height * 0.5
-        center_tensor = torch.tensor([cx, cy], device=image.device, dtype=torch.float32).repeat(batch_size, 1)
+        # Default: image center -> [0, 0] in translated coords
+        center_tensor = torch.zeros(batch_size, 2, device=image.device, dtype=torch.float32)
     else:
         if len(center) != 2:
             raise ValueError(f"center must have 2 values, got {len(center)}")
-        center_tensor = torch.tensor([center], device=image.device, dtype=torch.float32).repeat(batch_size, 1)
+        # Convert pixel coords to translated coords
+        cx = center[0] - width * 0.5
+        cy = center[1] - height * 0.5
+        center_tensor = torch.tensor([[cx, cy]], device=image.device, dtype=torch.float32).repeat(batch_size, 1)
     
     # Compute inverse affine matrix
     matrix = _get_inverse_affine_matrix(
