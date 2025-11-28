@@ -1104,9 +1104,11 @@ def rotate(
     batch_size, _, height, width = image.shape
     
     # Use affine with rotation only (no translation, scale=1, shear=0)
+    # Note: torchvision negates the angle in rotate() due to historical reasons
+    # "due to current incoherence of rotation angle direction between affine and rotate implementations"
     return affine(
         image,
-        angle=angle,
+        angle=-angle if isinstance(angle, (int, float)) else -angle,
         translate=[0.0, 0.0],
         scale=1.0,
         shear=[0.0, 0.0],

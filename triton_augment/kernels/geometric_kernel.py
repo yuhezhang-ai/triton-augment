@@ -357,18 +357,40 @@ def affine_transform_kernel(
     f_ty = tl.load(mat_base + 5, mask=mask, other=0.0)
     
     # Calculate input coordinates
-    # Note: We use center-based coordinates for rotation usually, but the matrix passed in
-    # should already handle the center offset adjustments.
-    # The standard definition is:
-    # x_in = a * x_out + b * y_out + c
-    # y_in = d * x_out + e * y_out + f
-    
+    # The matrix from _get_inverse_affine_matrix is designed for torchvision's grid-based system:
+    # 1. base_grid coords are centered: x in [-w*0.5 + 0.5, w*0.5 - 0.5]
+    # 2. Matrix is rescaled by [0.5*w, 0.5*h] before matmul
+    # 3. Result is normalized coords for grid_sample with align_corners=False
+    #
+    # To match this, we:
+    # 1. Convert output pixel coords to centered coords
+    # 2. Apply matrix with rescaling
+    # 3. Convert normalized result back to pixel coords
+
     # Cast to float32 for calculation
     x_out_f = x_out.to(tl.float32)
     y_out_f = y_out.to(tl.float32)
-    
-    x_in = a * x_out_f + b * y_out_f + c_tx
-    y_in = d * x_out_f + e * y_out_f + f_ty
+
+    # Step 1: Convert to centered coordinates (matching torchvision's base_grid)
+    half_w = output_width * 0.5
+    half_h = output_height * 0.5
+    x_centered = x_out_f - half_w + 0.5
+    y_centered = y_out_f - half_h + 0.5
+
+    # Step 2: Apply matrix with rescaling (as torchvision does)
+    # torchvision: rescaled_theta = theta.T / [0.5*w, 0.5*h]
+    # output_grid = base_grid @ rescaled_theta
+    # This means: x_norm = (a*x + b*y + c) / (0.5*w)
+    #             y_norm = (d*x + e*y + f) / (0.5*h)
+    x_norm = (a * x_centered + b * y_centered + c_tx) / half_w
+    y_norm = (d * x_centered + e * y_centered + f_ty) / half_h
+
+    # Step 3: Convert normalized coords to input pixel coords
+    # grid_sample with align_corners=False:
+    # pixel = ((normalized + 1) * size - 1) / 2
+    # For input image of same size as output:
+    x_in = ((x_norm + 1.0) * input_width - 1.0) * 0.5
+    y_in = ((y_norm + 1.0) * input_height - 1.0) * 0.5
 
     input_batch_offset = n * channels * input_height * input_width
     input_channel_offset = c * input_height * input_width
