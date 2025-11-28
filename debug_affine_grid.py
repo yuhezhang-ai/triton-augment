@@ -1,5 +1,7 @@
 import torch
+import torch.nn.functional as F_torch
 import torchvision.transforms.v2.functional as tvF
+from torchvision.transforms.functional import _get_inverse_affine_matrix as tv_get_matrix
 
 # Test with 90-degree rotation, 111x100
 height, width = 111, 100
@@ -15,6 +17,39 @@ translate = [0.0, 0.0]
 scale = 1.0
 shear = [0.0, 0.0]
 
+print("=== Comparing Matrix Computation ===\n")
+
+# Torchvision's matrix (it uses center in pixel coords internally)
+center_tv = [width * 0.5, height * 0.5]
+tv_matrix = tv_get_matrix(center_tv, angle, translate, scale, shear)
+print(f"Torchvision matrix (center={center_tv}):")
+print(f"  {tv_matrix}")
+print()
+
+# Our matrix computation (we use translated coords where [0,0] = center)
+if device == 'cuda':
+    import triton_augment.functional as F
+    from triton_augment.functional import _get_inverse_affine_matrix
+    
+    # Our center is in translated coords: [0, 0] for image center
+    center_ours = torch.tensor([[0.0, 0.0]], device=device)
+    angle_t = torch.tensor([angle], device=device)
+    translate_t = torch.tensor([translate], device=device)
+    scale_t = torch.tensor([scale], device=device)
+    shear_t = torch.tensor([shear], device=device)
+    
+    our_matrix = _get_inverse_affine_matrix(center_ours, angle_t, translate_t, scale_t, shear_t)
+    print(f"Our matrix (center=[0,0] in translated coords):")
+    print(f"  {our_matrix[0].tolist()}")
+    print()
+    
+    # Compare
+    tv_tensor = torch.tensor(tv_matrix, device=device)
+    diff = (our_matrix[0] - tv_tensor).abs()
+    print(f"Matrix difference: {diff.tolist()}")
+    print(f"Max diff: {diff.max().item()}")
+    print()
+
 # Get torchvision's result
 tv_result = tvF.affine(img, angle=angle, translate=translate, scale=scale, shear=shear,
                         interpolation=tvF.InterpolationMode.NEAREST)
@@ -28,33 +63,44 @@ import math
 half_w = width * 0.5
 half_h = height * 0.5
 
-# Matrix elements (for 90-degree rotation)
-a, b, c = 0.0, 1.0, 0.0
-d, e, f = -1.0, 0.0, 0.0
+# Matrix elements from torchvision (for 90-degree rotation around center)
+# For 90 degrees: cos(90)=0, sin(90)=1
+# The inverse rotation matrix is [[0, 1], [-1, 0]]
+# With center at [50, 55.5], the matrix should be:
+# a=0, b=1, c=55.5-50=5.5, d=-1, e=0, f=50+55.5=105.5
+# Wait, let me check torchvision's exact formula...
+a, b, c, d, e, f = tv_matrix
+print(f"Matrix from torchvision: a={a}, b={b}, c={c}, d={d}, e={e}, f={f}")
+print()
 
-def trace_pixel(x_out, y_out):
+def trace_pixel(x_out, y_out, matrix=None):
     """Trace the coordinate transformation for a given output pixel."""
+    if matrix is None:
+        matrix = tv_matrix
+    a, b, c, d, e, f = matrix
+    
     print(f"\n=== Tracing output pixel ({x_out}, {y_out}) ===")
     
-    # Step 1: Centered coordinates
+    # Step 1: Centered coordinates (as torchvision's base_grid does)
     x_centered = (1 - width) * 0.5 + x_out
     y_centered = (1 - height) * 0.5 + y_out
     print(f"  Centered: ({x_centered}, {y_centered})")
     
     # Step 2: Apply rescaled theta
+    # torchvision: output_grid = base_grid @ (theta.T / [0.5*w, 0.5*h])
     x_norm = (a * x_centered + b * y_centered + c) / half_w
     y_norm = (d * x_centered + e * y_centered + f) / half_h
     print(f"  Normalized: ({x_norm:.6f}, {y_norm:.6f})")
     
-    # Step 3: Convert to input pixel coords
+    # Step 3: Convert to input pixel coords (grid_sample formula)
     x_in = ((x_norm + 1.0) * width - 1.0) * 0.5
     y_in = ((y_norm + 1.0) * height - 1.0) * 0.5
     print(f"  Input coords: ({x_in:.6f}, {y_in:.6f})")
     
-    # Step 4: Nearest neighbor
+    # Step 4: Nearest neighbor (using Python's round for comparison)
     x_nearest = round(x_in)
     y_nearest = round(y_in)
-    print(f"  Nearest: ({x_nearest}, {y_nearest})")
+    print(f"  Nearest (Python round): ({x_nearest}, {y_nearest})")
     
     # Get torchvision result
     tv_pixel = tv_result[0, 0, y_out, x_out].item()
@@ -74,40 +120,33 @@ def trace_pixel(x_out, y_out):
         return True
     else:
         print(f"  ✗ Mismatch! Diff: {abs(tv_pixel - expected):.6f}")
+        # Try to find which pixel TV actually sampled from
+        for dy in range(-2, 3):
+            for dx in range(-2, 3):
+                nx, ny = x_nearest + dx, y_nearest + dy
+                if 0 <= nx < width and 0 <= ny < height:
+                    val = img[0, 0, ny, nx].item()
+                    if abs(tv_pixel - val) < 1e-5:
+                        print(f"  -> TV actually sampled from ({nx}, {ny})")
+                        return False
         return False
 
-# Test multiple pixels to find where the mismatch occurs
-print("\n=== Testing multiple pixels ===")
-
-# Center of image should be stable
-center_x, center_y = width // 2, height // 2
-trace_pixel(center_x, center_y)
-
-# Try some other pixels
+# Test specific pixels
+print("\n=== Testing pixels ===")
 test_pixels = [
     (50, 55),   # Near center
-    (50, 50),   # Slightly off center
-    (60, 55),   # Right of center
-    (40, 55),   # Left of center
-    (50, 60),   # Below center
-    (50, 45),   # Above center
-    (30, 30),   # Upper left quadrant
-    (70, 80),   # Lower right quadrant
+    (2, 5),     # First mismatch from test
+    (98, 97),   # Failing test coordinate
+    (50, 60),   # Had mismatch earlier
 ]
 
-mismatches = 0
 for x, y in test_pixels:
-    if not trace_pixel(x, y):
-        mismatches += 1
-
-print(f"\n\nTotal mismatches: {mismatches}/{len(test_pixels)}")
+    trace_pixel(x, y)
 
 if device == 'cuda':
     print("\n" + "="*60)
     print("Comparing Triton vs Torchvision for all pixels...")
     print("="*60 + "\n")
-
-    import triton_augment.functional as F
 
     ta_result = F.affine(img, angle=angle, translate=translate, scale=scale, shear=shear,
                           interpolation='nearest')
@@ -131,9 +170,5 @@ if device == 'cuda':
         n, c, y, x = indices[0][0].item(), indices[1][0].item(), indices[2][0].item(), indices[3][0].item()
         print(f"\n=== Detailed trace of first mismatch (y={y}, x={x}) ===")
         trace_pixel(x, y)
-        
-        # Also trace the specific failing coordinate from test: (5, 0, 97, 98)
-        print(f"\n=== Tracing the failing test coordinate (y=97, x=98) ===")
-        trace_pixel(98, 97)
 else:
     print("\n(Skipping Triton kernel test - CUDA not available)")
