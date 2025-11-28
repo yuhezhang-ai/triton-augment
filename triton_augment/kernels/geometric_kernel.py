@@ -269,9 +269,14 @@ def sample_nearest(
         Nearest pixel value
     """
     # Round to nearest integer coordinates
-    # Use floor(x + 0.5) to implement rounding
-    x_nearest = tl.math.floor(x_in + 0.5).to(tl.int32)
-    y_nearest = tl.math.floor(y_in + 0.5).to(tl.int32)
+    # We use round-half-away-from-zero to match PyTorch/CUDA behavior
+    # floor(x + 0.5) implements round-half-up, which differs for negative numbers (e.g. -0.5 -> 0 instead of -1)
+    # So we use: x + 0.5 if x >= 0 else x - 0.5, then truncate
+    x_rounded = x_in + tl.where(x_in >= 0, 0.5, -0.5)
+    y_rounded = y_in + tl.where(y_in >= 0, 0.5, -0.5)
+    
+    x_nearest = x_rounded.to(tl.int32)
+    y_nearest = y_rounded.to(tl.int32)
 
     # Check bounds
     valid = (x_nearest >= 0) & (x_nearest < input_width) & (y_nearest >= 0) & (y_nearest < input_height)
