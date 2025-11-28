@@ -26,20 +26,29 @@ class TestAffineCorrectness:
     """Test affine operations match torchvision exactly (or reasonably close)."""
     
     @pytest.mark.parametrize("angle", [0, 90, 180, 45, -30])
-    def test_rotate_matches_torchvision(self, angle):
-        """Test that F.rotate matches torchvision."""
+    @pytest.mark.parametrize("interpolation", ["bilinear", "nearest"])
+    def test_rotate_matches_torchvision(self, angle, interpolation):
+        """Test that F.rotate matches torchvision for both interpolation modes."""
         img = torch.rand(2, 3, 224, 224, device='cuda')
-        
+
+        # Get interpolation mode enum
+        if interpolation == "bilinear":
+            tv_interp = tvF.InterpolationMode.BILINEAR
+            ta_interp = ta.InterpolationMode.BILINEAR
+        else:
+            tv_interp = tvF.InterpolationMode.NEAREST
+            ta_interp = ta.InterpolationMode.NEAREST
+
         # Torchvision rotate
-        tv_result = tvF.rotate(img, angle, interpolation=tvF.InterpolationMode.BILINEAR)
-        
+        tv_result = tvF.rotate(img, angle, interpolation=tv_interp)
+
         # Triton rotate
-        ta_result = F.rotate(img, angle)
-        
+        ta_result = F.rotate(img, angle, interpolation=ta_interp)
+
         # Allow small tolerance due to float precision and interpolation differences
         # Triton uses float32 accumulation, might differ slightly
         torch.testing.assert_close(ta_result, tv_result, atol=1e-3, rtol=1e-3)
-        
+
     def test_affine_identity(self):
         """Test that identity affine (no transformation) does nothing."""
         img = torch.rand(2, 3, 224, 224, device='cuda')
@@ -63,21 +72,31 @@ class TestAffineCorrectness:
         (15.0, [5.0, 5.0], 1.0, [10.0, -5.0]),        # Shear only
         (0.0, [20.0, 30.0], 1.5, [0.0, 0.0]),         # Translation + scale
     ])
-    def test_affine_matches_torchvision(self, batch_size, height, width, angle, translate, scale, shear):
-        """Test that F.affine matches torchvision with various shapes and parameters."""
+    @pytest.mark.parametrize("interpolation", ["bilinear", "nearest"])
+    def test_affine_matches_torchvision(self, batch_size, height, width, angle, translate, scale, shear, interpolation):
+        """Test that F.affine matches torchvision with various shapes, parameters, and interpolation modes."""
         img = torch.rand(batch_size, 3, height, width, device='cuda')
-        
+
+        # Get interpolation mode enum
+        if interpolation == "bilinear":
+            tv_interp = tvF.InterpolationMode.BILINEAR
+            ta_interp = ta.InterpolationMode.BILINEAR
+        else:
+            tv_interp = tvF.InterpolationMode.NEAREST
+            ta_interp = ta.InterpolationMode.NEAREST
+
         # Torchvision affine
         tv_result = tvF.affine(
             img, angle=angle, translate=translate, scale=scale, shear=shear,
-            interpolation=tvF.InterpolationMode.BILINEAR
+            interpolation=tv_interp
         )
-        
+
         # Triton affine
         ta_result = F.affine(
-            img, angle=angle, translate=translate, scale=scale, shear=shear
+            img, angle=angle, translate=translate, scale=scale, shear=shear,
+            interpolation=ta_interp
         )
-        
+
         # Allow small tolerance
         torch.testing.assert_close(ta_result, tv_result, atol=1e-3, rtol=1e-3)
 

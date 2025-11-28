@@ -976,7 +976,7 @@ def affine(
     translate: list[float] | torch.Tensor,
     scale: float | torch.Tensor,
     shear: list[float] | torch.Tensor,
-    interpolation = InterpolationMode.BILINEAR,
+    interpolation = InterpolationMode.NEAREST,
     fill: float | Sequence[float] | None = 0.0,
     center: list[float] | None = None,
 ) -> torch.Tensor:
@@ -992,7 +992,7 @@ def affine(
         translate: Translation [dx, dy] or [N, 2]
         scale: Scale factor (scalar or [N])
         shear: Shear angles [sx, sy] or [N, 2] in degrees
-        interpolation: "bilinear" (default)
+        interpolation: Interpolation mode. Either InterpolationMode.NEAREST or InterpolationMode.BILINEAR. Default: InterpolationMode.NEAREST.
         fill: Fill value for out-of-bounds pixels
         center: Center of rotation [x, y]. Default is center of image.
         
@@ -1066,7 +1066,7 @@ def affine(
 def rotate(
     image: torch.Tensor,
     angle: float | torch.Tensor,
-    interpolation = InterpolationMode.BILINEAR,
+    interpolation = InterpolationMode.NEAREST,
     expand: bool = False,
     center: list[float] | None = None,
     fill: float | Sequence[float] | None = 0.0,
@@ -1077,7 +1077,7 @@ def rotate(
     Args:
         image: Input image [N, C, H, W]
         angle: Rotation angle in degrees (scalar or [N])
-        interpolation: "bilinear" (default)
+        interpolation: Interpolation mode. Either InterpolationMode.NEAREST or InterpolationMode.BILINEAR. Default: InterpolationMode.NEAREST.
         expand: Whether to expand the output to hold the whole image (not yet impl)
         center: Center of rotation [x, y]. Default is center of image.
         fill: Fill value

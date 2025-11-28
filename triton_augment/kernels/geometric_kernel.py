@@ -269,8 +269,9 @@ def sample_nearest(
         Nearest pixel value
     """
     # Round to nearest integer coordinates
-    x_nearest = tl.math.round(x_in).to(tl.int32)
-    y_nearest = tl.math.round(y_in).to(tl.int32)
+    # Use floor(x + 0.5) since tl.math.round may not be available in all Triton versions
+    x_nearest = tl.math.floor(x_in + 0.5).to(tl.int32)
+    y_nearest = tl.math.floor(y_in + 0.5).to(tl.int32)
 
     # Check bounds
     valid = (x_nearest >= 0) & (x_nearest < input_width) & (y_nearest >= 0) & (y_nearest < input_height)
