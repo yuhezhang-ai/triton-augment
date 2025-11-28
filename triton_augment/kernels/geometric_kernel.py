@@ -268,10 +268,10 @@ def sample_nearest(
     Returns:
         Nearest pixel value
     """
-    # Round to nearest integer using round-half-up: floor(x + 0.5)
-    # This matches PyTorch's grid_sample nearest neighbor behavior
-    x_nearest = tl.math.floor(x_in + 0.5).to(tl.int32)
-    y_nearest = tl.math.floor(y_in + 0.5).to(tl.int32)
+    # Round to nearest integer using round-to-nearest-even (banker's rounding)
+    # tl.math.rint() matches Python's round() behavior
+    x_nearest = tl.math.rint(x_in).to(tl.int32)
+    y_nearest = tl.math.rint(y_in).to(tl.int32)
 
     # Check bounds
     valid = (x_nearest >= 0) & (x_nearest < input_width) & (y_nearest >= 0) & (y_nearest < input_height)
