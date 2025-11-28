@@ -256,19 +256,21 @@ def round_rne(val):
     val_frac = val - val_floor
     
     # 2. Check if close to 0.5 (within epsilon)
-    # Use 1e-3 to handle float32 noise
+    # Use 1e-4 to handle float32 noise
     is_half = tl.abs(val_frac - 0.5) < 1e-4
     
-    if is_half:
-        # Snap to 0.5 behavior: Round to nearest even integer
-        # If floor is even, keep floor (e.g. 0.5 -> 0)
-        # If floor is odd, round up (e.g. 1.5 -> 2)
-        val_floor_int = val_floor.to(tl.int32)
-        is_odd = (val_floor_int % 2) != 0
-        return val_floor_int + is_odd.to(tl.int32)
-    else:
-        # Standard round-half-up (floor(x + 0.5))
-        return tl.math.floor(val + 0.5).to(tl.int32)
+    # Snap path: Round to nearest even integer based on floor
+    # If floor is even, keep floor (e.g. 0.5 -> 0)
+    # If floor is odd, round up (e.g. 1.5 -> 2)
+    val_floor_int = val_floor.to(tl.int32)
+    is_odd = (val_floor_int % 2) != 0
+    snap_result = val_floor_int + is_odd.to(tl.int32)
+    
+    # Standard path: Standard round-half-up (floor(x + 0.5))
+    standard_result = tl.math.floor(val + 0.5).to(tl.int32)
+    
+    # Select based on is_half using tl.where (element-wise)
+    return tl.where(is_half, snap_result, standard_result)
 
 
 @triton.jit
