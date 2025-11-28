@@ -83,10 +83,11 @@ def _compute_param_count(
     - same_on_batch=True,  same_on_frame=False → T params (per frame position)
     - same_on_batch=True,  same_on_frame=True  → 1 param (shared)
     
-    For 3D/4D inputs (batch_size=None), returns the flattened batch size.
+    For 3D inputs (num_frames=None), returns 1.
+    For 4D inputs (num_frames=None), returns 1 or the batch size if same_on_batch is False.
     
     Args:
-        batch_size: N dimension or None for 3D/4D
+        batch_size: N dimension or None for 3D
         num_frames: T dimension or None for 3D/4D
         same_on_batch: Whether to share params across batch dimension
         same_on_frame: Whether to share params across frame dimension

@@ -469,6 +469,9 @@ class TestTransformClasses:
         This verifies the transform class correctly calls the functional API.
         We extract params with one seed, then apply both transform and F.affine
         with the same seed to ensure they use identical parameters.
+        
+        Note: The image must be created BEFORE setting the seed, otherwise
+        torch.rand() for creating the image would consume random numbers.
         """
         batch_size = 4
         height, width = 128, 128
@@ -480,6 +483,9 @@ class TestTransformClasses:
             interpolation=ta.InterpolationMode.BILINEAR,
             same_on_batch=False
         )
+        
+        # Create image BEFORE setting seed (so it doesn't affect random state)
+        torch.manual_seed(123)  # Different seed for image creation
         img = torch.rand(batch_size, 3, height, width, device='cuda')
         
         # Apply transform with seed 42
@@ -512,6 +518,9 @@ class TestTransformClasses:
             interpolation=ta.InterpolationMode.BILINEAR,
             same_on_batch=False
         )
+        
+        # Create image BEFORE setting seed
+        torch.manual_seed(123)
         img = torch.rand(batch_size, 3, height, width, device='cuda')
         
         # Apply transform with seed 42
