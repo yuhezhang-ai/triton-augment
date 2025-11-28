@@ -997,24 +997,43 @@ def affine(
     Reference: torchvision/transforms/v2/functional/_geometry.py
 
     Args:
-        image: Input image tensor [N, C, H, W]
-        angle: Rotation angle in degrees (scalar or [N])
-        translate: Translation [dx, dy] or [N, 2]
-        scale: Scale factor (scalar or [N])
-        shear: Shear angles [sx, sy] or [N, 2] in degrees
-        interpolation: Interpolation mode. Either InterpolationMode.NEAREST or InterpolationMode.BILINEAR. Default: InterpolationMode.NEAREST.
-        fill: Fill value for out-of-bounds pixels
-        center: Center of rotation [x, y] in pixel coordinates. Origin is the upper left corner.
-                Default is the center of the image.
+        image: Input image tensor [N, C, H, W]. Must be on CUDA device.
+        angle: Rotation angle in degrees, counter-clockwise. Can be a scalar
+            (applied to all images) or tensor of shape [N] for per-image angles.
+        translate: Translation as [dx, dy] in pixels. Positive dx moves right,
+            positive dy moves down. Can be a list or tensor of shape [N, 2].
+        scale: Scale factor. Values > 1 zoom in, < 1 zoom out. Can be a scalar
+            or tensor of shape [N].
+        shear: Shear angles [shear_x, shear_y] in degrees. Can be a list or
+            tensor of shape [N, 2].
+        interpolation: Interpolation mode for sampling. Either:
+            - InterpolationMode.NEAREST (default): Nearest neighbor, faster but
+              may have slight differences vs torchvision at pixel boundaries.
+            - InterpolationMode.BILINEAR: Bilinear interpolation, smoother results.
+        fill: Fill value for pixels outside the image boundaries. Default: 0.0
+        center: Center of rotation [x, y] in pixel coordinates. Origin is the
+            upper left corner. Default is the center of the image.
 
     Returns:
-        Transformed image [N, C, H, W]
+        Transformed image tensor [N, C, H, W]
+
+    Note:
+        For nearest neighbor interpolation, there may be minor differences compared
+        to torchvision at exact pixel boundaries (e.g., coordinates landing at x.5).
+        This is due to different rounding conventions in floating-point arithmetic.
+        Bilinear interpolation does not have this limitation.
         
     Example:
         ```python
         img = torch.rand(2, 3, 224, 224, device='cuda')
+        
         # Rotate 45 degrees, translate, scale
         result = affine(img, angle=45, translate=[10, 20], scale=1.2, shear=[0, 0])
+        
+        # Per-image rotation with bilinear interpolation
+        angles = torch.tensor([30.0, 60.0], device='cuda')
+        result = affine(img, angle=angles, translate=[0, 0], scale=1.0, shear=[0, 0],
+                        interpolation=InterpolationMode.BILINEAR)
         ```
     """
     _validate_image_tensor(image, "image")
@@ -1090,16 +1109,39 @@ def rotate(
     """
     Rotate the image by angle.
     
+    Matches torchvision.transforms.v2.functional.rotate API.
+    
     Args:
-        image: Input image [N, C, H, W]
-        angle: Rotation angle in degrees (scalar or [N])
-        interpolation: Interpolation mode. Either InterpolationMode.NEAREST or InterpolationMode.BILINEAR. Default: InterpolationMode.NEAREST.
-        expand: Whether to expand the output to hold the whole image (not yet impl)
-        center: Center of rotation [x, y]. Default is center of image.
-        fill: Fill value
+        image: Input image tensor [N, C, H, W]. Must be on CUDA device.
+        angle: Rotation angle in degrees, counter-clockwise. Can be a scalar
+            (applied to all images) or tensor of shape [N] for per-image angles.
+        interpolation: Interpolation mode for sampling. Either:
+            - InterpolationMode.NEAREST (default): Nearest neighbor, faster.
+            - InterpolationMode.BILINEAR: Bilinear interpolation, smoother.
+        expand: If True, expands the output to hold the entire rotated image.
+            Currently not supported (raises NotImplementedError).
+        center: Center of rotation [x, y] in pixel coordinates. Origin is the
+            upper left corner. Default is the center of the image.
+        fill: Fill value for pixels outside the image boundaries. Default: 0.0
         
     Returns:
-        Rotated image
+        Rotated image tensor [N, C, H, W]
+        
+    Note:
+        For nearest neighbor interpolation, there may be minor differences compared
+        to torchvision at exact pixel boundaries. See `affine()` for details.
+        
+    Example:
+        ```python
+        img = torch.rand(4, 3, 224, 224, device='cuda')
+        
+        # Rotate all images by 45 degrees
+        result = rotate(img, angle=45)
+        
+        # Per-image rotation with bilinear interpolation
+        angles = torch.tensor([0, 90, 180, 270], device='cuda', dtype=torch.float32)
+        result = rotate(img, angle=angles, interpolation=InterpolationMode.BILINEAR)
+        ```
     """
     _validate_image_tensor(image, "image")
     

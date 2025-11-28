@@ -1528,25 +1528,64 @@ class TritonRandomAffine(nn.Module):
     """
     Random affine transformation of the image keeping center invariant.
     
+    GPU-accelerated implementation using Triton kernels. Matches the API of
+    torchvision.transforms.v2.RandomAffine.
+    
+    Supports:
+        - 3D input: (C, H, W) - single image
+        - 4D input: (N, C, H, W) - batch of images  
+        - 5D input: (N, T, C, H, W) - batch of videos
+    
     Args:
-        degrees: Range of degrees to select from. If degrees is a number instead of sequence like (min, max),
-                 the range of degrees will be (-degrees, +degrees). Set to 0 to deactivate rotations.
-        translate: Tuple of maximum absolute fraction for horizontal and vertical translations.
-                   For example translate=(a, b), then horizontal shift is randomly sampled in the range
-                   -img_width * a < dx < img_width * a and vertical shift is randomly sampled in the range
-                   -img_height * b < dy < img_height * b. Will not translate by default.
-        scale: Scaling factor interval, e.g (a, b), then scale is randomly sampled from the range
-               a <= scale <= b. Will keep original scale by default.
-        shear: Range of degrees to select from. If shear is a number, a shear parallel to the x axis in the range
-               (-shear, +shear) will be applied. Else if shear is a tuple or list of 2 values, a x-axis shear in
-               (shear[0], shear[1]) will be applied. Else if shear is a tuple or list of 4 values, a x-axis shear in
-               (shear[0], shear[1]) and y-axis shear in (shear[2], shear[3]) will be applied. Will not apply shear by default.
-        interpolation: Interpolation mode. Either InterpolationMode.NEAREST or InterpolationMode.BILINEAR. Default: InterpolationMode.NEAREST.
+        degrees: Range of degrees to select from. If degrees is a number instead of
+            sequence like (min, max), the range of degrees will be (-degrees, +degrees).
+            Set to 0 to deactivate rotations.
+        translate: Tuple of maximum absolute fraction for horizontal and vertical
+            translations. For example translate=(a, b), then horizontal shift is
+            randomly sampled in the range -img_width * a < dx < img_width * a and
+            vertical shift is randomly sampled in the range -img_height * b < dy < img_height * b.
+            Will not translate by default.
+        scale: Scaling factor interval, e.g (a, b), then scale is randomly sampled
+            from the range a <= scale <= b. Will keep original scale by default.
+        shear: Range of degrees to select from. If shear is a number, a shear parallel
+            to the x axis in the range (-shear, +shear) will be applied. Else if shear
+            is a tuple of 2 values, a x-axis shear in (shear[0], shear[1]) will be applied.
+            Else if shear is a tuple of 4 values, a x-axis shear in (shear[0], shear[1])
+            and y-axis shear in (shear[2], shear[3]) will be applied. Default: None.
+        interpolation: Interpolation mode for sampling. Either:
+            - InterpolationMode.NEAREST (default): Nearest neighbor, faster.
+            - InterpolationMode.BILINEAR: Bilinear interpolation, smoother.
         fill: Constant fill value for areas outside the transformed image. Default: 0.
-        center: Optional center of rotation (x, y). Origin is the upper left corner.
-                Default is the center of the image.
+        center: Optional center of rotation (x, y) in pixel coordinates. Origin is the
+            upper left corner. Default is the center of the image.
         same_on_batch: If True, all images in batch share the same random parameters.
-        same_on_frame: If True, all frames in a video share the same random parameters.
+            Default: False.
+        same_on_frame: If True, all frames in a video (5D input) share the same random
+            parameters. Default: True.
+            
+    Note:
+        For nearest neighbor interpolation, there may be minor differences compared
+        to torchvision at exact pixel boundaries due to floating-point rounding.
+        Bilinear interpolation does not have this limitation.
+        
+    Example:
+        ```python
+        transform = TritonRandomAffine(
+            degrees=15,
+            translate=(0.1, 0.1),
+            scale=(0.8, 1.2),
+            shear=10,
+            interpolation=InterpolationMode.BILINEAR
+        )
+        
+        # Apply to batch of images
+        img = torch.rand(4, 3, 224, 224, device='cuda')
+        result = transform(img)
+        
+        # Apply to video with same transform per frame
+        video = torch.rand(2, 8, 3, 112, 112, device='cuda')
+        result = transform(video)
+        ```
     """
     
     def __init__(
@@ -1734,14 +1773,47 @@ class TritonRandomRotation(TritonRandomAffine):
     """
     Random rotation of the image.
     
+    GPU-accelerated implementation using Triton kernels. Matches the API of
+    torchvision.transforms.v2.RandomRotation.
+    
+    Supports:
+        - 3D input: (C, H, W) - single image
+        - 4D input: (N, C, H, W) - batch of images
+        - 5D input: (N, T, C, H, W) - batch of videos
+    
     Args:
-        degrees: Range of degrees to select from.
-        interpolation: Interpolation mode. Either InterpolationMode.NEAREST or InterpolationMode.BILINEAR. Default: InterpolationMode.NEAREST.
-        expand: Not supported yet.
-        center: Optional center of rotation.
-        fill: Constant fill value.
-        same_on_batch: If True, all images in batch share the same random parameters.
-        same_on_frame: If True, all frames in a video share the same random parameters.
+        degrees: Range of degrees to select from. If degrees is a number instead of
+            sequence like (min, max), the range of degrees will be (-degrees, +degrees).
+        interpolation: Interpolation mode for sampling. Either:
+            - InterpolationMode.NEAREST (default): Nearest neighbor, faster.
+            - InterpolationMode.BILINEAR: Bilinear interpolation, smoother.
+        expand: If True, expands the output to hold the entire rotated image.
+            Currently not supported (raises NotImplementedError).
+        center: Optional center of rotation (x, y) in pixel coordinates. Origin is the
+            upper left corner. Default is the center of the image.
+        fill: Constant fill value for areas outside the rotated image. Default: 0.
+        same_on_batch: If True, all images in batch share the same random rotation angle.
+            Default: False.
+        same_on_frame: If True, all frames in a video (5D input) share the same random
+            rotation angle. Default: True.
+            
+    Note:
+        For nearest neighbor interpolation, there may be minor differences compared
+        to torchvision at exact pixel boundaries due to floating-point rounding.
+        Bilinear interpolation does not have this limitation.
+        
+    Example:
+        ```python
+        transform = TritonRandomRotation(
+            degrees=30,
+            interpolation=InterpolationMode.BILINEAR,
+            fill=0.5
+        )
+        
+        # Apply to batch of images
+        img = torch.rand(4, 3, 224, 224, device='cuda')
+        result = transform(img)
+        ```
     """
     
     def __init__(
