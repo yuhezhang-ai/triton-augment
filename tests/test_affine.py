@@ -510,7 +510,12 @@ class TestTransformClasses:
         torch.testing.assert_close(transform_result, functional_result)
     
     def test_random_rotation_params_match_functional(self):
-        """Test that TritonRandomRotation produces same result as F.rotate with same params."""
+        """Test that TritonRandomRotation produces same result as F.affine with same params.
+        
+        Note: TritonRandomRotation uses F.affine internally (via parent class),
+        so we compare with F.affine, not F.rotate (which negates the angle).
+        Also verify that F.rotate with negated angle gives the same result.
+        """
         batch_size = 4
         height, width = 128, 128
         transform = ta.TritonRandomRotation(
@@ -531,15 +536,26 @@ class TestTransformClasses:
         torch.manual_seed(42)
         angle, translate, scale, shear = transform._get_params(batch_size, img.device, (height, width))
         
-        # Apply F.rotate with same angle
-        functional_result = F.rotate(
+        # TritonRandomRotation uses F.affine internally (rotation only, no translate/scale/shear)
+        affine_result = F.affine(
             img,
             angle=angle,
+            translate=translate,  # zeros
+            scale=scale,          # ones
+            shear=shear,          # zeros
             interpolation=ta.InterpolationMode.BILINEAR
         )
         
-        # Should be identical
-        torch.testing.assert_close(transform_result, functional_result)
+        # F.rotate negates the angle, so F.rotate(-angle) should equal F.affine(angle)
+        rotate_result = F.rotate(
+            img,
+            angle=-angle,  # Negate to match F.affine behavior
+            interpolation=ta.InterpolationMode.BILINEAR
+        )
+        
+        # All three should be identical
+        torch.testing.assert_close(transform_result, affine_result)
+        torch.testing.assert_close(transform_result, rotate_result)
     
     def test_random_rotation_per_image_randomness(self):
         """Test that different images get different rotations when same_on_batch=False."""
