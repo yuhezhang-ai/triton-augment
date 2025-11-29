@@ -889,11 +889,6 @@ def _get_inverse_affine_matrix(
     # Stack into [N, 6] tensor
     matrix = torch.stack([m0, m1, m2, m3, m4, m5], dim=1)
 
-    # Snap small values to zero to avoid floating point noise (e.g. cos(90) ~= 1e-8)
-    # This ensures that structural rotations (90, 180) land exactly on half-integers
-    # allowing the kernel's RNE logic to work with a tight epsilon.
-    matrix[torch.abs(matrix) < 1e-6] = 0.0
-
     return matrix
 
 

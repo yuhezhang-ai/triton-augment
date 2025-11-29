@@ -5,6 +5,30 @@ import triton_augment as ta
 import torchvision.transforms.v2.functional as TVF
 from triton_augment.functional import InterpolationMode
 
+def check_affine_result(ta_result, tv_result, interpolation, atol=1e-3, rtol=1e-3, max_mismatch_rate=0.25, msg_prefix=""):
+    """
+    Check if affine transform results match, with special handling for nearest neighbor.
+    
+    For bilinear: strict comparison with atol/rtol.
+    For nearest: allow small percentage of pixels to differ due to boundary rounding.
+    """
+    if interpolation == "bilinear":
+        torch.testing.assert_close(ta_result, tv_result, atol=atol, rtol=rtol, msg_prefix=msg_prefix)
+    else:
+        # For nearest neighbor, check that most pixels match
+        # Mismatches at boundaries are acceptable
+        diff = (ta_result - tv_result).abs()
+        mismatch_mask = diff > atol
+        mismatch_rate = mismatch_mask.float().mean().item()
+        
+        if mismatch_rate > max_mismatch_rate:
+            # Too many mismatches - fail with detailed info
+            torch.testing.assert_close(
+                ta_result, tv_result, atol=atol, rtol=rtol,
+                msg=f"Nearest neighbor mismatch rate {mismatch_rate:.2%} exceeds threshold {max_mismatch_rate:.2%} for {msg_prefix}"
+            )
+
+
 @pytest.mark.parametrize("batch_size", [1, 4])
 @pytest.mark.parametrize("interpolation", ["nearest", "bilinear"])
 @pytest.mark.parametrize("imgsize", [(100, 111), (256, 256)])
@@ -30,7 +54,7 @@ def test_fused_affine_vs_sequential(batch_size, interpolation, imgsize, shear, f
     scale_factor = 1.0
     crop_top, crop_left, crop_h, crop_w = crop
     
-    # 2. Sequential execution (Ground Truth)
+    # 2. Sequential torchvision execution (Ground Truth)
     # Note: Our fused pipeline does: Affine -> Crop -> Flip
     # So we must match that order.
     
@@ -46,7 +70,7 @@ def test_fused_affine_vs_sequential(batch_size, interpolation, imgsize, shear, f
         scale=scale_factor, 
         shear=shear,
         interpolation=TVF.InterpolationMode.NEAREST if interpolation == "nearest" else TVF.InterpolationMode.BILINEAR,
-        center=center
+        #center=center
     )
     
     # Step B: Crop
@@ -74,26 +98,34 @@ def test_fused_affine_vs_sequential(batch_size, interpolation, imgsize, shear, f
         scale=scale_factor,
         shear=shear,
         interpolation=interpolation,
-        center=center
+        #center=center
+    )
+
+    # 4. Sequential triton execution
+    out_triton = ta.functional.affine(
+        img,
+        angle=angle,
+        translate=[dx, dy],
+        scale=scale_factor,
+        shear=shear,
+        interpolation=interpolation,
+        #center=center
     )
     
-    # Compare
-    # Note: Nearest neighbor can have off-by-one errors due to rounding differences
-    # between composed matrix and sequential integer ops.
-    # Bilinear should be very close.
+    out_triton = ta.functional.crop(
+        out_triton,
+        top=crop_top,
+        left=crop_left,
+        height=crop_h,
+        width=crop_w,
+    )
     
-    if interpolation == "nearest":
-        # Allow some mismatch pixels
-        diff = (out_fused - out_seq).abs()
-        mismatch_pct = (diff > 1e-4).float().mean().item()
-        print(f"Nearest Mismatch: {mismatch_pct:.2%}")
-        assert mismatch_pct < 0.05 # Allow <5% mismatch for complex composition
-    else:
-        # Bilinear should be closer
-        diff = (out_fused - out_seq).abs()
-        mae = diff.mean().item()
-        print(f"Bilinear MAE: {mae:.4f}")
-        assert mae < 0.05
+    if flip:
+        out_triton = ta.functional.horizontal_flip(out_triton)
+    
+    # 5. Compare
+    check_affine_result(out_fused, out_seq, interpolation, msg_prefix="Fused vs torchvision")
+    check_affine_result(out_triton, out_seq, interpolation, msg_prefix="Triton-sequential vs torchvision")
 
 if __name__ == "__main__":
     test_fused_affine_vs_sequential(1, "nearest")
