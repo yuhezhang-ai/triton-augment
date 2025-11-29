@@ -1182,17 +1182,11 @@ def rotate(
 
 
 
-def _prepare_affine_matrix(
+def _prepare_affine_matrix_only(
     batch_size: int,
     device: torch.device,
-    # Geometric parameters
-    top: int | torch.Tensor,
-    left: int | torch.Tensor,
-    height: int,
-    width: int,
     img_height: int,
     img_width: int,
-    flip_horizontal: bool | torch.Tensor,
     # Affine parameters
     angle: float | torch.Tensor,
     translate: list[float] | torch.Tensor,
@@ -1201,8 +1195,13 @@ def _prepare_affine_matrix(
     center: list[float] | None,
 ) -> torch.Tensor:
     """
-    Helper to prepare the unified affine matrix for fused_augment.
-    Combines Affine @ Crop @ Flip into a single inverse matrix.
+    Helper to prepare the affine matrix ONLY (no crop/flip composition).
+    
+    The crop and flip are handled separately in the kernel, which applies
+    them in sequence: Flip -> Crop -> Affine.
+    
+    Returns:
+        Affine matrix [N, 6] for the affine transform only.
     """
     # Use helper to prepare affine parameters (handles tensor conversion and center translation)
     angle_t, translate_t, scale_t, shear_t, center_t = _prepare_affine_params_to_tensor(
@@ -1212,55 +1211,8 @@ def _prepare_affine_matrix(
     # Calculate inverse affine matrix (RSS^-1 * C^-1 * T^-1 * C)
     # This maps output coordinates to input coordinates for the affine part
     affine_matrix = _get_inverse_affine_matrix(center_t, angle_t, translate_t, scale_t, shear_t)
-
-    # Convert crop/flip parameters to tensors
-    top_offsets = _convert_to_tensor(top, batch_size, torch.float32, device, "top")
-    left_offsets = _convert_to_tensor(left, batch_size, torch.float32, device, "left")
     
-    if isinstance(flip_horizontal, bool):
-        if flip_horizontal:
-            flip_mask = torch.ones(batch_size, device=device, dtype=torch.bool)
-        else:
-            flip_mask = torch.zeros(batch_size, device=device, dtype=torch.bool)
-    else:
-        flip_mask = _convert_to_tensor(flip_horizontal, batch_size, torch.bool, device, "flip_horizontal")
-
-    # Compose matrices: M_total = M_affine @ M_crop @ M_flip
-    # We need to do this because the kernel expects a single matrix that maps
-    # output pixel (x, y) -> input pixel (u, v).
-    
-    # 1. Affine Matrix (3x3 expansion)
-    M_affine = torch.eye(3, device=device).repeat(batch_size, 1, 1)
-    M_affine[:, 0, :] = affine_matrix[:, 0:3]
-    M_affine[:, 1, :] = affine_matrix[:, 3:6]
-    
-    # 2. Crop Matrix (Translation)
-    # Maps cropped coordinates (0..w) to original image coordinates (left..left+w)
-    # x_new = x_old + left
-    # y_new = y_old + top
-    M_crop = torch.eye(3, device=device).repeat(batch_size, 1, 1)
-    M_crop[:, 0, 2] = left_offsets
-    M_crop[:, 1, 2] = top_offsets
-    
-    # 3. Flip Matrix
-    # Maps flipped coordinates to unflipped
-    # If flipped: x_new = (width - 1) - x_old
-    # Matrix: [[-1, 0, width-1], [0, 1, 0], [0, 0, 1]]
-    M_flip = torch.eye(3, device=device).repeat(batch_size, 1, 1)
-    flip_indices = torch.where(flip_mask)[0]
-    if len(flip_indices) > 0:
-        M_flip[flip_indices, 0, 0] = -1.0
-        # M_flip[flip_indices, 0, 2] = width - 1.0  # Note: using output width
-        # Yuhe note: in centered coordinate system, the flip is simply x -> -x
-        M_flip[flip_indices, 0, 2] = 0
-
-    # Combine: Affine(Crop(Flip(x)))
-    # Order of application to coordinate: Flip -> Crop -> Affine
-    # Matrix multiplication order: Affine * Crop * Flip
-    M_total = torch.bmm(M_affine, torch.bmm(M_crop, M_flip))
-    
-    # Flatten back to [N, 6]
-    return M_total[:, :2, :].reshape(batch_size, 6)
+    return affine_matrix
 
 
 def fused_augment(
@@ -1426,86 +1378,57 @@ def fused_augment(
         print(f"[Triton-Augment] Auto-tuning fused_augment_kernel for batch={batch_size}, size={height}×{width}...", 
               file=sys.stderr, flush=True)
 
+    # === UNIFIED PATH ===
+    # Always prepare crop/flip params (used by both modes)
+    top_offsets = _convert_to_tensor(top, batch_size, torch.float32, image.device, "top")
+    left_offsets = _convert_to_tensor(left, batch_size, torch.float32, image.device, "left")
+    flip_mask = _convert_to_tensor(flip_horizontal, batch_size, torch.bool, image.device, "flip_horizontal")
+    
     if has_affine:
-        # === AFFINE MODE ===
-        # Calculate unified affine matrix
-        matrix_t = _prepare_affine_matrix(
+        # Calculate affine matrix only (crop/flip handled separately in kernel)
+        matrix_t = _prepare_affine_matrix_only(
             batch_size, image.device,
-            top, left, height, width, img_height, img_width, flip_horizontal,
+            img_height, img_width,
             angle, translate, scale, shear, center
         )
-        
         interp_mode_int = 1 if str(interpolation).lower() == "bilinear" else 0
-        
-        fused_augment_kernel[grid](
-            image,
-            output,
-            N,
-            batch_size,
-            channels,
-            img_height,
-            img_width,
-            height,
-            width,
-            # Crop/Flip params (unused)
-            None, None, None,
-            # Affine params
-            matrix_t,
-            fill,
-            interp_mode_int,
-            # Pixel ops
-            norm_mean_tensor,
-            norm_std_tensor,
-            brightness_factors,
-            contrast_factors,
-            saturation_factors,
-            grayscale_mask,
-            # Flags
-            True, # has_affine
-            apply_brightness,
-            apply_contrast,
-            apply_saturation,
-            apply_grayscale,
-            apply_normalize,
-        )
     else:
-        # === SIMPLE MODE (Crop + Flip) ===
-        # Convert geometric parameters to tensors
-        top_offsets = _convert_to_tensor(top, batch_size, torch.int32, image.device, "top")
-        left_offsets = _convert_to_tensor(left, batch_size, torch.int32, image.device, "left")
-        flip_mask = _convert_to_tensor(flip_horizontal, batch_size, torch.bool, image.device, "flip_horizontal")
-        
-        fused_augment_kernel[grid](
-            image,
-            output,
-            N,
-            batch_size,
-            channels,
-            img_height,
-            img_width,
-            height,
-            width,
-            # Crop/Flip params
-            top_offsets,
-            left_offsets,
-            flip_mask,
-            # Affine params (unused)
-            None, 0.0, 0,
-            # Pixel ops
-            norm_mean_tensor,
-            norm_std_tensor,
-            brightness_factors,
-            contrast_factors,
-            saturation_factors,
-            grayscale_mask,
-            # Flags
-            False, # has_affine
-            apply_brightness,
-            apply_contrast,
-            apply_saturation,
-            apply_grayscale,
-            apply_normalize,
-        )
+        matrix_t = None
+        interp_mode_int = 0
+    
+    fused_augment_kernel[grid](
+        image,
+        output,
+        N,
+        batch_size,
+        channels,
+        img_height,
+        img_width,
+        height,
+        width,
+        # Crop/Flip params (always used)
+        top_offsets,
+        left_offsets,
+        flip_mask,
+        # Affine params
+        matrix_t,
+        fill,
+        interp_mode_int,
+        # Pixel ops
+        norm_mean_tensor,
+        norm_std_tensor,
+        brightness_factors,
+        contrast_factors,
+        saturation_factors,
+        grayscale_mask,
+        # Flags
+        has_affine,
+        apply_brightness,
+        apply_contrast,
+        apply_saturation,
+        apply_grayscale,
+        apply_normalize,
+    )
     
     return output
 

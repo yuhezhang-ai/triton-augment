@@ -294,12 +294,16 @@ def apply_affine_transform(
     """
     Helper to apply affine transformation to coordinates.
     
+    This function maps output pixel coordinates to input pixel coordinates
+    using the inverse affine matrix. The matrix is expected to be in the format
+    produced by _get_inverse_affine_matrix (operates in centered coordinates).
+    
     Args:
         x_out, y_out: Output pixel coordinates (int or float)
         matrix_ptr: Pointer to affine matrices [N, 6]
         n: Batch index
         input_width, input_height: Input image dimensions
-        output_width, output_height: Output image dimensions
+        output_width, output_height: Output image dimensions (used for centering)
         mask: Validity mask
         
     Returns:
@@ -321,37 +325,96 @@ def apply_affine_transform(
     # 3. Result is normalized coords for grid_sample with align_corners=False
     #
     # To match this, we:
-    # 1. Convert output pixel coords to centered coords
-    # 2. Apply matrix with rescaling
-    # 3. Convert normalized result back to pixel coords
-    # which is just equivalent to applying matrix in centered coords and then convert back to non-centered coords
+    # 1. Convert output pixel coords to centered coords (using INPUT dimensions since affine is on input)
+    # 2. Apply matrix
+    # 3. Convert back to pixel coords
 
     x_out_f = x_out.to(tl.float32)
     y_out_f = y_out.to(tl.float32)
     
-    half_ow = input_width * 0.5 # output_width * 0.5
-    half_oh = input_height * 0.5 # output_height * 0.5
-    x_centered = x_out_f - half_ow + 0.5
-    y_centered = y_out_f - half_oh + 0.5
-    
+    # Center using INPUT dimensions (affine operates on full input image)
     half_iw = input_width * 0.5
     half_ih = input_height * 0.5
+    x_centered = x_out_f - half_iw + 0.5
+    y_centered = y_out_f - half_ih + 0.5
 
-    # x_norm = (a * x_centered + b * y_centered + c_tx) / half_iw
-    # y_norm = (d * x_centered + e * y_centered + f_ty) / half_ih
-    # x_in = ((x_norm + 1.0) * input_width - 1.0) * 0.5
-    # y_in = ((y_norm + 1.0) * input_height - 1.0) * 0.5
-
-    # Derive:
-    # x_norm = x / (input_width * 0.5)
-    # y_norm = y / (input_height * 0.5)
-    # x_in = ((x / (input_width * 0.5) + 1.0) * input_width - 1.0) * 0.5
-    # = x + input_width * 0.5 - 0.5
-    # y_in = ((y / (input_height * 0.5) + 1.0) * input_height - 1.0) * 0.5
-    # = y + input_height * 0.5 - 0.5
-
+    # Apply matrix and convert back to pixel coords
     x_in = (a * x_centered + b * y_centered + c_tx) + half_iw - 0.5
     y_in = (d * x_centered + e * y_centered + f_ty) + half_ih - 0.5
+    
+    return x_in, y_in
+
+
+@triton.jit
+def apply_fused_geometric_transform(
+    x_out, y_out,
+    # Crop/Flip params
+    top_offset, left_offset,
+    output_width,
+    do_flip,
+    # Affine params  
+    matrix_ptr,
+    n,
+    input_width, input_height,
+    has_affine: tl.constexpr,
+    mask
+):
+    """
+    Apply fused geometric transform: Flip -> Crop -> Affine (in that order).
+    
+    This matches the sequential execution: Affine(input) -> Crop(result) -> Flip(result)
+    To find the input pixel for an output pixel, we reverse:
+    1. Flip in output coords
+    2. Add crop offset to get coords in the affine output (= input image space)
+    3. Apply inverse affine to find the actual input pixel
+    
+    Args:
+        x_out, y_out: Output pixel coordinates in crop window [0, output_w) × [0, output_h)
+        top_offset, left_offset: Crop offsets
+        output_width: Width of output (for flip)
+        do_flip: Whether this image is flipped
+        matrix_ptr: Pointer to affine matrices [N, 6]
+        n: Batch index
+        input_width, input_height: Input image dimensions
+        has_affine: Whether to apply affine transform
+        mask: Validity mask
+        
+    Returns:
+        x_in, y_in: Transformed input coordinates
+    """
+    x_out_f = x_out.to(tl.float32)
+    y_out_f = y_out.to(tl.float32)
+    
+    # Step 1: Apply flip in output coordinate system
+    x_flipped = tl.where(do_flip, (output_width - 1) - x_out_f, x_out_f)
+    
+    # Step 2: Add crop offset to get coords in input image space
+    x_img = x_flipped + left_offset
+    y_img = y_out_f + top_offset
+    
+    # Step 3: Apply inverse affine if needed
+    if has_affine:
+        # Load matrix elements
+        mat_base = matrix_ptr + n * 6
+        a = tl.load(mat_base + 0, mask=mask, other=1.0)
+        b = tl.load(mat_base + 1, mask=mask, other=0.0)
+        c_tx = tl.load(mat_base + 2, mask=mask, other=0.0)
+        d = tl.load(mat_base + 3, mask=mask, other=0.0)
+        e = tl.load(mat_base + 4, mask=mask, other=1.0)
+        f_ty = tl.load(mat_base + 5, mask=mask, other=0.0)
+        
+        # Center using input dimensions (affine is centered on input image)
+        half_iw = input_width * 0.5
+        half_ih = input_height * 0.5
+        x_centered = x_img - half_iw + 0.5
+        y_centered = y_img - half_ih + 0.5
+        
+        # Apply matrix and convert back to pixel coords
+        x_in = (a * x_centered + b * y_centered + c_tx) + half_iw - 0.5
+        y_in = (d * x_centered + e * y_centered + f_ty) + half_ih - 0.5
+    else:
+        x_in = x_img
+        y_in = y_img
     
     return x_in, y_in
 

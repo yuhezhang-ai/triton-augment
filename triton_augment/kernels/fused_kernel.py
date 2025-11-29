@@ -11,7 +11,7 @@ with appropriate parameters.
 import triton
 import triton.language as tl
 from ..config import ENABLE_AUTOTUNE
-from .geometric_kernel import sample_nearest, sample_bilinear, apply_affine_transform
+from .geometric_kernel import sample_nearest, sample_bilinear, apply_fused_geometric_transform
 
 
 # Default configuration when auto-tuning is disabled
@@ -71,10 +71,10 @@ def fused_augment_kernel(
     input_width,
     output_height,
     output_width,
-    # Crop/Flip parameters (used when has_affine=False)
-    top_offsets_ptr,      # Per-image top offsets [N] (int32)
-    left_offsets_ptr,     # Per-image left offsets [N] (int32)
-    flip_mask_ptr,        # Per-image flip decisions [N] (uint8: 0 or 1)
+    # Crop/Flip parameters (always used - for fused geometric transform)
+    top_offsets_ptr,      # Per-image top offsets [N] (float32)
+    left_offsets_ptr,     # Per-image left offsets [N] (float32)
+    flip_mask_ptr,        # Per-image flip decisions [N] (bool)
     # Affine parameters (used when has_affine=True)
     matrix_ptr,           # Per-image affine matrix [N, 6] (float32)
     fill_value,           # Fill value for out-of-bounds
@@ -87,7 +87,7 @@ def fused_augment_kernel(
     saturation_factors_ptr,  # Per-image saturation factors [N]
     grayscale_mask_ptr,      # Per-image grayscale decisions [N] (uint8: 0 or 1)
     # Flags
-    has_affine: tl.constexpr,  # Whether to use affine transform or crop/flip
+    has_affine: tl.constexpr,  # Whether to apply affine transform (in addition to crop/flip)
     apply_brightness: tl.constexpr,
     apply_contrast: tl.constexpr,
     apply_saturation: tl.constexpr,
@@ -177,25 +177,33 @@ def fused_augment_kernel(
         h_out = spatial_idx // output_width
         w_out = spatial_idx % output_width
         
-        # === GEOMETRIC TIER: Apply transform (per-image) ===
+        # === GEOMETRIC TIER: Apply fused transform (Flip -> Crop -> Affine) ===
+        # Load per-image geometric parameters
+        top_offset = tl.load(top_offsets_ptr + batch_idx, mask=spatial_mask, other=0.0)
+        left_offset = tl.load(left_offsets_ptr + batch_idx, mask=spatial_mask, other=0.0)
+        do_flip = tl.load(flip_mask_ptr + batch_idx, mask=spatial_mask, other=False)
+        
+        # Apply fused geometric transform: Flip -> Crop offset -> Affine
+        x_in, y_in = apply_fused_geometric_transform(
+            w_out, h_out,
+            top_offset, left_offset,
+            output_width,
+            do_flip,
+            matrix_ptr,
+            batch_idx,
+            input_width, input_height,
+            has_affine,
+            spatial_mask
+        )
+        
+        # Calculate base offsets for RGB channels
+        input_spatial_size = input_height * input_width
+        r_base = batch_idx * channels * input_spatial_size + 0 * input_spatial_size
+        g_base = batch_idx * channels * input_spatial_size + 1 * input_spatial_size
+        b_base = batch_idx * channels * input_spatial_size + 2 * input_spatial_size
+        
         if has_affine:
-            # Affine path: Use matrix transformation with interpolation
-            x_in, y_in = apply_affine_transform(
-                w_out, h_out,
-                matrix_ptr,
-                batch_idx,
-                input_width, input_height,
-                output_width, output_height,
-                spatial_mask
-            )
-            
-            # Calculate base offsets for RGB channels
-            input_spatial_size = input_height * input_width
-            r_base = batch_idx * channels * input_spatial_size + 0 * input_spatial_size
-            g_base = batch_idx * channels * input_spatial_size + 1 * input_spatial_size
-            b_base = batch_idx * channels * input_spatial_size + 2 * input_spatial_size
-            
-            # Sample RGB channels with interpolation
+            # Sample RGB channels with interpolation (affine may produce non-integer coords)
             if interpolation_mode == 0:  # Nearest
                 r = sample_nearest(input_ptr, x_in, y_in, r_base, input_width, input_height, fill_value, spatial_mask)
                 g = sample_nearest(input_ptr, x_in, y_in, g_base, input_width, input_height, fill_value, spatial_mask)
@@ -205,25 +213,13 @@ def fused_augment_kernel(
                 g = sample_bilinear(input_ptr, x_in, y_in, g_base, input_width, input_height, fill_value, spatial_mask)
                 b = sample_bilinear(input_ptr, x_in, y_in, b_base, input_width, input_height, fill_value, spatial_mask)
         else:
-            # Crop/Flip path: Simple integer transformations
-            # Load per-image geometric parameters
-            top_offset = tl.load(top_offsets_ptr + batch_idx, mask=spatial_mask, other=0)
-            left_offset = tl.load(left_offsets_ptr + batch_idx, mask=spatial_mask, other=0)
-            do_flip = tl.load(flip_mask_ptr + batch_idx, mask=spatial_mask, other=False)
+            # Direct load (crop/flip produces integer coords)
+            x_in_int = x_in.to(tl.int32)
+            y_in_int = y_in.to(tl.int32)
+            r_in_offset = r_base + y_in_int * input_width + x_in_int
+            g_in_offset = g_base + y_in_int * input_width + x_in_int
+            b_in_offset = b_base + y_in_int * input_width + x_in_int
             
-            # Apply flip conditionally
-            w_out_transformed = tl.where(do_flip, output_width - 1 - w_out, w_out)
-            
-            h_in = h_out + top_offset
-            w_in = w_out_transformed + left_offset
-            
-            # Calculate input offsets for RGB channels
-            input_spatial_size = input_height * input_width
-            r_in_offset = batch_idx * channels * input_spatial_size + 0 * input_spatial_size + h_in * input_width + w_in
-            g_in_offset = batch_idx * channels * input_spatial_size + 1 * input_spatial_size + h_in * input_width + w_in
-            b_in_offset = batch_idx * channels * input_spatial_size + 2 * input_spatial_size + h_in * input_width + w_in
-            
-            # Single memory read (from transformed geometric position)
             r = tl.load(input_ptr + r_in_offset, mask=spatial_mask, other=0.0)
             g = tl.load(input_ptr + g_in_offset, mask=spatial_mask, other=0.0)
             b = tl.load(input_ptr + b_in_offset, mask=spatial_mask, other=0.0)
@@ -317,50 +313,40 @@ def fused_augment_kernel(
         h_out = remainder // output_width
         w_out = remainder % output_width
         
-        # === GEOMETRIC TIER: Apply transform (per-image) ===
+        # === GEOMETRIC TIER: Apply fused transform (Flip -> Crop -> Affine) ===
+        # Load per-image geometric parameters
+        top_offset = tl.load(top_offsets_ptr + n, mask=mask, other=0.0)
+        left_offset = tl.load(left_offsets_ptr + n, mask=mask, other=0.0)
+        do_flip = tl.load(flip_mask_ptr + n, mask=mask, other=False)
+        
+        # Apply fused geometric transform: Flip -> Crop offset -> Affine
+        x_in, y_in = apply_fused_geometric_transform(
+            w_out, h_out,
+            top_offset, left_offset,
+            output_width,
+            do_flip,
+            matrix_ptr,
+            n,
+            input_width, input_height,
+            has_affine,
+            mask
+        )
+        
+        # Calculate base offset for this channel
+        input_spatial_size = input_height * input_width
+        base_offset = n * channels * input_spatial_size + c * input_spatial_size
+        
         if has_affine:
-            # Affine path: Use matrix transformation with interpolation
-            x_in, y_in = apply_affine_transform(
-                w_out, h_out,
-                matrix_ptr,
-                n,
-                input_width, input_height,
-                output_width, output_height,
-                mask
-            )
-            
-            # Calculate base offset for this channel
-            input_spatial_size = input_height * input_width
-            base_offset = n * channels * input_spatial_size + c * input_spatial_size
-            
-            # Sample pixel
+            # Sample pixel with interpolation (affine may produce non-integer coords)
             if interpolation_mode == 0:  # Nearest
                 pixel = sample_nearest(input_ptr, x_in, y_in, base_offset, input_width, input_height, fill_value, mask)
             else:  # Bilinear
                 pixel = sample_bilinear(input_ptr, x_in, y_in, base_offset, input_width, input_height, fill_value, mask)
         else:
-            # Crop/Flip path: Simple integer transformations
-            # Load per-image geometric parameters
-            top_offset = tl.load(top_offsets_ptr + n, mask=mask, other=0)
-            left_offset = tl.load(left_offsets_ptr + n, mask=mask, other=0)
-            do_flip = tl.load(flip_mask_ptr + n, mask=mask, other=False)
-            
-            # Apply flip conditionally
-            w_out_transformed = tl.where(do_flip, output_width - 1 - w_out, w_out)
-            
-            h_in = h_out + top_offset
-            w_in = w_out_transformed + left_offset
-            
-            # Calculate input offset
-            input_spatial_size = input_height * input_width
-            input_offset = (
-                n * channels * input_spatial_size +
-                c * input_spatial_size +
-                h_in * input_width +
-                w_in
-            )
-            
-            # Single memory read (from transformed geometric position)
+            # Direct load (crop/flip produces integer coords)
+            x_in_int = x_in.to(tl.int32)
+            y_in_int = y_in.to(tl.int32)
+            input_offset = base_offset + y_in_int * input_width + x_in_int
             pixel = tl.load(input_ptr + input_offset, mask=mask, other=0.0)
         
         # === PIXEL TIER: Apply all color operations ===
