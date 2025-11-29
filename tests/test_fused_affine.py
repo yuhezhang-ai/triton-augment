@@ -41,7 +41,7 @@ class TestFusedAffine:
     @pytest.mark.parametrize("angle", [0.0, 30.0])
     @pytest.mark.parametrize("translate", [[0.0, 0.0], [10.0, 5.0]])
     @pytest.mark.parametrize("crop", [[10, 10, 80, 80], [0, 0, 100, 111]])
-    def test_fused_affine_vs_sequential(batch_size, interpolation, imgsize, shear, flip, angle, translate, crop):
+    def test_fused_affine_vs_sequential(self, batch_size, interpolation, imgsize, shear, flip, angle, translate, crop):
         """
         Verify that TritonFusedAffineAugment matches sequential application of transforms.
         We test the geometric composition: Affine -> Crop -> Flip.
@@ -144,7 +144,7 @@ class TestAllFusedOps:
     @pytest.mark.parametrize("brightness", [1.2])
     @pytest.mark.parametrize("saturation", [0.8])
     @pytest.mark.parametrize("grayscale", [True, False])
-    def test_fused_all_ops_vs_sequential(batch_size, interpolation, imgsize, flip, angle, brightness, saturation, grayscale):
+    def test_fused_all_ops_vs_sequential(self, batch_size, interpolation, imgsize, flip, angle, brightness, saturation, grayscale):
         """
         Verify that fused_augment matches sequential application of ALL transforms.
         Order: Affine -> Crop -> Flip -> Brightness -> Contrast -> Saturation -> Grayscale -> Normalize
