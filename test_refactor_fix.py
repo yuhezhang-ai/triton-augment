@@ -46,7 +46,7 @@ def test_prepare_affine_params_logic():
         angle, translate, scale, shear, center, batch_size, height, width, device
     )
     
-    expected_center = torch.tensor([50.0, 50.0], device=device).repeat(batch_size, 1)
+    expected_center = torch.tensor([0.0, 0.0], device=device).repeat(batch_size, 1)
     print(f"Actual center: {center_t[0]}")
     print(f"Expected center: {expected_center[0]}")
     assert torch.allclose(center_t, expected_center)

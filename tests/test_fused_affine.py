@@ -9,7 +9,8 @@ from triton_augment.functional import InterpolationMode
 @pytest.mark.parametrize("interpolation", ["nearest", "bilinear"])
 @pytest.mark.parametrize("imgsize", [(100, 111), (256, 256)])
 @pytest.mark.parametrize("shear", [[0.0, 0.0], [5, 1]])
-def test_fused_affine_vs_sequential(batch_size, interpolation, imgsize, shear):
+@pytest.mark.parametrize("flip", [True, False])
+def test_fused_affine_vs_sequential(batch_size, interpolation, imgsize, shear, flip):
     """
     Verify that TritonFusedAffineAugment matches sequential application of transforms.
     We test the geometric composition: Affine -> Crop -> Flip.
@@ -27,7 +28,6 @@ def test_fused_affine_vs_sequential(batch_size, interpolation, imgsize, shear):
     scale_factor = 1.1
     crop_top, crop_left = 10, 10
     crop_h, crop_w = 80, 80
-    flip = True
     
     # 2. Sequential execution (Ground Truth)
     # Note: Our fused pipeline does: Affine -> Crop -> Flip
