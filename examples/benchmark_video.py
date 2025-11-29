@@ -236,9 +236,9 @@ def main():
     configs = [
         # (batch_size, num_frames, image_size, crop_size)
         (8, 16, 256, 224),     # Standard video batch
-        (4, 32, 256, 224),     # Longer video
-        (16, 8, 256, 224),     # More videos, fewer frames
-        (8, 16, 512, 448),     # Higher resolution
+        (8, 32, 256, 224),     # Longer video
+        (16, 32, 256, 224),     # More videos
+        (8, 32, 512, 448),     # Higher resolution
     ]
     
     results = []

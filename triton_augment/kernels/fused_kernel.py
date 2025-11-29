@@ -100,7 +100,7 @@ def fused_augment_kernel(
     FUSED AUGMENT KERNEL: All augmentations in ONE pass.
     
     This unified kernel combines:
-    - **Geometric Tier**: EITHER Crop+Flip OR Affine Transform (controlled by has_affine flag)
+    - **Geometric Tier**: Affine Transform (controlled by has_affine flag) + Crop + Flip
     - **Pixel Tier**: Brightness + Contrast + Saturation + Random Grayscale + Normalize (value operations)
     
     **OPTIMIZATION**: Uses TWO processing paths based on saturation/grayscale:
@@ -110,8 +110,8 @@ def fused_augment_kernel(
     **Processing Flow**:
     1. Calculate output position (n, c, h, w)
     2. Apply geometric transforms:
-       - If has_affine=False: Crop + optional flip (simple integer ops)
-       - If has_affine=True: Affine transform with interpolation
+       - If has_affine=False: Crop + optional Flip (simple integer ops)
+       - If has_affine=True: Affine transform with interpolation + Crop + optional Flip
     3. Sample pixel from transformed input position
     4. Apply all pixel operations in registers:
        - Brightness (multiplicative)
