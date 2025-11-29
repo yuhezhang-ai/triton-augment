@@ -136,9 +136,9 @@ class TestAllFusedOps:
     Verify that fused_augment matches sequential application of ALL transforms.
     Order: Affine -> Crop -> Flip -> Brightness -> Contrast -> Saturation -> Grayscale -> Normalize
     """
-    @pytest.mark.parametrize("batch_size", [2])
+    @pytest.mark.parametrize("batch_size", [1, 4])
     @pytest.mark.parametrize("interpolation", ["bilinear"])
-    @pytest.mark.parametrize("imgsize", [(128, 128)])
+    @pytest.mark.parametrize("imgsize", [(128, 111), (256, 256)])
     @pytest.mark.parametrize("flip", [True, False])
     @pytest.mark.parametrize("angle", [15.0])
     @pytest.mark.parametrize("brightness", [1.2])
@@ -315,6 +315,9 @@ class TestFusedAugmentTransformClass:
         crop_size = 100
         
         # Initialize transform with ALL operations
+        mean = (0.485, 0.456, 0.406)
+        std = (0.229, 0.224, 0.225)
+        
         transform = ta.TritonFusedAugment(
             crop_size=crop_size,
             horizontal_flip_p=0.5,
@@ -327,7 +330,9 @@ class TestFusedAugmentTransformClass:
             scale=(0.9, 1.1),
             shear=5,
             same_on_batch=True, # Important for easy comparison
-            interpolation="bilinear"
+            interpolation="bilinear",
+            mean=mean,
+            std=std
         )
         
         img = torch.rand(batch_size, 3, *img_size, device='cuda')
@@ -377,7 +382,8 @@ class TestFusedAugmentTransformClass:
             out_seq = TVF.rgb_to_grayscale(out_seq, num_output_channels=3)
             
         # Normalize (using default mean/std from transform)
-        out_seq = TVF.normalize(out_seq, transform.color_helper.mean, transform.color_helper.std)
+        if transform.color_helper.mean is not None and transform.color_helper.std is not None:
+            out_seq = TVF.normalize(out_seq, transform.color_helper.mean, transform.color_helper.std)
         
         # Compare
         check_affine_result(out_triton, out_seq, "bilinear", atol=1e-3, rtol=1e-3, msg_prefix="Class vs Sequential")
