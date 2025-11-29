@@ -13,7 +13,7 @@ def check_affine_result(ta_result, tv_result, interpolation, atol=1e-3, rtol=1e-
     For nearest: allow small percentage of pixels to differ due to boundary rounding.
     """
     if interpolation == "bilinear":
-        torch.testing.assert_close(ta_result, tv_result, atol=atol, rtol=rtol, msg_prefix=msg_prefix)
+        torch.testing.assert_close(ta_result, tv_result, atol=atol, rtol=rtol, msg=f"{msg_prefix}")
     else:
         # For nearest neighbor, check that most pixels match
         # Mismatches at boundaries are acceptable
