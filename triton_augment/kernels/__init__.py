@@ -17,7 +17,7 @@ from .color_normalize_kernel import (
 )
 
 from .fused_kernel import (
-    ultimate_fused_kernel,
+    fused_augment_kernel,
 )
 
 __all__ = [
@@ -27,6 +27,6 @@ __all__ = [
     'saturation_kernel',
     'normalize_kernel',
     'rgb_to_grayscale_kernel',
-    'ultimate_fused_kernel',
+    'fused_augment_kernel',
 ]
 

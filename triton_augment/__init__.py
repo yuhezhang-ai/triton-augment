@@ -62,12 +62,16 @@ from .transforms import (
     TritonCenterCrop,
     TritonRandomHorizontalFlip,
     TritonRandomCropFlip,
+    TritonRandomAffine,
+    TritonRandomRotation,
     # Fused augmentation
     TritonFusedAugment,
 )
 
 # Import commonly used functional operations
 from .functional import (
+    # Enums
+    InterpolationMode,
     # Color operations
     adjust_brightness,
     adjust_contrast,
@@ -83,11 +87,13 @@ from .functional import (
     crop,
     center_crop,
     horizontal_flip,
+    affine,
+    rotate,
     # Fused operations
     fused_augment,
 )
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     # Submodules
@@ -95,7 +101,10 @@ __all__ = [
     'transforms',
     'utils',
     'config',
-    
+
+    # Enums
+    'InterpolationMode',
+
     # Utilities
     'warmup_cache',
     'enable_autotune',
@@ -113,6 +122,8 @@ __all__ = [
     'TritonCenterCrop',
     'TritonRandomHorizontalFlip',
     'TritonRandomCropFlip',
+    'TritonRandomAffine',
+    'TritonRandomRotation',
     # Transform classes - Fused Augmentation
     'TritonFusedAugment',
     
@@ -132,7 +143,9 @@ __all__ = [
     'crop',
     'center_crop',
     'horizontal_flip',
-    
+    'affine',
+    'rotate',
+
     # Functional API - Fused operations
     'fused_augment',
 ]

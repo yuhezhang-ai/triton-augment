@@ -173,3 +173,340 @@ def horizontal_flip_kernel(
     # Load from flipped input position, store to output
     pixel = tl.load(input_ptr + input_offset, mask=mask, other=0.0)
     tl.store(output_ptr + offsets, pixel, mask=mask)
+
+
+@triton.jit
+def sample_bilinear(
+    input_ptr,
+    x_in, y_in,
+    base_offset,
+    input_width, input_height,
+    fill_value,
+    mask
+):
+    """
+    Sample a pixel using bilinear interpolation.
+
+    Args:
+        input_ptr: Pointer to input tensor
+        x_in, y_in: Input coordinates (float32)
+        base_offset: Base offset for this batch/channel
+        input_width, input_height: Image dimensions
+        fill_value: Value for out-of-bounds pixels
+        mask: Validity mask for this thread
+
+    Returns:
+        Interpolated pixel value
+    """
+    # Get integer coordinates (floor)
+    x0 = tl.math.floor(x_in).to(tl.int32)
+    y0 = tl.math.floor(y_in).to(tl.int32)
+    x1 = x0 + 1
+    y1 = y0 + 1
+
+    # Get fractional parts
+    dx = x_in - x0
+    dy = y_in - y0
+
+    # Check bounds for 4 neighbors
+    valid_x0 = (x0 >= 0) & (x0 < input_width)
+    valid_y0 = (y0 >= 0) & (y0 < input_height)
+    valid_x1 = (x1 >= 0) & (x1 < input_width)
+    valid_y1 = (y1 >= 0) & (y1 < input_height)
+
+    # Load 4 neighbors with fill_value for out-of-bounds pixels
+    # Top-left (x0, y0)
+    mask_00 = mask & valid_x0 & valid_y0
+    idx_00 = base_offset + y0 * input_width + x0
+    p00 = tl.load(input_ptr + idx_00, mask=mask_00, other=fill_value)
+
+    # Top-right (x1, y0)
+    mask_10 = mask & valid_x1 & valid_y0
+    idx_10 = base_offset + y0 * input_width + x1
+    p10 = tl.load(input_ptr + idx_10, mask=mask_10, other=fill_value)
+
+    # Bottom-left (x0, y1)
+    mask_01 = mask & valid_x0 & valid_y1
+    idx_01 = base_offset + y1 * input_width + x0
+    p01 = tl.load(input_ptr + idx_01, mask=mask_01, other=fill_value)
+
+    # Bottom-right (x1, y1)
+    mask_11 = mask & valid_x1 & valid_y1
+    idx_11 = base_offset + y1 * input_width + x1
+    p11 = tl.load(input_ptr + idx_11, mask=mask_11, other=fill_value)
+
+    # Bilinear interpolation weights
+    w00 = (1.0 - dx) * (1.0 - dy)
+    w10 = dx * (1.0 - dy)
+    w01 = (1.0 - dx) * dy
+    w11 = dx * dy
+
+    # Perform bilinear interpolation
+    result = p00 * w00 + p10 * w10 + p01 * w01 + p11 * w11
+    return result.to(input_ptr.dtype.element_ty)
+
+
+@triton.jit
+def sample_nearest(
+    input_ptr,
+    x_in, y_in,
+    base_offset,
+    input_width, input_height,
+    fill_value,
+    mask
+):
+    """
+    Sample a pixel using nearest neighbor interpolation.
+
+    Args:
+        input_ptr: Pointer to input tensor
+        x_in, y_in: Input coordinates (float32)
+        base_offset: Base offset for this batch/channel
+        input_width, input_height: Image dimensions
+        fill_value: Value for out-of-bounds pixels
+        mask: Validity mask for this thread
+
+    Returns:
+        Nearest pixel value
+    """
+    # Round to nearest integer using round-to-nearest-even (banker's rounding)
+    # tl.math.rint() matches Python's round() behavior
+    x_nearest = tl.extra.cuda.libdevice.rint(x_in).to(tl.int32)
+    y_nearest = tl.extra.cuda.libdevice.rint(y_in).to(tl.int32)
+
+    # Check bounds
+    valid = (x_nearest >= 0) & (x_nearest < input_width) & (y_nearest >= 0) & (y_nearest < input_height)
+
+    # Load nearest pixel
+    mask_valid = mask & valid
+    idx = base_offset + y_nearest * input_width + x_nearest
+    return tl.load(input_ptr + idx, mask=mask_valid, other=fill_value)
+
+
+@triton.jit
+def apply_affine_transform(
+    x_out, y_out,
+    matrix_ptr,
+    n,
+    input_width, input_height,
+    output_width, output_height,
+    mask
+):
+    """
+    Helper to apply affine transformation to coordinates.
+    
+    This function maps output pixel coordinates to input pixel coordinates
+    using the inverse affine matrix. The matrix is expected to be in the format
+    produced by _get_inverse_affine_matrix (operates in centered coordinates).
+    
+    Args:
+        x_out, y_out: Output pixel coordinates (int or float)
+        matrix_ptr: Pointer to affine matrices [N, 6]
+        n: Batch index
+        input_width, input_height: Input image dimensions
+        output_width, output_height: Output image dimensions (used for centering)
+        mask: Validity mask
+        
+    Returns:
+        x_in, y_in: Transformed input coordinates
+    """
+    # Load matrix elements
+    mat_base = matrix_ptr + n * 6
+    a = tl.load(mat_base + 0, mask=mask, other=1.0)
+    b = tl.load(mat_base + 1, mask=mask, other=0.0)
+    c_tx = tl.load(mat_base + 2, mask=mask, other=0.0)
+    d = tl.load(mat_base + 3, mask=mask, other=0.0)
+    e = tl.load(mat_base + 4, mask=mask, other=1.0)
+    f_ty = tl.load(mat_base + 5, mask=mask, other=0.0)
+    
+    # Calculate input coordinates
+    # The matrix from _get_inverse_affine_matrix is designed for torchvision's grid-based system:
+    # 1. base_grid coords are centered: x in [-w*0.5 + 0.5, w*0.5 - 0.5]
+    # 2. Matrix is rescaled by [0.5*w, 0.5*h] before matmul
+    # 3. Result is normalized coords for grid_sample with align_corners=False
+    #
+    # To match this, we:
+    # 1. Convert output pixel coords to centered coords (using INPUT dimensions since affine is on input)
+    # 2. Apply matrix
+    # 3. Convert back to pixel coords
+
+    x_out_f = x_out.to(tl.float32)
+    y_out_f = y_out.to(tl.float32)
+    
+    # Center using INPUT dimensions (affine operates on full input image)
+    half_iw = input_width * 0.5
+    half_ih = input_height * 0.5
+    x_centered = x_out_f - half_iw + 0.5
+    y_centered = y_out_f - half_ih + 0.5
+
+    # Apply matrix and convert back to pixel coords
+    x_in = (a * x_centered + b * y_centered + c_tx) + half_iw - 0.5
+    y_in = (d * x_centered + e * y_centered + f_ty) + half_ih - 0.5
+    
+    return x_in, y_in
+
+
+@triton.jit
+def apply_fused_geometric_transform(
+    x_out, y_out,
+    # Crop/Flip params
+    top_offset, left_offset,
+    output_width,
+    do_flip,
+    # Affine params  
+    matrix_ptr,
+    n,
+    input_width, input_height,
+    has_affine: tl.constexpr,
+    mask
+):
+    """
+    Apply fused geometric transform: Flip -> Crop -> Affine (in that order).
+    
+    This matches the sequential execution: Affine(input) -> Crop(result) -> Flip(result)
+    To find the input pixel for an output pixel, we reverse:
+    1. Flip in output coords
+    2. Add crop offset to get coords in the affine output (= input image space)
+    3. Apply inverse affine to find the actual input pixel
+    
+    Args:
+        x_out, y_out: Output pixel coordinates in crop window [0, output_w) × [0, output_h)
+        top_offset, left_offset: Crop offsets
+        output_width: Width of output (for flip)
+        do_flip: Whether this image is flipped
+        matrix_ptr: Pointer to affine matrices [N, 6]
+        n: Batch index
+        input_width, input_height: Input image dimensions
+        has_affine: Whether to apply affine transform
+        mask: Validity mask
+        
+    Returns:
+        x_in, y_in: Transformed input coordinates
+    """
+    x_out_f = x_out.to(tl.float32)
+    y_out_f = y_out.to(tl.float32)
+    
+    # Step 1: Apply flip in output coordinate system
+    x_flipped = tl.where(do_flip, (output_width - 1) - x_out_f, x_out_f)
+    
+    # Step 2: Add crop offset to get coords in input image space
+    x_img = x_flipped + left_offset
+    y_img = y_out_f + top_offset
+    
+    # Step 3: Apply inverse affine if needed
+    if has_affine:
+        # Load matrix elements
+        mat_base = matrix_ptr + n * 6
+        a = tl.load(mat_base + 0, mask=mask, other=1.0)
+        b = tl.load(mat_base + 1, mask=mask, other=0.0)
+        c_tx = tl.load(mat_base + 2, mask=mask, other=0.0)
+        d = tl.load(mat_base + 3, mask=mask, other=0.0)
+        e = tl.load(mat_base + 4, mask=mask, other=1.0)
+        f_ty = tl.load(mat_base + 5, mask=mask, other=0.0)
+        
+        # Center using input dimensions (affine is centered on input image)
+        half_iw = input_width * 0.5
+        half_ih = input_height * 0.5
+        x_centered = x_img - half_iw + 0.5
+        y_centered = y_img - half_ih + 0.5
+        
+        # Apply matrix and convert back to pixel coords
+        x_in = (a * x_centered + b * y_centered + c_tx) + half_iw - 0.5
+        y_in = (d * x_centered + e * y_centered + f_ty) + half_ih - 0.5
+    else:
+        x_in = x_img
+        y_in = y_img
+    
+    return x_in, y_in
+
+
+@triton.jit
+def affine_transform_kernel(
+    input_ptr,
+    output_ptr,
+    batch_size,
+    channels,
+    input_height,
+    input_width,
+    output_height,
+    output_width,
+    matrix_ptr,       # Pointer to inverse affine matrices [N, 6] (float32)
+    fill_value,       # Constant value for out-of-bounds pixels
+    interpolation_mode,  # 0: nearest, 1: bilinear
+    BLOCK_SIZE: tl.constexpr,
+):
+    """
+    Apply affine transformation to a batch of images.
+    
+    The transformation is defined by a 2x3 matrix M (inverse affine matrix).
+    For each output pixel (x', y'), we compute the input coordinate (x, y):
+        [x, y, 1]^T = M * [x', y', 1]^T
+    
+    Then we sample the input image at (x, y) using bilinear interpolation.
+    
+    Args:
+        input_ptr: Pointer to input tensor [N, C, H_in, W_in]
+        output_ptr: Pointer to output tensor [N, C, H_out, W_out]
+        batch_size: Number of images
+        channels: Number of channels
+        input_height, input_width: Input dimensions
+        output_height, output_width: Output dimensions
+        matrix_ptr: Pointer to inverse affine matrices [N, 6]
+                    Layout: [a, b, c, d, e, f] corresponding to:
+                    [[a, b, c],
+                     [d, e, f]]
+        fill_value: Value to use for out-of-bounds pixels
+        BLOCK_SIZE: Block size for Triton kernel
+    """
+    # Total number of elements in output
+    total_elements = batch_size * channels * output_height * output_width
+    
+    # Get program ID
+    pid = tl.program_id(axis=0)
+    block_start = pid * BLOCK_SIZE
+    offsets = block_start + tl.arange(0, BLOCK_SIZE)
+    mask = offsets < total_elements
+    
+    # Decompose flat offset into (n, c, h_out, w_out)
+    output_spatial_size = output_height * output_width
+    n = offsets // (channels * output_spatial_size)
+    remainder = offsets % (channels * output_spatial_size)
+    c = remainder // output_spatial_size
+    remainder = remainder % output_spatial_size
+    y_out = remainder // output_width  # Row index (height)
+    x_out = remainder % output_width   # Column index (width)
+    
+    # Load affine matrix for this image
+    # Matrix layout: [N, 6] where each row is [a, b, c, d, e, f]
+    # Note: Threads may access different matrix rows (non-coalesced), but the small
+    # size (24 bytes) and GPU caching make this acceptable.
+
+    
+    # Apply affine transformation using helper
+    x_in, y_in = apply_affine_transform(
+        x_out, y_out,
+        matrix_ptr,
+        n,
+        input_width, input_height,
+        output_width, output_height,
+        mask
+    )
+
+    input_batch_offset = n * channels * input_height * input_width
+    input_channel_offset = c * input_height * input_width
+    base_offset = input_batch_offset + input_channel_offset
+
+    # Sample pixel using appropriate interpolation method
+    if interpolation_mode == 0:  # Nearest neighbor
+        pixel = sample_nearest(
+            input_ptr, x_in, y_in, base_offset,
+            input_width, input_height, fill_value, mask
+        )
+    else:  # Bilinear interpolation (mode == 1)
+        pixel = sample_bilinear(
+            input_ptr, x_in, y_in, base_offset,
+            input_width, input_height, fill_value, mask
+        )
+
+    # Store result
+    tl.store(output_ptr + offsets, pixel, mask=mask)

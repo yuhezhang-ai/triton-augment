@@ -17,27 +17,27 @@ Triton-Augment is a high-performance image augmentation library that leverages [
 
 Replace your augmentation pipeline with a **single fused kernel** and get:
 
-- **Image Speedup**: **8.1x average speedup** on Tesla T4 and **up to 12x faster** on large images (1280×1280) - compared to torchvision.transforms.v2.
+- **Image Speedup**: **8x average speedup** on Tesla T4 and **up to 15.6x faster** on large images (1280×1280) - compared to torchvision.transforms.v2.
 
-- **Video Speedup**: **5D video tensor support** with `same_on_batch=False, same_on_frame=True` control. Speedup: **8.6x vs Torchvision**, **73.7x vs Kornia** 🚀
+- **Video Speedup**: **5D video tensor support** with `same_on_batch=False, same_on_frame=True` control. Average speedup: **11x vs Torchvision**, **74x vs Kornia** 🚀
 
-[📊 See full benchmarks →](#-performance)
+[📊 See full benchmarks →](#performance)
 
 **Key Idea**: Fuse multiple GPU operations into a single kernel → eliminate intermediate memory transfers → faster augmentation.
 
 ```python
-# Traditional (torchvision Compose): 7 kernel launches
-crop → flip → brightness → contrast → saturation → grayscale → normalize
+# Traditional (torchvision Compose): 8 kernel launches
+affine → crop → flip → brightness → contrast → saturation → grayscale → normalize
 
 # Triton-Augment Ultimate Fusion: 1 kernel launch 🚀
-[crop + flip + brightness + contrast + saturation + grayscale + normalize]
+[affine + crop + flip + brightness + contrast + saturation + grayscale + normalize]
 ```
 
 ---
 
 ## 🚀 Features
 
-- **One Kernel, All Operations**: Fuse crop, flip, color jitter, grayscale, and normalize in a single kernel - significantly faster, scales with image size! 🚀
+- **One Kernel, All Operations**: Fuse affine (rotation, translation, scaling, shearing), crop, flip, color jitter, grayscale, and normalize in a single kernel - significantly faster, scales with image size! 🚀
 - **5D Video Tensor Support**: Native support for `[N, T, C, H, W]` video tensors with `same_on_frame` control for consistent augmentation across frames
 - **Different Parameters Per Sample**: Each image in batch gets different random augmentations (not just batch-wide)
 - **Zero Memory Overhead**: No intermediate buffers between operations
@@ -72,11 +72,17 @@ import triton_augment as ta
 # Create batch of images on GPU
 images = torch.rand(32, 3, 224, 224, device='cuda')
 
-# Replace torchvision Compose (7 kernel launches)
+# Replace torchvision Compose (8 kernel launches)
 # With Triton-Augment (1 kernel launch - significantly faster!)
 transform = ta.TritonFusedAugment(
     crop_size=112,
     horizontal_flip_p=0.5,
+    # Affine parameters
+    degrees=15, # rotation
+    translate=(0.1, 0.1),
+    scale=(0.9, 1.1),
+    shear=5,
+    # Color parameters
     brightness=0.2,
     contrast=0.2,
     saturation=0.2,
@@ -110,7 +116,7 @@ augmented = transform(videos)  # Shape: [8, 16, 3, 112, 112]
 ```python
 # Example: Only saturation adjustment + horizontal flip
 transform = ta.TritonFusedAugment(
-    crop_size=224,          # No crop (same size as input)
+    crop_size=None,          # No crop (pass None or pass same size as input)
     saturation=0.2,         # Only saturation jitter
     horizontal_flip_p=0.5,  # Only random flip
 )
@@ -120,15 +126,18 @@ transform = ta.TritonFusedAugment(
 
 ### 🔗 Combine with Torchvision Transforms
 
-For operations not yet supported by Triton-Augment (like rotation, perspective transforms, etc.), combine with torchvision transforms:
+For operations not yet supported by Triton-Augment (like perspective transforms, resize, etc.), combine with torchvision transforms:
 
 ```python
 import torchvision.transforms.v2 as transforms
 
 # Triton-Augment + Torchvision (per-image randomness + unsupported ops)
 transform = transforms.Compose([
-    transforms.RandomRotation(degrees=15),  # Torchvision (no per-image randomness)
-    ta.TritonColorJitterNormalize(         # Triton-Augment (per-image randomness)
+    transforms.RandomPerspective(distortion_scale=0.5, p=0.5),  # Torchvision (no per-image randomness)
+    ta.TritonFusedAugment(              # Triton-Augment (per-image randomness)
+        crop_size=224,
+        horizontal_flip_p=0.5,
+        degrees=15,  # Affine rotation supported!
         brightness=0.2, contrast=0.2, saturation=0.2,
         mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)
     )
@@ -176,14 +185,14 @@ transform = transforms.Compose([
 
 | Image Size | Batch | Crop Size | Torchvision | Triton Fused | Speedup |
 |------------|-------|-----------|-------------|--------------|---------|
-| 256×256    | 32    | 224×224   | 2.48 ms     | 0.56 ms      | **4.5x** |
-| 256×256    | 64    | 224×224   | 4.51 ms     | 0.69 ms      | **6.5x** |
-| 600×600    | 32    | 512×512   | 11.82 ms    | 1.26 ms      | **9.4x** |
-| 1280×1280  | 32    | 1024×1024 | 48.91 ms    | 4.07 ms      | **12.0x** |
+| 256×256    | 32    | 224×224   | 3.94 ms     | 1.34 ms      | **2.9x** |
+| 256×256    | 64    | 224×224   | 6.84 ms     | 1.42 ms      | **4.8x** |
+| 600×600    | 32    | 512×512   | 17.86 ms    | 2.05 ms      | **8.7x** |
+| 1280×1280  | 32    | 1024×1024 | 78.48 ms    | 5.02 ms      | **15.6x** |
 
-**Average Speedup: 8.1x** 🚀
+**Average Speedup: 8.0x** 🚀
 
-> **Operations**: RandomCrop + RandomHorizontalFlip + ColorJitter + RandomGrayscale + Normalize
+> **Operations**: RandomAffine + RandomCrop + RandomHorizontalFlip + ColorJitter + RandomGrayscale + Normalize
 
 > **Note**: Benchmarks use `torchvision.transforms.v2` (not the legacy v1 API) for comparison.
 
@@ -194,6 +203,8 @@ transform = transforms.Compose([
 
 **📊 Additional Benchmarks (NVIDIA A100 on Google Colab):**
 
+#### Without Affine Transforms (v0.2.0) - Average: 4.1x
+
 | Image Size | Batch | Crop Size | Torchvision | Triton Fused | Speedup |
 |------------|-------|-----------|-------------|--------------|---------|
 | 256×256    | 32    | 224×224   | 0.61 ms     | 0.44 ms      | **1.4x** |
@@ -201,9 +212,20 @@ transform = transforms.Compose([
 | 600×600    | 32    | 512×512   | 2.19 ms     | 0.50 ms      | **4.4x** |
 | 1280×1280  | 32    | 1024×1024 | 8.23 ms     | 0.94 ms      | **8.7x** |
 
-**Average: 4.1x**
+#### With Affine Transforms (v0.3.0) - Average: 3.1x
 
-> **Why better speedup on T4?** Kernel fusion reduces memory bandwidth bottlenecks, which matters more on bandwidth-limited GPUs like T4 (320 GB/s) vs A100 (1,555 GB/s). This means **greater benefits on consumer and mid-range hardware**.
+| Image Size | Batch | Crop Size | Torchvision | Triton Fused | Speedup |
+|------------|-------|-----------|-------------|--------------|---------|
+| 256×256    | 32    | 224×224   | 1.37 ms     | 1.37 ms      | **1.0x** |
+| 256×256    | 64    | 224×224   | 1.84 ms     | 1.37 ms      | **1.3x** |
+| 600×600    | 32    | 512×512   | 3.59 ms     | 1.41 ms      | **2.5x** |
+| 1280×1280  | 32    | 1024×1024 | 13.68 ms    | 1.83 ms      | **7.5x** |
+
+> **Performance Notes:**
+
+> - **Affine transforms add computational overhead**, reducing speedup from 4.1x to 3.1x on A100
+> - **Why better speedup on T4?** Kernel fusion reduces memory bandwidth bottlenecks, which matters more on bandwidth-limited GPUs like T4 (320 GB/s) vs A100 (1,555 GB/s). This means **greater benefits on consumer and mid-range hardware**.
+> - **Speedup scales with image size** - larger images benefit more from fused operations
 
 ### Video (5D Tensor) Benchmarks
 
@@ -211,13 +233,13 @@ transform = transforms.Compose([
 
 | Batch | Frames | Image Size | Crop Size | Torchvision | Kornia VideoSeq | Triton Fused | Speedup vs TV | Speedup vs Kornia |
 |-------|--------|------------|-----------|-------------|-----------------|--------------|---------------|-------------------|
-|     8 |     16 | 256×256    | 224×224   | 8.86 ms     | 78.20 ms        | 1.21 ms      | **7.3x**      | **64.6x**         |
-|     4 |     32 | 256×256    | 224×224   | 8.84 ms     | 78.39 ms        | 1.08 ms      | **8.2x**      | **72.6x**         |
-|    16 |      8 | 256×256    | 224×224   | 9.06 ms     | 78.69 ms        | 1.07 ms      | **8.5x**      | **73.5x**         |
-|     8 |     16 | 512×512    | 448×448   | 33.75 ms    | 272.59 ms       | 3.24 ms      | **10.4x**     | **84.1x**         |
+|     8 |     16 | 256×256    | 224×224   | 13.96 ms    | 88.80 ms        | 1.80 ms      | **7.8x**      | **49.5x**         |
+|     8 |     32 | 256×256    | 224×224   | 26.51 ms    | 177.58 ms       | 2.65 ms      | **10.0x**     | **67.1x**         |
+|    16 |     32 | 256×256    | 224×224   | 50.12 ms    | 346.25 ms       | 3.86 ms      | **13.0x**     | **89.7x**         |
+|     8 |     32 | 512×512    | 448×448   | 107.20 ms   | 612.65 ms       | 6.83 ms      | **15.7x**     | **89.7x**         |
 
-**Average Speedup vs Torchvision: 8.6x**  
-**Average Speedup vs Kornia: 73.7x** 🚀
+**Average Speedup vs Torchvision: 11.62x**  
+**Average Speedup vs Kornia: 73.97x** 🚀
 
 ### Run Your Own Benchmarks
 
@@ -269,8 +291,8 @@ augmented = transform(images)  # First run: tests configs; subsequent: uses cach
 
 **Use Triton-Augment + Torchvision together:**
 
-- **Torchvision**: Data loading, resize, ToTensor, rotation, affine, etc.
-- **Triton-Augment**: Replace supported operations (currently: crop, flip, color jitter, grayscale, normalize; more coming) with fused GPU kernels
+- **Torchvision**: Data loading, resize, ToTensor, perspective transforms, etc.
+- **Triton-Augment**: Replace supported operations (currently: affine, rotate, crop, flip, color jitter, grayscale, normalize; more coming) with fused GPU kernels
 
 **Best speedup when:**
 
@@ -319,12 +341,13 @@ for images, labels in train_loader:
 
 - [x] **Phase 1**: Fused color operations (brightness, contrast, saturation, normalize)
 - [x] **Phase 1.5**: Grayscale, float16 support, auto-tuning
-- [x] **Phase 2**: Basic Geometric operations (crop, flip) + Ultimate fusion 🚀
+- [x] **Phase 2**: Basic Geometric operations (crop, flip) + all fusion 🚀
 - [x] **Phase 2.5**: 5D video tensor support `[N, T, C, H, W]` with `same_on_frame` parameter
-- [ ] **Phase 3**: Extended operations (resize, rotation, blur, erasing, mixup, etc.)
+- [x] **Phase 3.0**: Affine transformations (rotation, translation, scaling, shearing) in fused kernel
+- [ ] **Phase 3.5**: Extended operations (blur, erasing, mixup, etc.)
 - [ ] **Future**: Differentiable augmentation (autograd support, available in Kornia) - evaluate demand vs performance tradeoff
 
-[→ Detailed Roadmap](https://github.com/yuhezhang-ai/triton-augment/issues)
+[→ Submit Feature Request](https://github.com/yuhezhang-ai/triton-augment/issues)
 
 ---
 

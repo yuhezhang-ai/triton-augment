@@ -73,6 +73,20 @@ Transform classes provide stateful, random augmentations similar to torchvision.
 
 ---
 
+::: triton_augment.TritonRandomAffine
+    options:
+      show_root_heading: true
+      show_source: false
+
+---
+
+::: triton_augment.TritonRandomRotation
+    options:
+      show_root_heading: true
+      show_source: false
+
+---
+
 ::: triton_augment.TritonRandomHorizontalFlip
     options:
       show_root_heading: true
@@ -141,6 +155,20 @@ Low-level functional interface for fine-grained control with fixed parameters. U
 ---
 
 ::: triton_augment.functional.center_crop
+    options:
+      show_root_heading: true
+      show_source: false
+
+---
+
+::: triton_augment.functional.affine
+    options:
+      show_root_heading: true
+      show_source: false
+
+---
+
+::: triton_augment.functional.rotate
     options:
       show_root_heading: true
       show_source: false

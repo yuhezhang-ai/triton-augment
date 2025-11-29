@@ -16,6 +16,7 @@ from typing import Optional, Tuple, Union, Sequence
 import collections.abc
 
 from . import functional as F
+from .functional import InterpolationMode
 
 
 # ============================================================================
@@ -82,10 +83,11 @@ def _compute_param_count(
     - same_on_batch=True,  same_on_frame=False → T params (per frame position)
     - same_on_batch=True,  same_on_frame=True  → 1 param (shared)
     
-    For 3D/4D inputs (batch_size=None), returns the flattened batch size.
+    For 3D inputs (num_frames=None), returns 1.
+    For 4D inputs (num_frames=None), returns 1 or the batch size if same_on_batch is False.
     
     Args:
-        batch_size: N dimension or None for 3D/4D
+        batch_size: N dimension or None for 3D
         num_frames: T dimension or None for 3D/4D
         same_on_batch: Whether to share params across batch dimension
         same_on_frame: Whether to share params across frame dimension
@@ -193,6 +195,28 @@ def _broadcast_params_to_all_samples(
         f"batch_size={batch_size}, num_frames={num_frames}, total_samples={total_samples}, "
         f"same_on_batch={same_on_batch}, same_on_frame={same_on_frame}"
     )
+
+
+def _broadcast_2d_params(
+    params: torch.Tensor,
+    batch_size: Optional[int],
+    num_frames: Optional[int],
+    total_samples: int,
+    same_on_batch: bool,
+    same_on_frame: bool
+) -> torch.Tensor:
+    """
+    Broadcast 2D parameters [N, 2] to all samples [total_samples, 2].
+    """
+    if params.shape[0] == total_samples:
+        return params
+        
+    # Broadcast each component separately
+    x = _broadcast_params_to_all_samples(params[:, 0], batch_size, num_frames, total_samples, same_on_batch, same_on_frame)
+    y = _broadcast_params_to_all_samples(params[:, 1], batch_size, num_frames, total_samples, same_on_batch, same_on_frame)
+    
+    return torch.stack([x, y], dim=1)
+
 
 
 def _reshape_to_original(
@@ -1229,18 +1253,35 @@ class TritonFusedAugment(nn.Module):
     """
     Fused augmentation: All operations in ONE kernel.
     
-    This transform combines ALL augmentations in a single GPU kernel launch:
-    - **Geometric Tier**: RandomCrop + RandomHorizontalFlip
-    - **Pixel Tier**: ColorJitter (brightness, contrast, saturation) + Normalize
+    This transform combines ALL augmentations in a single GPU kernel launch.
+    **Unified Fusion:**
+    Combines Affine (Rotation/Translation/Scale/Shear) + Crop + Flip + Color Jitter + Grayscale + Normalize
+    in order into a single kernel launch.
     
-    **Performance**: up to 12x faster than torchvision.transforms.Compose!
-    
-    This is the PEAK PERFORMANCE path - single kernel launch for entire pipeline.
-    No intermediate memory allocations or kernel launch overhead.
+    **Performance**: up to 14x faster than torchvision.transforms.Compose!
     
     Args:
         crop_size: Desired output size (int or tuple). If int, output is square (crop_size, crop_size).
+                  If None, output size equals input size (no cropping). Default: None.
         horizontal_flip_p: Probability of horizontal flip (default: 0.0, no flip)
+        
+        # Affine parameters (optional - setting any enables affine mode)
+        degrees: Rotation degrees range. If float, range is (-degrees, +degrees).
+                If tuple, range is (degrees[0], degrees[1]). Default: 0 (no rotation).
+        translate: Translation range as fraction of image size (tx, ty).
+                  E.g., (0.1, 0.1) means translate up to 10% of width/height.
+                  Default: None (no translation).
+        scale: Scale range (min, max). E.g., (0.8, 1.2) scales between 80% and 120%.
+              Default: None (no scaling).
+        shear: Shear range in degrees. If float, range is (-shear, +shear) for x-axis.
+              If tuple of 2, (shear[0], shear[1]) for x-axis.
+              If tuple of 4, (shear[0], shear[1]) for x-axis and (shear[2], shear[3]) for y-axis.
+              Default: None (no shearing).
+        interpolation: Interpolation mode for affine (InterpolationMode.NEAREST or BILINEAR).
+                      Only used in affine mode. Default: NEAREST.
+        fill: Fill value for out-of-bounds pixels in affine mode. Default: 0.0.
+        
+        # Color jitter parameters (used in both modes)
         brightness: How much to jitter brightness. If float, chosen uniformly from [max(0, 1-brightness), 1+brightness].
                    If tuple, chosen uniformly from [brightness[0], brightness[1]].
         contrast: How much to jitter contrast (same format as brightness)
@@ -1256,48 +1297,48 @@ class TritonFusedAugment(nn.Module):
         
     Example:
         ```python
-        # Replace torchvision Compose with single transform
-        # OLD (6 kernel launches):
-        transform = transforms.Compose([
-            transforms.RandomCrop(112),
-            transforms.RandomHorizontalFlip(),
-            transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
-            transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
-        ])
-        
-        # NEW (1 kernel launch - significantly faster!):
-        import triton_augment as ta
+        # Simple mode (crop + flip + color)
         transform = ta.TritonFusedAugment(
             crop_size=112,
             horizontal_flip_p=0.5,
             brightness=0.2,
             contrast=0.2,
             saturation=0.2,
-            mean=(0.485, 0.456, 0.406),  # ImageNet normalization (optional)
-            std=(0.229, 0.224, 0.225)    # ImageNet normalization (optional)
+            mean=(0.485, 0.456, 0.406),
+            std=(0.229, 0.224, 0.225)
+        )
+        
+        # Affine mode (rotation + scale + color)
+        transform = ta.TritonFusedAugment(
+            crop_size=224,
+            degrees=30,           # Enables affine mode
+            scale=(0.8, 1.2),
+            horizontal_flip_p=0.5,
+            brightness=0.2,
+            interpolation=InterpolationMode.BILINEAR
         )
         
         img = torch.rand(4, 3, 224, 224, device='cuda')
         result = transform(img)  # Single kernel launch!
-        
-        # Without normalization (mean=None, std=None by default)
-        transform_no_norm = ta.TritonFusedAugment(
-            crop_size=112,
-            horizontal_flip_p=0.5,
-            brightness=0.2, contrast=0.2, saturation=0.2
-        )
         ```
     
     Note:
         - Uses FAST contrast (centered scaling), not torchvision's blend-with-mean
-        - By default, each image gets different random parameters (set same_on_batch=False for same params)
         - Input must be (C, H, W), (N, C, H, W), or (N, T, C, H, W) float tensor on CUDA in [0, 1] range
     """
     
     def __init__(
         self,
-        crop_size: int | tuple[int, int],
+        crop_size: int | tuple[int, int] | None = None,
         horizontal_flip_p: float = 0.0,
+        # Affine parameters (optional - enables affine mode if any are set)
+        degrees: float | tuple[float, float] = 0,
+        translate: tuple[float, float] | None = None,
+        scale: tuple[float, float] | None = None,
+        shear: float | tuple[float, float] | None = None,
+        interpolation = InterpolationMode.NEAREST,
+        fill: float = 0.0,
+        # Color jitter parameters
         brightness: float | tuple[float, float] = 0,
         contrast: float | tuple[float, float] = 0,
         saturation: float | tuple[float, float] = 0,
@@ -1310,35 +1351,49 @@ class TritonFusedAugment(nn.Module):
         super().__init__()
         
         # Parse crop size
-        if isinstance(crop_size, int):
+        if crop_size is None:
+            self.crop_height = self.crop_width = None
+        elif isinstance(crop_size, int):
             self.crop_height = self.crop_width = crop_size
         else:
             self.crop_height, self.crop_width = crop_size
         
         self.horizontal_flip_p = horizontal_flip_p
         
-        # Parse color jitter ranges
-        self.brightness = self._check_input(brightness, 'brightness')
-        self.contrast = self._check_input(contrast, 'contrast')
-        self.saturation = self._check_input(saturation, 'saturation')
+        # Auto-detect affine mode
+        self.has_affine = any([
+            degrees != 0,
+            translate is not None,
+            scale is not None,
+            shear is not None,
+        ])
         
-        self.grayscale_p = grayscale_p
-        
-        # Validate normalization parameters
-        if (mean is None) != (std is None):
-            raise ValueError("mean and std must both be provided or both be None")
-        
-        if mean is not None:
-            mean = tuple(mean)
-            if len(mean) != 3:
-                raise ValueError("mean must have 3 values for RGB channels")
-        if std is not None:
-            std = tuple(std)
-            if len(std) != 3:
-                raise ValueError("std must have 3 values for RGB channels")
-        
-        self.mean = mean
-        self.std = std
+        # Store affine params
+        if self.has_affine:
+            self.affine_helper = TritonRandomAffine(
+                degrees=degrees,
+                translate=translate,
+                scale=scale,
+                shear=shear,
+                interpolation=interpolation,
+                fill=fill,
+                same_on_batch=same_on_batch,
+                same_on_frame=same_on_frame
+            )
+            self.interpolation = interpolation
+            self.fill = fill
+
+        # Store color params
+        self.color_helper = TritonColorJitterNormalize(
+            brightness=brightness,
+            contrast=contrast,
+            saturation=saturation,
+            grayscale_p=grayscale_p,
+            mean=mean,
+            std=std,
+            same_on_batch=same_on_batch,
+            same_on_frame=same_on_frame
+        )
         
         self.same_on_batch = same_on_batch
         self.same_on_frame = same_on_frame
@@ -1372,62 +1427,58 @@ class TritonFusedAugment(nn.Module):
         return None if value[0] == value[1] == center else (float(value[0]), float(value[1]))
     
     
-    def _get_params(self, param_count: int, image_height: int, image_width: int, device: torch.device):
+    
+    def _get_params(self, param_count: int, device: torch.device, img_size: Tuple[int, int]):
         """
-        Sample all random parameters for the ultimate transform.
+        Generate all parameters for the fused transformation.
         
         Args:
             param_count: Number of parameter sets to generate
-            image_height, image_width: Input image dimensions
-            device: Device to create tensors on
-        
+            device: Device to generate parameters on
+            img_size: (height, width) of the input image
+            
         Returns:
-            Tuple of (top_offsets, left_offsets, flip_mask, brightness_factors, contrast_factors, saturation_factors, grayscale_mask)
-            - All are tensors of shape (param_count,)
+            Tuple of all parameters required by fused_augment
         """
-        # Validate crop size
-        if self.crop_height > image_height or self.crop_width > image_width:
-            raise ValueError(
-                f"Crop size ({self.crop_height}, {self.crop_width}) is larger than "
-                f"input size ({image_height}, {image_width})"
+        img_height, img_width = img_size
+        
+        # Initialize params
+        angle = 0.0
+        translate = [0.0, 0.0]
+        scale = 1.0
+        shear = [0.0, 0.0]
+        
+        if self.has_affine:
+            # ===== AFFINE MODE =====
+            # Sample affine params
+            angle, translate, scale, shear = self.affine_helper._get_params(
+                param_count, device, (img_height, img_width)
             )
+            
+        # Sample crop params
+        if self.crop_height is None:
+            # No crop -> offsets are 0
+            top_offsets = torch.zeros(param_count, device=device, dtype=torch.float32)
+            left_offsets = torch.zeros(param_count, device=device, dtype=torch.float32)
+        else:
+            top_offsets = torch.randint(0, img_height - self.crop_height + 1, (param_count,), device=device, dtype=torch.float32)
+            left_offsets = torch.randint(0, img_width - self.crop_width + 1, (param_count,), device=device, dtype=torch.float32)
         
-        # Sample crop parameters (integer offsets)
-        top_offsets = torch.randint(0, image_height - self.crop_height + 1, (param_count,), device=device, dtype=torch.int32)
-        left_offsets = torch.randint(0, image_width - self.crop_width + 1, (param_count,), device=device, dtype=torch.int32)
-        
-        # Sample flip decisions
-        flip_mask = (
+        # Sample flip params
+        do_flip = (
             F._sample_bernoulli_tensor(param_count, self.horizontal_flip_p, device)
             if self.horizontal_flip_p > 0
-            else torch.zeros(param_count, device=device, dtype=torch.uint8)
+            else torch.zeros(param_count, device=device, dtype=torch.bool)
         )
         
-        # Sample color jitter parameters
-        brightness_factors = (
-            F._sample_uniform_tensor(param_count, self.brightness[0], self.brightness[1], device)
-            if self.brightness is not None
-            else torch.ones(param_count, device=device)
-        )
-        contrast_factors = (
-            F._sample_uniform_tensor(param_count, self.contrast[0], self.contrast[1], device)
-            if self.contrast is not None
-            else torch.ones(param_count, device=device)
-        )
-        saturation_factors = (
-            F._sample_uniform_tensor(param_count, self.saturation[0], self.saturation[1], device)
-            if self.saturation is not None
-            else torch.ones(param_count, device=device)
-        )
+        # Sample color params using helper
+        brightness_factors, contrast_factors, saturation_factors, grayscale_mask = self.color_helper._get_params(param_count, device)
         
-        # Sample grayscale decisions
-        grayscale_mask = (
-            F._sample_bernoulli_tensor(param_count, self.grayscale_p, device)
-            if self.grayscale_p > 0
-            else torch.zeros(param_count, device=device, dtype=torch.uint8)
+        return (
+            angle, translate, scale, shear,
+            top_offsets, left_offsets, do_flip,
+            brightness_factors, contrast_factors, saturation_factors, grayscale_mask
         )
-        
-        return top_offsets, left_offsets, flip_mask, brightness_factors, contrast_factors, saturation_factors, grayscale_mask
     
     def forward(self, image: torch.Tensor) -> torch.Tensor:
         """
@@ -1456,49 +1507,51 @@ class TritonFusedAugment(nn.Module):
         
         # Compute how many parameter sets to generate
         param_count = _compute_param_count(batch_size, num_frames, self.same_on_batch, self.same_on_frame)
-         
-        # Sample all random parameters
-        top_offsets, left_offsets, flip_mask, brightness_factors, contrast_factors, saturation_factors, grayscale_mask = self._get_params(
-            param_count, img_height, img_width, normalized_img.device
-        )
         
-        # Broadcast params to all samples
-        top_offsets = _broadcast_params_to_all_samples(
-            top_offsets, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame
-        )
-        left_offsets = _broadcast_params_to_all_samples(
-            left_offsets, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame
-        )
-        flip_mask = _broadcast_params_to_all_samples(
-            flip_mask, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame
-        )
-        brightness_factors = _broadcast_params_to_all_samples(
-            brightness_factors, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame
-        )
-        contrast_factors = _broadcast_params_to_all_samples(
-            contrast_factors, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame
-        )
-        saturation_factors = _broadcast_params_to_all_samples(
-            saturation_factors, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame
-        )
-        grayscale_mask = _broadcast_params_to_all_samples(
-            grayscale_mask, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame
-        )
+        # Get all parameters
+        (
+            angle, translate, scale, shear,
+            top_offsets, left_offsets, do_flip,
+            brightness_factors, contrast_factors, saturation_factors, grayscale_mask
+        ) = self._get_params(param_count, normalized_img.device, (img_height, img_width))
         
-        # Single kernel launch for ALL operations!
+        # Broadcast params
+        if self.has_affine:
+            angle = _broadcast_params_to_all_samples(angle, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame)
+            translate = _broadcast_2d_params(translate, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame)
+            shear = _broadcast_2d_params(shear, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame)
+            scale = _broadcast_params_to_all_samples(scale, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame)
+
+        top_offsets = _broadcast_params_to_all_samples(top_offsets, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame)
+        left_offsets = _broadcast_params_to_all_samples(left_offsets, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame)
+        do_flip = _broadcast_params_to_all_samples(do_flip, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame)
+        brightness_factors = _broadcast_params_to_all_samples(brightness_factors, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame)
+        contrast_factors = _broadcast_params_to_all_samples(contrast_factors, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame)
+        saturation_factors = _broadcast_params_to_all_samples(saturation_factors, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame)
+        grayscale_mask = _broadcast_params_to_all_samples(grayscale_mask, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame)
+        
+        # Call unified fused_augment
         result = F.fused_augment(
             normalized_img,
             top=top_offsets,
             left=left_offsets,
-            height=self.crop_height,
-            width=self.crop_width,
-            flip_horizontal=flip_mask,
+            height=self.crop_height if self.crop_height is not None else img_height,
+            width=self.crop_width if self.crop_width is not None else img_width,
+            flip_horizontal=do_flip,
+            # Affine params
+            angle=angle,
+            translate=translate,
+            scale=scale,
+            shear=shear,
+            interpolation=self.interpolation if self.has_affine else "nearest",
+            fill=self.fill if self.has_affine else 0.0,
+            # Color params
             brightness_factor=brightness_factors,
             contrast_factor=contrast_factors,
             saturation_factor=saturation_factors,
             grayscale=grayscale_mask,
-            mean=self.mean,
-            std=self.std,
+            mean=self.color_helper.mean,
+            std=self.color_helper.std,
         )
         
         # Reshape back to original shape
@@ -1506,7 +1559,10 @@ class TritonFusedAugment(nn.Module):
     
     def __repr__(self):
         format_string = self.__class__.__name__ + '('
-        format_string += f'crop_size=({self.crop_height}, {self.crop_width})'
+        if self.crop_height is not None:
+            format_string += f'crop_size=({self.crop_height}, {self.crop_width})'
+        else:
+            format_string += 'crop_size=None'
         format_string += f', horizontal_flip_p={self.horizontal_flip_p}'
         if self.brightness:
             format_string += f', brightness={self.brightness}'
@@ -1516,12 +1572,334 @@ class TritonFusedAugment(nn.Module):
             format_string += f', saturation={self.saturation}'
         if self.grayscale_p > 0:
             format_string += f', grayscale_p={self.grayscale_p}'
-        if self.mean is not None:
-            format_string += f', mean={self.mean}'
-        if self.std is not None:
-            format_string += f', std={self.std}'
+        if self.color_helper.mean is not None:
+            format_string += f', mean={self.color_helper.mean}'
+        if self.color_helper.std is not None:
+            format_string += f', std={self.color_helper.std}'
         format_string += ')'
         return format_string
+
+class TritonRandomAffine(nn.Module):
+    """
+    Random affine transformation of the image keeping center invariant.
+    
+    GPU-accelerated implementation using Triton kernels. Matches the API of
+    torchvision.transforms.v2.RandomAffine.
+    
+    Supports:
+        - 3D input: (C, H, W) - single image
+        - 4D input: (N, C, H, W) - batch of images  
+        - 5D input: (N, T, C, H, W) - batch of videos
+    
+    Args:
+        degrees: Range of degrees to select from. If degrees is a number instead of
+            sequence like (min, max), the range of degrees will be (-degrees, +degrees).
+            Set to 0 to deactivate rotations.
+        translate: Tuple of maximum absolute fraction for horizontal and vertical
+            translations. For example translate=(a, b), then horizontal shift is
+            randomly sampled in the range -img_width * a < dx < img_width * a and
+            vertical shift is randomly sampled in the range -img_height * b < dy < img_height * b.
+            Will not translate by default.
+        scale: Scaling factor interval, e.g (a, b), then scale is randomly sampled
+            from the range a <= scale <= b. Will keep original scale by default.
+        shear: Range of degrees to select from. If shear is a number, a shear parallel
+            to the x axis in the range (-shear, +shear) will be applied. Else if shear
+            is a tuple of 2 values, a x-axis shear in (shear[0], shear[1]) will be applied.
+            Else if shear is a tuple of 4 values, a x-axis shear in (shear[0], shear[1])
+            and y-axis shear in (shear[2], shear[3]) will be applied. Default: None.
+        interpolation: Interpolation mode for sampling. Either:
+            - InterpolationMode.NEAREST (default): Nearest neighbor, faster.
+            - InterpolationMode.BILINEAR: Bilinear interpolation, smoother.
+        fill: Constant fill value for areas outside the transformed image. Default: 0.
+        center: Optional center of rotation (x, y) in pixel coordinates. Origin is the
+            upper left corner. Default is the center of the image.
+        same_on_batch: If True, all images in batch share the same random parameters.
+            Default: False.
+        same_on_frame: If True, all frames in a video (5D input) share the same random
+            parameters. Default: True.
+            
+    Note:
+        For nearest neighbor interpolation, there may be minor differences compared
+        to torchvision at exact pixel boundaries due to floating-point rounding.
+        Bilinear interpolation does not have this limitation.
+        
+    Example:
+        ```python
+        transform = TritonRandomAffine(
+            degrees=15,
+            translate=(0.1, 0.1),
+            scale=(0.8, 1.2),
+            shear=10,
+            interpolation=InterpolationMode.BILINEAR
+        )
+        
+        # Apply to batch of images
+        img = torch.rand(4, 3, 224, 224, device='cuda')
+        result = transform(img)
+        
+        # Apply to video with same transform per frame
+        video = torch.rand(2, 8, 3, 112, 112, device='cuda')
+        result = transform(video)
+        ```
+    """
+    
+    def __init__(
+        self,
+        degrees: Union[float, Sequence[float]],
+        translate: Optional[Tuple[float, float]] = None,
+        scale: Optional[Tuple[float, float]] = None,
+        shear: Optional[Union[float, Sequence[float]]] = None,
+        interpolation = InterpolationMode.NEAREST,
+        fill: float = 0.0,
+        center: Optional[Tuple[int, int]] = None,
+        same_on_batch: bool = False,
+        same_on_frame: bool = True,
+    ):
+        super().__init__()
+        
+        # Process degrees
+        if isinstance(degrees, (int, float)):
+            if degrees < 0:
+                raise ValueError("If degrees is a single number, it must be positive.")
+            self.degrees = (-float(degrees), float(degrees))
+        else:
+            if len(degrees) != 2:
+                raise ValueError("If degrees is a sequence, it must be of length 2.")
+            self.degrees = (float(degrees[0]), float(degrees[1]))
+            
+        # Process translate
+        if translate is not None:
+            if len(translate) != 2:
+                raise ValueError("translate should be a sequence of length 2.")
+            if not (0.0 <= translate[0] <= 1.0 and 0.0 <= translate[1] <= 1.0):
+                raise ValueError("translation values should be between 0 and 1")
+            self.translate = (float(translate[0]), float(translate[1]))
+        else:
+            self.translate = None
+            
+        # Process scale
+        if scale is not None:
+            if len(scale) != 2:
+                raise ValueError("scale should be a sequence of length 2.")
+            if scale[0] > scale[1]:
+                raise ValueError("scale should be (min, max)")
+            self.scale = (float(scale[0]), float(scale[1]))
+        else:
+            self.scale = None
+            
+        # Process shear
+        if shear is not None:
+            if isinstance(shear, (int, float)):
+                if shear < 0:
+                    raise ValueError("If shear is a single number, it must be positive.")
+                self.shear = (-float(shear), float(shear), 0.0, 0.0)
+            else:
+                if len(shear) == 2:
+                    self.shear = (float(shear[0]), float(shear[1]), 0.0, 0.0)
+                elif len(shear) == 4:
+                    self.shear = (float(shear[0]), float(shear[1]), float(shear[2]), float(shear[3]))
+                else:
+                    raise ValueError("shear should be a single number or a sequence of length 2 or 4.")
+        else:
+            self.shear = None
+            
+        self.interpolation = interpolation
+        self.fill = float(fill)
+        self.center = center
+        self.same_on_batch = same_on_batch
+        self.same_on_frame = same_on_frame
+
+    def _get_params(self, param_count: int, device: torch.device, img_size: Tuple[int, int]):
+        """Get parameters for affine transformation."""
+        height, width = img_size
+        
+        # Angle
+        angle = F._sample_uniform_tensor(
+            param_count, self.degrees[0], self.degrees[1], device
+        )
+        
+        # Translate
+        if self.translate is not None:
+            max_dx = float(self.translate[0] * width)
+            max_dy = float(self.translate[1] * height)
+            tx = F._sample_uniform_tensor(param_count, -max_dx, max_dx, device)
+            ty = F._sample_uniform_tensor(param_count, -max_dy, max_dy, device)
+            translate = torch.stack([tx, ty], dim=1)
+        else:
+            translate = torch.zeros((param_count, 2), device=device)
+            
+        # Scale
+        if self.scale is not None:
+            scale = F._sample_uniform_tensor(
+                param_count, self.scale[0], self.scale[1], device
+            )
+        else:
+            scale = torch.ones(param_count, device=device)
+            
+        # Shear
+        if self.shear is not None:
+            sx = F._sample_uniform_tensor(
+                param_count, self.shear[0], self.shear[1], device
+            )
+            sy = F._sample_uniform_tensor(
+                param_count, self.shear[2], self.shear[3], device
+            )
+            shear = torch.stack([sx, sy], dim=1)
+        else:
+            shear = torch.zeros((param_count, 2), device=device)
+            
+        return angle, translate, scale, shear
+
+    def forward(self, img: torch.Tensor) -> torch.Tensor:
+        """
+        Apply affine transformation.
+        """
+        # Normalize shape
+        normalized_img, batch_size, num_frames, original_shape, was_3d = _normalize_video_shape(img)
+        
+        if not normalized_img.is_cuda:
+            if not torch.cuda.is_available():
+                raise RuntimeError("Triton-Augment requires CUDA")
+            normalized_img = normalized_img.cuda()
+            
+        total_samples = normalized_img.shape[0]
+        _, _, height, width = normalized_img.shape
+        
+        # Compute param count
+        param_count = _compute_param_count(batch_size, num_frames, self.same_on_batch, self.same_on_frame)
+        
+        # Sample params
+        angle, translate, scale, shear = self._get_params(param_count, normalized_img.device, (height, width))
+        
+        # Broadcast params
+        angle = _broadcast_params_to_all_samples(
+            angle, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame
+        )
+        
+        translate = _broadcast_2d_params(
+            translate, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame
+        )
+        
+        shear = _broadcast_2d_params(
+            shear, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame
+        )
+            
+        scale = _broadcast_params_to_all_samples(
+            scale, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame
+        )
+        
+        # Apply affine transform using F.affine
+        output = F.affine(
+            normalized_img,
+            angle=angle,
+            translate=translate,
+            scale=scale,
+            shear=shear,
+            interpolation=self.interpolation,
+            fill=self.fill,
+            center=self.center
+        )
+        
+        return _reshape_to_original(output, original_shape, was_3d)
+    
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}("
+            f"degrees={self.degrees}, "
+            f"translate={self.translate}, "
+            f"scale={self.scale}, "
+            f"shear={self.shear}, "
+            f"interpolation={self.interpolation}, "
+            f"fill={self.fill}, "
+            f"center={self.center}, "
+            f"same_on_batch={self.same_on_batch}, "
+            f"same_on_frame={self.same_on_frame})"
+        )
+
+
+
+
+class TritonRandomRotation(TritonRandomAffine):
+    """
+    Random rotation of the image.
+    
+    GPU-accelerated implementation using Triton kernels. Matches the API of
+    torchvision.transforms.v2.RandomRotation.
+    
+    Supports:
+        - 3D input: (C, H, W) - single image
+        - 4D input: (N, C, H, W) - batch of images
+        - 5D input: (N, T, C, H, W) - batch of videos
+    
+    Args:
+        degrees: Range of degrees to select from. If degrees is a number instead of
+            sequence like (min, max), the range of degrees will be (-degrees, +degrees).
+        interpolation: Interpolation mode for sampling. Either:
+            - InterpolationMode.NEAREST (default): Nearest neighbor, faster.
+            - InterpolationMode.BILINEAR: Bilinear interpolation, smoother.
+        expand: If True, expands the output to hold the entire rotated image.
+            Currently not supported (raises NotImplementedError).
+        center: Optional center of rotation (x, y) in pixel coordinates. Origin is the
+            upper left corner. Default is the center of the image.
+        fill: Constant fill value for areas outside the rotated image. Default: 0.
+        same_on_batch: If True, all images in batch share the same random rotation angle.
+            Default: False.
+        same_on_frame: If True, all frames in a video (5D input) share the same random
+            rotation angle. Default: True.
+            
+    Note:
+        For nearest neighbor interpolation, there may be minor differences compared
+        to torchvision at exact pixel boundaries due to floating-point rounding.
+        Bilinear interpolation does not have this limitation.
+        
+    Example:
+        ```python
+        transform = TritonRandomRotation(
+            degrees=30,
+            interpolation=InterpolationMode.BILINEAR,
+            fill=0.5
+        )
+        
+        # Apply to batch of images
+        img = torch.rand(4, 3, 224, 224, device='cuda')
+        result = transform(img)
+        ```
+    """
+    
+    def __init__(
+        self,
+        degrees: Union[float, Sequence[float]],
+        interpolation = InterpolationMode.NEAREST,
+        expand: bool = False,
+        center: Optional[Tuple[int, int]] = None,
+        fill: float = 0.0,
+        same_on_batch: bool = False,
+        same_on_frame: bool = True,
+    ):
+        if expand:
+            raise NotImplementedError("expand=True is not yet supported in Triton-Augment")
+            
+        super().__init__(
+            degrees=degrees,
+            translate=None,
+            scale=None,
+            shear=None,
+            interpolation=interpolation,
+            fill=fill,
+            center=center,
+            same_on_batch=same_on_batch,
+            same_on_frame=same_on_frame,
+        )
+    
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}("
+            f"degrees={self.degrees}, "
+            f"interpolation={self.interpolation}, "
+            f"fill={self.fill}, "
+            f"same_on_batch={self.same_on_batch}, "
+            f"same_on_frame={self.same_on_frame})"
+        )
 
 
 __all__ = [
@@ -1536,6 +1914,8 @@ __all__ = [
     'TritonCenterCrop',
     'TritonRandomHorizontalFlip',
     'TritonRandomCropFlip',
+    'TritonRandomRotation',
+    'TritonRandomAffine',
     # Ultimate fusion
-    'TritonUltimateAugment',
+    'TritonFusedAugment',
 ]

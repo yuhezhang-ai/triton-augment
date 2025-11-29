@@ -100,6 +100,21 @@ class TestFusedCropFlip:
         
         torch.testing.assert_close(fused_result, seq_result)
 
+    def test_fused_augment_optional_crop(self):
+        """
+        Test fused augment with optional crop.
+        """
+        transform = ta.TritonFusedAugment(
+            crop_size=None,
+            horizontal_flip_p=1,
+        )
+        
+        img = torch.rand(4, 3, 224, 224, device='cuda')
+        out = transform(img)
+
+        seq_result = F.horizontal_flip(img)
+
+        torch.testing.assert_close(out, seq_result)
 
 class TestRandomCropFlipTransform:
     """Test TritonRandomCropFlip transform class."""
