@@ -10,7 +10,10 @@ from triton_augment.functional import InterpolationMode
 @pytest.mark.parametrize("imgsize", [(100, 111), (256, 256)])
 @pytest.mark.parametrize("shear", [[0.0, 0.0], [5, 1]])
 @pytest.mark.parametrize("flip", [True, False])
-def test_fused_affine_vs_sequential(batch_size, interpolation, imgsize, shear, flip):
+@pytest.mark.parametrize("angle", [0.0, 30.0])
+@pytest.mark.parametrize("translate", [[0.0, 0.0], [10.0, 5.0]])
+@pytest.mark.parametrize("crop", [[10, 10, 80, 80], [0, 0, 100, 111]])
+def test_fused_affine_vs_sequential(batch_size, interpolation, imgsize, shear, flip, angle, translate, crop):
     """
     Verify that TritonFusedAffineAugment matches sequential application of transforms.
     We test the geometric composition: Affine -> Crop -> Flip.
@@ -23,11 +26,9 @@ def test_fused_affine_vs_sequential(batch_size, interpolation, imgsize, shear, f
     img = torch.rand(batch_size, 3, imgsize[0], imgsize[1], device=device)
     
     # 1. Define transforms
-    angle = 30.0
-    dx, dy = 10.0, 5.0
-    scale_factor = 1.1
-    crop_top, crop_left = 10, 10
-    crop_h, crop_w = 80, 80
+    dx, dy = translate
+    scale_factor = 1.0
+    crop_top, crop_left, crop_h, crop_w = crop
     
     # 2. Sequential execution (Ground Truth)
     # Note: Our fused pipeline does: Affine -> Crop -> Flip
