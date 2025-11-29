@@ -678,9 +678,6 @@ def main():
     
     print("\n" + "="*70)
     print(f"✓ All comparisons saved to: {output_dir}")
-    print("\nGenerated files:")
-    for file in sorted(output_dir.glob('compare_*.png')):
-        print(f"  - {file.name}")
     print("\n💡 Open the images to see that Triton-Augment matches torchvision exactly!")
     print("   (Except fast contrast, which is intentionally different for performance)")
 

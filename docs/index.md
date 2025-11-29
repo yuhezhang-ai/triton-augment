@@ -17,7 +17,7 @@ Triton-Augment is a high-performance image augmentation library that leverages [
 
 Replace your augmentation pipeline with a **single fused kernel** and get:
 
-- **Image Speedup**: **8.1x average speedup** on Tesla T4 and **up to 12x faster** on large images (1280×1280) - compared to torchvision.transforms.v2.
+- **Image Speedup**: **8x average speedup** on Tesla T4 and **up to 15.6x faster** on large images (1280×1280) - compared to torchvision.transforms.v2.
 
 - **Video Speedup**: **5D video tensor support** with `same_on_batch=False, same_on_frame=True` control. Speedup: **8.6x vs Torchvision**, **73.7x vs Kornia** 🚀
 
@@ -185,12 +185,12 @@ transform = transforms.Compose([
 
 | Image Size | Batch | Crop Size | Torchvision | Triton Fused | Speedup |
 |------------|-------|-----------|-------------|--------------|---------|
-| 256×256    | 32    | 224×224   | 3.89 ms     | 1.35 ms      | **2.9x** |
-| 256×256    | 64    | 224×224   | 6.88 ms     | 1.40 ms      | **4.9x** |
-| 600×600    | 32    | 512×512   | 17.91 ms    | 2.03 ms      | **8.8x** |
-| 1280×1280  | 32    | 1024×1024 | 76.50 ms    | 5.46 ms      | **14.0x** |
+| 256×256    | 32    | 224×224   | 3.94 ms     | 1.34 ms      | **2.9x** |
+| 256×256    | 64    | 224×224   | 6.84 ms     | 1.42 ms      | **4.8x** |
+| 600×600    | 32    | 512×512   | 17.86 ms    | 2.05 ms      | **8.7x** |
+| 1280×1280  | 32    | 1024×1024 | 78.48 ms    | 5.02 ms      | **15.6x** |
 
-**Average Speedup: 7.66x** 🚀
+**Average Speedup: 8.0x** 🚀
 
 > **Operations**: RandomAffine + RandomCrop + RandomHorizontalFlip + ColorJitter + RandomGrayscale + Normalize
 
