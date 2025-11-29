@@ -150,6 +150,21 @@ transform = transforms.Compose([
 - **Shape**: `(C, H, W)`, `(N, C, H, W)`, or `(N, T, C, H, W)` - *5D for video*
 - **Dtype**: `float32` or `float16`
 
+### 🔧 Operation Order
+
+**Fused operations are applied in a fixed order**: Affine → Crop → Horizontal Flip → Color Jitter (brightness → contrast → saturation) → Grayscale → Normalize
+
+**Need a different order?** Combine individual transforms:
+
+```python
+# Custom order: Color first, then geometric
+color_first = transforms.Compose([
+    ta.TritonColorJitter(brightness=0.2, contrast=0.2),
+    ta.TritonRandomCropFlip(crop_size=224, horizontal_flip_p=0.5),
+    ta.TritonRandomAffine(degrees=15)  # Applied last
+])
+```
+
 ---
 
 ## 📚 Documentation
