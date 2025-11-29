@@ -14,7 +14,7 @@ Replace your augmentation pipeline with a **single fused kernel** and get:
 
 - **Image Speedup**: **8x average speedup** on Tesla T4 and **up to 15.6x faster** on large images (1280×1280) - compared to torchvision.transforms.v2.
 
-- **Video Speedup**: **5D video tensor support** with `same_on_batch=False, same_on_frame=True` control. Speedup: **8.6x vs Torchvision**, **73.7x vs Kornia** 🚀
+- **Video Speedup**: **5D video tensor support** with `same_on_batch=False, same_on_frame=True` control. Average speedup: **11x vs Torchvision**, **74x vs Kornia** 🚀
 
 [📊 See full benchmarks →](#-performance)
 
@@ -199,6 +199,7 @@ transform = transforms.Compose([
 <details>
 <summary><b>📊 Additional Benchmarks (NVIDIA A100 on Google Colab)</b></summary>
 
+#### Without Affine Transforms (v0.2.0) - Average: 4.1x
 | Image Size | Batch | Crop Size | Torchvision | Triton Fused | Speedup |
 |------------|-------|-----------|-------------|--------------|---------|
 | 256×256    | 32    | 224×224   | 0.61 ms     | 0.44 ms      | **1.4x** |
@@ -206,9 +207,18 @@ transform = transforms.Compose([
 | 600×600    | 32    | 512×512   | 2.19 ms     | 0.50 ms      | **4.4x** |
 | 1280×1280  | 32    | 1024×1024 | 8.23 ms     | 0.94 ms      | **8.7x** |
 
-**Average: 4.1x**
+#### With Affine Transforms (v0.3.0) - Average: 3.1x
+| Image Size | Batch | Crop Size | Torchvision | Triton Fused | Speedup |
+|------------|-------|-----------|-------------|--------------|---------|
+| 256×256    | 32    | 224×224   | 1.37 ms     | 1.37 ms      | **1.0x** |
+| 256×256    | 64    | 224×224   | 1.84 ms     | 1.37 ms      | **1.3x** |
+| 600×600    | 32    | 512×512   | 3.59 ms     | 1.41 ms      | **2.5x** |
+| 1280×1280  | 32    | 1024×1024 | 13.68 ms    | 1.83 ms      | **7.5x** |
 
-> **Why better speedup on T4?** Kernel fusion reduces memory bandwidth bottlenecks, which matters more on bandwidth-limited GPUs like T4 (320 GB/s) vs A100 (1,555 GB/s). This means **greater benefits on consumer and mid-range hardware**.
+> **Performance Notes:**
+> - **Affine transforms add computational overhead**, reducing speedup from 4.1x to 3.1x on A100
+> - **Why better speedup on T4?** Kernel fusion reduces memory bandwidth bottlenecks, which matters more on bandwidth-limited GPUs like T4 (320 GB/s) vs A100 (1,555 GB/s). This means **greater benefits on consumer and mid-range hardware**.
+> - **Speedup scales with image size** - larger images benefit more from fused operations
 
 </details>
 
