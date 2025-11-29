@@ -31,6 +31,7 @@ def benchmark_ultimate(batch_size=32, image_size=224, crop_size=112):
     Uses transform classes with random augmentations:
     - RandomCrop
     - RandomHorizontalFlip (p=0.5)
+    - RandomAffine (rotation, translation, scaling, shearing)
     - ColorJitter (brightness=0.2, contrast=0.2, saturation=0.2)
     - RandomGrayscale (p=0.1)
     - Normalize (ImageNet mean/std)
@@ -53,6 +54,7 @@ def benchmark_ultimate(batch_size=32, image_size=224, crop_size=112):
     # 1. Torchvision Compose (Baseline) - WITH RANDOM AUGMENTATIONS
     # ========================================================================
     torchvision_transform = transforms.Compose([
+        transforms.RandomAffine(degrees=15, translate=(0.1, 0.1), scale=(0.9, 1.1), shear=5),
         transforms.RandomCrop(crop_size),
         transforms.RandomHorizontalFlip(p=0.5),
         transforms.ColorJitter(brightness=0.2, saturation=0.2, contrast=0.2),
@@ -69,6 +71,7 @@ def benchmark_ultimate(batch_size=32, image_size=224, crop_size=112):
     # 2. Triton-Augment Sequential (Individual transform classes)
     # ========================================================================
     triton_sequential_transform = transforms.Compose([
+        ta.TritonRandomAffine(degrees=15, translate=(0.1, 0.1), scale=(0.9, 1.1), shear=5),
         ta.TritonRandomCrop(crop_size),
         ta.TritonRandomHorizontalFlip(p=0.5),
         ta.TritonColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
@@ -91,6 +94,11 @@ def benchmark_ultimate(batch_size=32, image_size=224, crop_size=112):
         contrast=0.2,
         saturation=0.2,
         grayscale_p=0.1,
+        # Affine parameters for geometric transformations
+        degrees=15,
+        translate=(0.1, 0.1),
+        scale=(0.9, 1.1),
+        shear=5,
         mean=mean,
         std=std,
     )
@@ -141,6 +149,7 @@ def print_table(results):
     print("="*80)
     print("\nRandom Augmentations:")
     print("  - RandomCrop + RandomHorizontalFlip(p=0.5)")
+    print("  - RandomAffine(degrees=15, translate=(0.1, 0.1), scale=(0.9, 1.1), shear=5)")
     print("  - ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2)")
     print("  - RandomGrayscale(p=0.1) + Normalize(ImageNet)")
     print("\nDevice:", torch.cuda.get_device_name(0))

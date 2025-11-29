@@ -439,6 +439,190 @@ def compare_fused_pipeline(img, output_path='compare_fused_pipeline.png'):
     save_and_close_plot(output_path, 'Full Pipeline: Crop → Flip → Brightness → Saturation → Normalize')
 
 
+def compare_rotate(img, output_path='compare_rotate.png'):
+    """Compare rotation: Torchvision vs Triton-Augment."""
+    img_gpu = img.cuda()
+    angles = [-45, -15, 0, 15, 45]
+    
+    fig, gs = create_figure_with_gridspec(2, len(angles))
+    
+    for i, angle in enumerate(angles):
+        # Torchvision
+        tv_result = tvF.rotate(img_gpu, angle, interpolation=tvF.InterpolationMode.BILINEAR)
+        ax = fig.add_subplot(gs[0, i])
+        ax.imshow(tensor_to_numpy(tv_result))
+        ax.set_title(f'{angle}°', fontsize=10)
+        if i == 0:
+            add_row_label(ax, 'Torchvision', color='lightblue')
+        ax.axis('off')
+        
+        # Triton-Augment
+        ta_result = F.rotate(img_gpu, angle, interpolation='bilinear')
+        ax = fig.add_subplot(gs[1, i])
+        ax.imshow(tensor_to_numpy(ta_result))
+        if i == 0:
+            add_row_label(ax, 'Triton-Augment', color='lightgreen')
+        ax.axis('off')
+        
+        # Check if they match
+        max_diff = torch.abs(tv_result - ta_result).max().item()
+        add_match_indicator(ax, matches=(max_diff < 1e-4), max_diff=max_diff)
+    
+    save_and_close_plot(output_path, 'Rotation Comparison: Torchvision vs Triton-Augment')
+
+
+def compare_affine(img, output_path='compare_affine.png'):
+    """Compare affine transformations: Torchvision vs Triton-Augment."""
+    img_gpu = img.cuda()
+    
+    # Different affine transformations
+    transforms_list = [
+        ('Rotate 30°', {'angle': 30, 'translate': [0, 0], 'scale': 1.0, 'shear': [0, 0]}),
+        ('Translate', {'angle': 0, 'translate': [20, 15], 'scale': 1.0, 'shear': [0, 0]}),
+        ('Scale 1.2x', {'angle': 0, 'translate': [0, 0], 'scale': 1.2, 'shear': [0, 0]}),
+        ('Shear', {'angle': 0, 'translate': [0, 0], 'scale': 1.0, 'shear': [10, 5]}),
+        ('Combined', {'angle': 15, 'translate': [10, 10], 'scale': 1.1, 'shear': [5, 0]}),
+    ]
+    
+    fig, gs = create_figure_with_gridspec(2, len(transforms_list))
+    
+    for i, (name, params) in enumerate(transforms_list):
+        # Torchvision
+        tv_result = tvF.affine(
+            img_gpu, 
+            angle=params['angle'],
+            translate=params['translate'],
+            scale=params['scale'],
+            shear=params['shear'],
+            interpolation=tvF.InterpolationMode.BILINEAR
+        )
+        ax = fig.add_subplot(gs[0, i])
+        ax.imshow(tensor_to_numpy(tv_result))
+        ax.set_title(name, fontsize=10)
+        if i == 0:
+            add_row_label(ax, 'Torchvision', color='lightblue')
+        ax.axis('off')
+        
+        # Triton-Augment
+        ta_result = F.affine(
+            img_gpu,
+            angle=params['angle'],
+            translate=params['translate'],
+            scale=params['scale'],
+            shear=params['shear'],
+            interpolation='bilinear'
+        )
+        ax = fig.add_subplot(gs[1, i])
+        ax.imshow(tensor_to_numpy(ta_result))
+        if i == 0:
+            add_row_label(ax, 'Triton-Augment', color='lightgreen')
+        ax.axis('off')
+        
+        # Check if they match
+        max_diff = torch.abs(tv_result - ta_result).max().item()
+        add_match_indicator(ax, matches=(max_diff < 1e-4), max_diff=max_diff)
+    
+    save_and_close_plot(output_path, 'Affine Comparison: Torchvision vs Triton-Augment')
+
+
+def compare_all_fused(img, output_path='compare_all_fused.png'):
+    """Compare full pipeline with affine: Torchvision Compose vs Triton All-Fused."""
+    img_gpu = img.cuda()
+    _, _, h, w = img_gpu.shape
+    crop_size = h // 2
+    
+    mean = (0.485, 0.456, 0.406)
+    std = (0.229, 0.224, 0.225)
+    
+    # Torchvision Compose (no contrast for exact match)
+    tv_result = tvF.affine(
+        img_gpu,
+        angle=15,
+        translate=[10, 10],
+        scale=1.1,
+        shear=[5, 0],
+        interpolation=tvF.InterpolationMode.BILINEAR
+    )
+    tv_result = tvF.crop(tv_result, h//4, w//4, crop_size, crop_size)
+    tv_result = tvF.horizontal_flip(tv_result)
+    tv_result = tvF.adjust_brightness(tv_result, 1.2)
+    tv_result = tvF.adjust_saturation(tv_result, 1.3)
+    tv_result = tvF.normalize(tv_result, mean, std)
+    
+    # Triton-Augment All-Fused (1 kernel!)
+    ta_result = F.fused_augment(
+        img_gpu,
+        # Geometric
+        top=h//4,
+        left=w//4,
+        height=crop_size,
+        width=crop_size,
+        flip_horizontal=True,
+        angle=15,
+        translate=[10, 10],
+        scale=1.1,
+        shear=[5, 0],
+        interpolation='bilinear',
+        # Color
+        brightness_factor=1.2,
+        contrast_factor=1.0,  # Skip contrast for exact match
+        saturation_factor=1.3,
+        mean=mean,
+        std=std,
+    )
+    
+    # Denormalize for visualization
+    mean_t = torch.tensor(mean, device='cuda').view(1, 3, 1, 1)
+    std_t = torch.tensor(std, device='cuda').view(1, 3, 1, 1)
+    
+    tv_denorm = tv_result * std_t + mean_t
+    ta_denorm = ta_result * std_t + mean_t
+    
+    fig, gs = create_figure_with_gridspec(2, 3)
+    
+    # Original - Torchvision
+    ax = fig.add_subplot(gs[0, 0])
+    ax.imshow(tensor_to_numpy(img_gpu))
+    ax.set_title('Original', fontsize=11)
+    add_row_label(ax, 'Torchvision\\nCompose\\n(6 kernels)', color='lightblue', offset=-0.2)
+    ax.axis('off')
+    
+    # Original - Triton
+    ax = fig.add_subplot(gs[1, 0])
+    ax.imshow(tensor_to_numpy(img_gpu))
+    add_row_label(ax, 'Triton-Augment\\nAll-Fused\\n(1 kernel!)', color='lightgreen', offset=-0.2)
+    ax.axis('off')
+    
+    # After augmentation (denormalized) - Torchvision
+    ax = fig.add_subplot(gs[0, 1])
+    ax.imshow(tensor_to_numpy(tv_denorm))
+    ax.set_title('After Pipeline (denormalized)', fontsize=11)
+    ax.axis('off')
+    
+    # After augmentation - Triton
+    ax = fig.add_subplot(gs[1, 1])
+    ax.imshow(tensor_to_numpy(ta_denorm))
+    ax.axis('off')
+    
+    # Difference heatmap
+    diff = torch.abs(tv_result - ta_result).mean(dim=1, keepdim=True)
+    ax = fig.add_subplot(gs[:, 2])
+    im = ax.imshow(diff[0, 0].cpu().numpy(), cmap='hot', vmin=0, vmax=0.01)
+    ax.set_title('Absolute Difference\\n(magnified 100x)', fontsize=11)
+    ax.axis('off')
+    plt.colorbar(im, ax=ax, fraction=0.046)
+    
+    max_diff = torch.abs(tv_result - ta_result).max().item()
+    ax.text(0.5, -0.1, f'Max diff: {max_diff:.2e}', ha='center', va='top', 
+           transform=ax.transAxes, fontsize=9)
+    
+    if max_diff < 1e-4:
+        fig.text(0.5, 0.02, '✓ Results are identical! Triton-Augment is faster with 1 kernel vs 6 kernels', 
+                ha='center', fontsize=12, color='green', weight='bold')
+    
+    save_and_close_plot(output_path, 'All-Fused Pipeline: Affine → Crop → Flip → Brightness → Saturation → Normalize')
+
+
 def main():
     """Generate all comparison visualizations."""
     parser = argparse.ArgumentParser(description='Compare Triton-Augment with torchvision')
@@ -485,9 +669,12 @@ def main():
     compare_crop(img, output_dir / 'compare_crop.png')
     compare_flip(img, output_dir / 'compare_flip.png')
     compare_normalize(img, output_dir / 'compare_normalize.png')
+    compare_rotate(img, output_dir / 'compare_rotate.png')
+    compare_affine(img, output_dir / 'compare_affine.png')
     
-    print("\n🚀 Comparing Full Pipeline:")
+    print("\n🚀 Comparing Full Pipelines:")
     compare_fused_pipeline(img, output_dir / 'compare_fused_pipeline.png')
+    compare_all_fused(img, output_dir / 'compare_all_fused.png')
     
     print("\n" + "="*70)
     print(f"✓ All comparisons saved to: {output_dir}")

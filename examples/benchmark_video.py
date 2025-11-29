@@ -65,6 +65,7 @@ def benchmark_video(batch_size=8, num_frames=16, image_size=224, crop_size=112):
     # 1. Torchvision Compose (Baseline) - Processes frames independently
     # ========================================================================
     torchvision_transform = transforms.Compose([
+        transforms.RandomAffine(degrees=15, translate=(0.1, 0.1), scale=(0.9, 1.1), shear=5),
         transforms.RandomCrop(crop_size),
         transforms.RandomHorizontalFlip(p=0.5),
         transforms.ColorJitter(brightness=0.2, saturation=0.2, contrast=0.2),
@@ -83,6 +84,7 @@ def benchmark_video(batch_size=8, num_frames=16, image_size=224, crop_size=112):
     kornia_time = None
     if KORNIA_AVAILABLE:
         kornia_transform = K.VideoSequential(
+            K.RandomAffine(degrees=15, translate=(0.1, 0.1), scale=(0.9, 1.1), shear=5, p=1.0),
             K.RandomCrop(size=(crop_size, crop_size), align_corners=False, p=1.0),
             K.RandomHorizontalFlip(p=0.5),
             K.ColorJitter(brightness=0.2, saturation=0.2, contrast=0.2, p=1.0),
@@ -101,6 +103,7 @@ def benchmark_video(batch_size=8, num_frames=16, image_size=224, crop_size=112):
     # 3. Triton-Augment Sequential (Individual transform classes)
     # ========================================================================
     triton_sequential_transform = transforms.Compose([
+        ta.TritonRandomAffine(degrees=15, translate=(0.1, 0.1), scale=(0.9, 1.1), shear=5),
         ta.TritonRandomCrop(crop_size),
         ta.TritonRandomHorizontalFlip(p=0.5),
         ta.TritonColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
@@ -119,6 +122,10 @@ def benchmark_video(batch_size=8, num_frames=16, image_size=224, crop_size=112):
     triton_fused_transform = ta.TritonFusedAugment(
         crop_size=crop_size,
         horizontal_flip_p=0.5,
+        degrees=15,
+        translate=(0.1, 0.1),
+        scale=(0.9, 1.1),
+        shear=5,
         brightness=0.2,
         contrast=0.2,
         saturation=0.2,

@@ -502,6 +502,7 @@ def benchmark_ultimate_fusion(size, batch_size, provider):
     Benchmark 6: Ultimate Fusion - ALL operations in ONE kernel!
     
     Uses TRANSFORM CLASSES with RANDOM augmentations (real training scenario):
+    - RandomAffine (degrees=15, translate=(0.1, 0.1), scale=(0.9, 1.1), shear=5)
     - RandomCrop (size-40×size-40)
     - RandomHorizontalFlip (p=0.5)
     - ColorJitter (brightness=0.2, contrast=0.2, saturation=0.2) → 3 kernels
@@ -509,8 +510,8 @@ def benchmark_ultimate_fusion(size, batch_size, provider):
     - Normalize
     
     Compares:
-    - Torchvision Compose: 5 transforms (7 kernel launches)
-    - Triton Sequential: 5 Triton transforms (7 kernel launches)
+    - Torchvision Compose: 6 transforms (8 kernel launches)
+    - Triton Sequential: 6 Triton transforms (8 kernel launches)
     - Triton Ultimate: 1 fused kernel (1 kernel launch) 🚀
     
     Expected: ~5-12x speedup vs torchvision (Tesla T4)!
@@ -525,6 +526,7 @@ def benchmark_ultimate_fusion(size, batch_size, provider):
     if provider == 'torchvision-compose':
         # Torchvision with transform classes and random augmentations
         transform = transforms.Compose([
+            transforms.RandomAffine(degrees=15, translate=(0.1, 0.1), scale=(0.9, 1.1), shear=5),
             transforms.RandomCrop(crop_size),
             transforms.RandomHorizontalFlip(p=0.5),
             transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
@@ -537,6 +539,7 @@ def benchmark_ultimate_fusion(size, batch_size, provider):
     elif provider == 'triton-sequential':
         # Triton with sequential transform classes
         transform = transforms.Compose([
+            ta.TritonRandomAffine(degrees=15, translate=(0.1, 0.1), scale=(0.9, 1.1), shear=5),
             ta.TritonRandomCrop(crop_size),
             ta.TritonRandomHorizontalFlip(p=0.5),
             ta.TritonColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
@@ -551,6 +554,10 @@ def benchmark_ultimate_fusion(size, batch_size, provider):
         transform = ta.TritonFusedAugment(
             crop_size=crop_size,
             horizontal_flip_p=0.5,
+            degrees=15,
+            translate=(0.1, 0.1),
+            scale=(0.9, 1.1),
+            shear=5,
             brightness=0.2,
             contrast=0.2,
             saturation=0.2,
@@ -587,6 +594,7 @@ def print_ultimate_speedup_summary():
     
     # Torchvision Compose with random augmentations
     torchvision_transforms = transforms.Compose([
+        transforms.RandomAffine(degrees=15, translate=(0.1, 0.1), scale=(0.9, 1.1), shear=5),
         transforms.RandomCrop(crop_size),
         transforms.RandomHorizontalFlip(p=0.5),
         transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
@@ -600,6 +608,10 @@ def print_ultimate_speedup_summary():
     triton_ultimate_transform = ta.TritonFusedAugment(
         crop_size=crop_size,
         horizontal_flip_p=0.5,
+        degrees=15,
+        translate=(0.1, 0.1),
+        scale=(0.9, 1.1),
+        shear=5,
         brightness=0.2,
         contrast=0.2,
         saturation=0.2,
