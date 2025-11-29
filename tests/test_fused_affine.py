@@ -359,8 +359,8 @@ class TestFusedAugmentTransformClass:
         
         out_seq = TVF.crop(
             out_seq, 
-            top_offsets.item(), 
-            left_offsets.item(), 
+            int(top_offsets.item()), 
+            int(left_offsets.item()), 
             crop_size, 
             crop_size
         )
