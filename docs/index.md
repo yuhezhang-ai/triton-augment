@@ -185,14 +185,14 @@ transform = transforms.Compose([
 
 | Image Size | Batch | Crop Size | Torchvision | Triton Fused | Speedup |
 |------------|-------|-----------|-------------|--------------|---------|
-| 256×256    | 32    | 224×224   | 2.48 ms     | 0.56 ms      | **4.5x** |
-| 256×256    | 64    | 224×224   | 4.51 ms     | 0.69 ms      | **6.5x** |
-| 600×600    | 32    | 512×512   | 11.82 ms    | 1.26 ms      | **9.4x** |
-| 1280×1280  | 32    | 1024×1024 | 48.91 ms    | 4.07 ms      | **12.0x** |
+| 256×256    | 32    | 224×224   | 3.89 ms     | 1.35 ms      | **2.9x** |
+| 256×256    | 64    | 224×224   | 6.88 ms     | 1.40 ms      | **4.9x** |
+| 600×600    | 32    | 512×512   | 17.91 ms    | 2.03 ms      | **8.8x** |
+| 1280×1280  | 32    | 1024×1024 | 76.50 ms    | 5.46 ms      | **14.0x** |
 
-**Average Speedup: 8.1x** 🚀
+**Average Speedup: 7.66x** 🚀
 
-> **Operations**: RandomCrop + RandomHorizontalFlip + ColorJitter + RandomGrayscale + Normalize
+> **Operations**: RandomAffine + RandomCrop + RandomHorizontalFlip + ColorJitter + RandomGrayscale + Normalize
 
 > **Note**: Benchmarks use `torchvision.transforms.v2` (not the legacy v1 API) for comparison.
 
@@ -220,13 +220,13 @@ transform = transforms.Compose([
 
 | Batch | Frames | Image Size | Crop Size | Torchvision | Kornia VideoSeq | Triton Fused | Speedup vs TV | Speedup vs Kornia |
 |-------|--------|------------|-----------|-------------|-----------------|--------------|---------------|-------------------|
-|     8 |     16 | 256×256    | 224×224   | 8.86 ms     | 78.20 ms        | 1.21 ms      | **7.3x**      | **64.6x**         |
-|     4 |     32 | 256×256    | 224×224   | 8.84 ms     | 78.39 ms        | 1.08 ms      | **8.2x**      | **72.6x**         |
-|    16 |      8 | 256×256    | 224×224   | 9.06 ms     | 78.69 ms        | 1.07 ms      | **8.5x**      | **73.5x**         |
-|     8 |     16 | 512×512    | 448×448   | 33.75 ms    | 272.59 ms       | 3.24 ms      | **10.4x**     | **84.1x**         |
+|     8 |     16 | 256×256    | 224×224   | 13.96 ms    | 88.80 ms        | 1.80 ms      | **7.8x**      | **49.5x**         |
+|     8 |     32 | 256×256    | 224×224   | 26.51 ms    | 177.58 ms       | 2.65 ms      | **10.0x**     | **67.1x**         |
+|    16 |     32 | 256×256    | 224×224   | 50.12 ms    | 346.25 ms       | 3.86 ms      | **13.0x**     | **89.7x**         |
+|     8 |     32 | 512×512    | 448×448   | 107.20 ms   | 612.65 ms       | 6.83 ms      | **15.7x**     | **89.7x**         |
 
-**Average Speedup vs Torchvision: 8.6x**  
-**Average Speedup vs Kornia: 73.7x** 🚀
+**Average Speedup vs Torchvision: 11.62x**  
+**Average Speedup vs Kornia: 73.97x** 🚀
 
 ### Run Your Own Benchmarks
 

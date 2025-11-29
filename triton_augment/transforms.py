@@ -1254,21 +1254,15 @@ class TritonFusedAugment(nn.Module):
     Fused augmentation: All operations in ONE kernel.
     
     This transform combines ALL augmentations in a single GPU kernel launch.
-    Supports two modes:
+    **Unified Fusion:**
+    Combines Affine (Rotation/Translation/Scale/Shear) + Crop + Flip + Color Jitter + Grayscale + Normalize
+    in order into a single kernel launch.
     
-    **Simple Mode (default):** Crop + Flip + Color ops
-    - Enabled when affine params (degrees, translate, scale, shear) are not set
-    - Fastest performance
-    
-    **Affine Mode:** Affine Transform + Color ops  
-    - Enabled when any affine param is set (degrees, translate, scale, shear)
-    - Supports rotation, translation, scaling, shearing
-    - Crop and flip are composed into the affine matrix
-    
-    **Performance**: up to 12x faster than torchvision.transforms.Compose!
+    **Performance**: up to 14x faster than torchvision.transforms.Compose!
     
     Args:
         crop_size: Desired output size (int or tuple). If int, output is square (crop_size, crop_size).
+                  If None, output size equals input size (no cropping). Default: None.
         horizontal_flip_p: Probability of horizontal flip (default: 0.0, no flip)
         
         # Affine parameters (optional - setting any enables affine mode)
@@ -1335,7 +1329,7 @@ class TritonFusedAugment(nn.Module):
     
     def __init__(
         self,
-        crop_size: int | tuple[int, int],
+        crop_size: int | tuple[int, int] | None = None,
         horizontal_flip_p: float = 0.0,
         # Affine parameters (optional - enables affine mode if any are set)
         degrees: float | tuple[float, float] = 0,
@@ -1357,7 +1351,9 @@ class TritonFusedAugment(nn.Module):
         super().__init__()
         
         # Parse crop size
-        if isinstance(crop_size, int):
+        if crop_size is None:
+            self.crop_height = self.crop_width = None
+        elif isinstance(crop_size, int):
             self.crop_height = self.crop_width = crop_size
         else:
             self.crop_height, self.crop_width = crop_size
@@ -1460,8 +1456,13 @@ class TritonFusedAugment(nn.Module):
             )
             
         # Sample crop params
-        top_offsets = torch.randint(0, img_height - self.crop_height + 1, (param_count,), device=device, dtype=torch.float32)
-        left_offsets = torch.randint(0, img_width - self.crop_width + 1, (param_count,), device=device, dtype=torch.float32)
+        if self.crop_height is None:
+            # No crop -> offsets are 0
+            top_offsets = torch.zeros(param_count, device=device, dtype=torch.float32)
+            left_offsets = torch.zeros(param_count, device=device, dtype=torch.float32)
+        else:
+            top_offsets = torch.randint(0, img_height - self.crop_height + 1, (param_count,), device=device, dtype=torch.float32)
+            left_offsets = torch.randint(0, img_width - self.crop_width + 1, (param_count,), device=device, dtype=torch.float32)
         
         # Sample flip params
         do_flip = (
@@ -1534,8 +1535,8 @@ class TritonFusedAugment(nn.Module):
             normalized_img,
             top=top_offsets,
             left=left_offsets,
-            height=self.crop_height,
-            width=self.crop_width,
+            height=self.crop_height if self.crop_height is not None else img_height,
+            width=self.crop_width if self.crop_width is not None else img_width,
             flip_horizontal=do_flip,
             # Affine params
             angle=angle,
@@ -1558,7 +1559,10 @@ class TritonFusedAugment(nn.Module):
     
     def __repr__(self):
         format_string = self.__class__.__name__ + '('
-        format_string += f'crop_size=({self.crop_height}, {self.crop_width})'
+        if self.crop_height is not None:
+            format_string += f'crop_size=({self.crop_height}, {self.crop_width})'
+        else:
+            format_string += 'crop_size=None'
         format_string += f', horizontal_flip_p={self.horizontal_flip_p}'
         if self.brightness:
             format_string += f', brightness={self.brightness}'

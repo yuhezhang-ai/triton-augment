@@ -356,7 +356,7 @@ def compare_normalize(img, output_path='compare_normalize.png'):
     save_and_close_plot(output_path, 'Normalize Comparison: Torchvision vs Triton-Augment')
 
 
-def compare_fused_pipeline(img, output_path='compare_fused_pipeline.png'):
+def compare_fused_no_affine(img, output_path='compare_fused_no_affine.png'):
     """Compare full pipeline: Torchvision Compose vs Triton Fused."""
     img_gpu = img.cuda()
     _, _, h, w = img_gpu.shape
@@ -673,7 +673,7 @@ def main():
     compare_affine(img, output_dir / 'compare_affine.png')
     
     print("\n🚀 Comparing Full Pipelines:")
-    compare_fused_pipeline(img, output_dir / 'compare_fused_pipeline.png')
+    compare_fused_no_affine(img, output_dir / 'compare_fused_no_affine.png')
     compare_all_fused(img, output_dir / 'compare_all_fused.png')
     
     print("\n" + "="*70)

@@ -112,6 +112,7 @@ def benchmark_ultimate(batch_size=32, image_size=224, crop_size=112):
     # import kornia.augmentation as K
 
     # kornia_transform = K.AugmentationSequential(
+    #     K.RandomAffine(degrees=15, translate=(0.1, 0.1), scale=(0.9, 1.1), shear=5, p=1.0),
     #     K.RandomCrop(size=crop_size, align_corners=False, p=1.0), 
     #     K.RandomHorizontalFlip(p=0.5),
     #     K.ColorJitter(brightness=0.2, saturation=0.2, contrast=0.2, p=1.0),
@@ -148,8 +149,8 @@ def print_table(results):
     print("ULTIMATE FUSION BENCHMARK RESULTS - REAL TRAINING SCENARIO")
     print("="*80)
     print("\nRandom Augmentations:")
-    print("  - RandomCrop + RandomHorizontalFlip(p=0.5)")
     print("  - RandomAffine(degrees=15, translate=(0.1, 0.1), scale=(0.9, 1.1), shear=5)")
+    print("  - RandomCrop + RandomHorizontalFlip(p=0.5)")
     print("  - ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2)")
     print("  - RandomGrayscale(p=0.1) + Normalize(ImageNet)")
     print("\nDevice:", torch.cuda.get_device_name(0))

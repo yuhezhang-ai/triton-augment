@@ -178,6 +178,7 @@ def print_table(results):
     print("VIDEO (5D TENSOR) AUGMENTATION BENCHMARK - REAL TRAINING SCENARIO")
     print("="*100)
     print("\nRandom Augmentations:")
+    print("  - RandomAffine(degrees=15, translate=(0.1, 0.1), scale=(0.9, 1.1), shear=5)")
     print("  - RandomCrop + RandomHorizontalFlip(p=0.5)")
     print("  - ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2)")
     print("  - RandomGrayscale(p=0.1)")
