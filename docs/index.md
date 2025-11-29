@@ -116,7 +116,7 @@ augmented = transform(videos)  # Shape: [8, 16, 3, 112, 112]
 ```python
 # Example: Only saturation adjustment + horizontal flip
 transform = ta.TritonFusedAugment(
-    crop_size=224,          # No crop (same size as input)
+    crop_size=None,          # No crop (pass None or pass same size as input)
     saturation=0.2,         # Only saturation jitter
     horizontal_flip_p=0.5,  # Only random flip
 )
@@ -328,13 +328,13 @@ for images, labels in train_loader:
 
 - [x] **Phase 1**: Fused color operations (brightness, contrast, saturation, normalize)
 - [x] **Phase 1.5**: Grayscale, float16 support, auto-tuning
-- [x] **Phase 2**: Basic Geometric operations (crop, flip) + Ultimate fusion 🚀
+- [x] **Phase 2**: Basic Geometric operations (crop, flip) + all fusion 🚀
 - [x] **Phase 2.5**: 5D video tensor support `[N, T, C, H, W]` with `same_on_frame` parameter
-- [x] **Phase 2.7**: Affine transformations (rotation, translation, scaling, shearing) in fused kernel
-- [ ] **Phase 3**: Extended operations (resize, blur, erasing, mixup, etc.)
+- [x] **Phase 3.0**: Affine transformations (rotation, translation, scaling, shearing) in fused kernel
+- [ ] **Phase 3.5**: Extended operations (blur, erasing, mixup, etc.)
 - [ ] **Future**: Differentiable augmentation (autograd support, available in Kornia) - evaluate demand vs performance tradeoff
 
-[→ Detailed Roadmap](https://github.com/yuhezhang-ai/triton-augment/issues)
+[→ Submit Feature Request](https://github.com/yuhezhang-ai/triton-augment/issues)
 
 ---
 

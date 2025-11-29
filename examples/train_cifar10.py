@@ -182,6 +182,7 @@ def main():
     # Create Triton-Augment transforms
     # Applied in training loop on GPU batches!
     train_transform = ta.TritonFusedAugment(
+        degrees=15,                      # Rotation ±15 degrees
         crop_size=28,                    # Random crop from 32×32 to 28×28
         horizontal_flip_p=0.5,           # 50% chance of horizontal flip
         brightness=0.2,                  # Brightness jitter ±20%

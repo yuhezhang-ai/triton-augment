@@ -111,7 +111,7 @@ augmented = transform(videos)  # Shape: [8, 16, 3, 112, 112]
 ```python
 # Example: Only saturation adjustment + horizontal flip
 transform = ta.TritonFusedAugment(
-    crop_size=224,          # No crop (same size as input)
+    crop_size=None,          # No crop (pass None or pass same size as input)
     saturation=0.2,         # Only saturation jitter
     horizontal_flip_p=0.5,  # Only random flip
 )
@@ -343,6 +343,7 @@ train_loader = DataLoader(
 
 # Step 2: Create GPU augmentation transform (define once, reuse)
 augment = ta.TritonFusedAugment(
+    degrees=15,
     crop_size=28,
     horizontal_flip_p=0.5,
     brightness=0.2, contrast=0.2, saturation=0.2,
@@ -440,7 +441,7 @@ img = F.normalize(img, mean=(...), std=(...))
 - [x] **Phase 2**: Basic Geometric operations (crop, flip) + Ultimate fusion 🚀
 - [x] **Phase 2.5**: 5D video tensor support `[N, T, C, H, W]` with `same_on_frame` parameter
 - [x] **Phase 3.0**: Affine transformations (rotation, translation, scaling, shearing) in fused kernel
-- [ ] **Phase 3.5**: Extended operations (resize, blur, erasing, mixup, etc.)
+- [ ] **Phase 3.5**: Extended operations (blur, erasing, mixup, etc.)
 - [ ] **Future**: Differentiable augmentation (autograd support, available in Kornia) - evaluate demand vs performance tradeoff
 
 ---

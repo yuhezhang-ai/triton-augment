@@ -495,9 +495,9 @@ def benchmark_geometric_fusion(size, batch_size, provider):
         line_arg='provider',
         line_vals=['torchvision-compose', 'triton-sequential', 'triton-ultimate'],
         line_names=[
-            'Torchvision Compose (7 ops)',
-            'Triton Sequential (7 ops)', 
-            'Triton Ultimate Fused (7 ops)'
+            'Torchvision Compose (8 ops)',
+            'Triton Sequential (8 ops)', 
+            'Triton Ultimate Fused (8 ops)'
         ],
         styles=[('green', '-'), ('blue', '--'), ('red', '-')],
         ylabel='Time (ms)',

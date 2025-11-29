@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - Nov 29, 2025
+
+### Added
+
+#### Affine Transformations Support
+
+- **Affine Transformations**: Full support for rotation, translation, scaling, and shearing in the fused kernel
+- **`TritonRandomAffine` Class**: torchvision-compatible random affine transform with per-image parameters
+- **`TritonRandomRotation` Class**: torchvision-compatible random rotation transform
+- **`InterpolationMode` Enum**: Consistent interpolation modes (nearest, bilinear) matching torchvision
+- **Enhanced `TritonFusedAugment`**: Now supports affine parameters alongside crop/flip/color operations
+- **Functional API**: `affine()` and `rotate()` functions with torchvision-exact behavior
+
+#### Kernel Improvements
+
+- **Unified Geometric Pipeline**: Refactored fused kernel to apply coordinate transforms in correct order: Flip → Crop → Affine, which is equivalent to Affine → Crop → Flip in image.
+- **Enhanced Sampling**: Better nearest neighbor and bilinear interpolation accuracy
+
+#### Testing & Quality
+
+- **Affine Correctness Tests**: Comprehensive tests comparing with torchvision for rotation, translation, scaling, shearing
+- **Batch Processing Tests**: Tests for per-image parameter handling across different batch sizes
+- **Video Tensor Tests**: 5D tensor correctness validation for affine transforms
+- **Interpolation Mode Tests**: Separate validation for nearest and bilinear sampling
+
+### Performance
+
+- **Updated Benchmarks**: Improved performance results with 8.0x average speedup on Tesla T4 (up to 15.6x on large images)
+- **Kernel Fusion Improvements**: Better memory coalescing and reduced register pressure
+
+### Changed
+
+- **API Updates**: `TritonFusedAugment` constructor now accepts `degrees`, `translate`, `scale`, `shear` parameters
+- **Default Interpolation**: Changed default interpolation to `"nearest"` to match torchvision v2 behavior
+- **Color Helper Refactoring**: `TritonFusedAugment` now uses `TritonColorJitterNormalize` as internal helper for cleaner code
+
+### Technical
+
+- **Kernel Architecture**: Split geometric processing into sequential steps instead of matrix composition
+- **Memory Layout**: Optimized parameter tensor layouts for better GPU memory access patterns
+
 ## [0.2.0] - Nov 18, 2025
 
 ### Added

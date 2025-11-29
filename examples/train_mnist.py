@@ -224,6 +224,7 @@ def main():
     # Note: No horizontal flip for MNIST (would change digit meaning: 6→9, etc.)
     train_transform = ta.TritonFusedAugment(
         crop_size=24,
+        degrees=15,
         horizontal_flip_p=0.0,  # Disabled for MNIST digits
         brightness=0.2,
         contrast=0.2,
