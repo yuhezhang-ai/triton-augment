@@ -242,7 +242,8 @@ def sample_bilinear(
     w11 = dx * dy
 
     # Perform bilinear interpolation
-    return p00 * w00 + p10 * w10 + p01 * w01 + p11 * w11
+    result = p00 * w00 + p10 * w10 + p01 * w01 + p11 * w11
+    return result.to(input_ptr.dtype.element_ty)
 
 
 @triton.jit
