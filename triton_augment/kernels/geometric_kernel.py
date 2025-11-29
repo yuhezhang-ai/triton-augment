@@ -283,6 +283,80 @@ def sample_nearest(
 
 
 @triton.jit
+def apply_affine_transform(
+    x_out, y_out,
+    matrix_ptr,
+    n,
+    input_width, input_height,
+    output_width, output_height,
+    mask
+):
+    """
+    Helper to apply affine transformation to coordinates.
+    
+    Args:
+        x_out, y_out: Output pixel coordinates (int or float)
+        matrix_ptr: Pointer to affine matrices [N, 6]
+        n: Batch index
+        input_width, input_height: Input image dimensions
+        output_width, output_height: Output image dimensions
+        mask: Validity mask
+        
+    Returns:
+        x_in, y_in: Transformed input coordinates
+    """
+    # Load matrix elements
+    mat_base = matrix_ptr + n * 6
+    a = tl.load(mat_base + 0, mask=mask, other=1.0)
+    b = tl.load(mat_base + 1, mask=mask, other=0.0)
+    c_tx = tl.load(mat_base + 2, mask=mask, other=0.0)
+    d = tl.load(mat_base + 3, mask=mask, other=0.0)
+    e = tl.load(mat_base + 4, mask=mask, other=1.0)
+    f_ty = tl.load(mat_base + 5, mask=mask, other=0.0)
+    
+    # Calculate input coordinates
+    # The matrix from _get_inverse_affine_matrix is designed for torchvision's grid-based system:
+    # 1. base_grid coords are centered: x in [-w*0.5 + 0.5, w*0.5 - 0.5]
+    # 2. Matrix is rescaled by [0.5*w, 0.5*h] before matmul
+    # 3. Result is normalized coords for grid_sample with align_corners=False
+    #
+    # To match this, we:
+    # 1. Convert output pixel coords to centered coords
+    # 2. Apply matrix with rescaling
+    # 3. Convert normalized result back to pixel coords
+    # which is just equivalent to applying matrix in centered coords and then convert back to non-centered coords
+
+    x_out_f = x_out.to(tl.float32)
+    y_out_f = y_out.to(tl.float32)
+    
+    half_ow = output_width * 0.5
+    half_oh = output_height * 0.5
+    x_centered = x_out_f - half_ow + 0.5
+    y_centered = y_out_f - half_oh + 0.5
+    
+    half_iw = input_width * 0.5
+    half_ih = input_height * 0.5
+
+    # x_norm = (a * x_centered + b * y_centered + c_tx) / half_iw
+    # y_norm = (d * x_centered + e * y_centered + f_ty) / half_ih
+    # x_in = ((x_norm + 1.0) * input_width - 1.0) * 0.5
+    # y_in = ((y_norm + 1.0) * input_height - 1.0) * 0.5
+
+    # Derive:
+    # x_norm = x / (input_width * 0.5)
+    # y_norm = y / (input_height * 0.5)
+    # x_in = ((x / (input_width * 0.5) + 1.0) * input_width - 1.0) * 0.5
+    # = x + input_width * 0.5 - 0.5
+    # y_in = ((y / (input_height * 0.5) + 1.0) * input_height - 1.0) * 0.5
+    # = y + input_height * 0.5 - 0.5
+
+    x_in = (a * x_centered + b * y_centered + c_tx) + half_iw - 0.5
+    y_in = (d * x_centered + e * y_centered + f_ty) + half_ih - 0.5
+    
+    return x_in, y_in
+
+
+@triton.jit
 def affine_transform_kernel(
     input_ptr,
     output_ptr,
@@ -344,54 +418,15 @@ def affine_transform_kernel(
     # size (24 bytes) and GPU caching make this acceptable.
 
     
-    # Pointer arithmetic for matrix
-    # matrix_ptr + n * 6 + offset
-    mat_base = matrix_ptr + n * 6
-    
-    # Load matrix elements
-    a = tl.load(mat_base + 0, mask=mask, other=1.0)
-    b = tl.load(mat_base + 1, mask=mask, other=0.0)
-    c_tx = tl.load(mat_base + 2, mask=mask, other=0.0)
-    d = tl.load(mat_base + 3, mask=mask, other=0.0)
-    e = tl.load(mat_base + 4, mask=mask, other=1.0)
-    f_ty = tl.load(mat_base + 5, mask=mask, other=0.0)
-    
-    # Calculate input coordinates
-    # The matrix from _get_inverse_affine_matrix is designed for torchvision's grid-based system:
-    # 1. base_grid coords are centered: x in [-w*0.5 + 0.5, w*0.5 - 0.5]
-    # 2. Matrix is rescaled by [0.5*w, 0.5*h] before matmul
-    # 3. Result is normalized coords for grid_sample with align_corners=False
-    #
-    # To match this, we:
-    # 1. Convert output pixel coords to centered coords
-    # 2. Apply matrix with rescaling
-    # 3. Convert normalized result back to pixel coords
-
-    # Cast to float32 for calculation
-    x_out_f = x_out.to(tl.float32)
-    y_out_f = y_out.to(tl.float32)
-
-    # Step 1: Convert to centered coordinates (matching torchvision's base_grid)
-    # base_grid uses output dimensions
-    half_ow = output_width * 0.5
-    half_oh = output_height * 0.5
-    x_centered = x_out_f - half_ow + 0.5
-    y_centered = y_out_f - half_oh + 0.5
-
-    # Step 2: Apply matrix with rescaling (as torchvision does)
-    # CRITICAL: torchvision rescales by INPUT dimensions, not output!
-    # rescaled_theta = theta.T / [0.5*input_w, 0.5*input_h]
-    # output_grid = base_grid @ rescaled_theta
-    half_iw = input_width * 0.5
-    half_ih = input_height * 0.5
-    x_norm = (a * x_centered + b * y_centered + c_tx) / half_iw
-    y_norm = (d * x_centered + e * y_centered + f_ty) / half_ih
-
-    # Step 3: Convert normalized coords to input pixel coords
-    # grid_sample with align_corners=False:
-    # pixel = ((normalized + 1) * size - 1) / 2
-    x_in = ((x_norm + 1.0) * input_width - 1.0) * 0.5
-    y_in = ((y_norm + 1.0) * input_height - 1.0) * 0.5
+    # Apply affine transformation using helper
+    x_in, y_in = apply_affine_transform(
+        x_out, y_out,
+        matrix_ptr,
+        n,
+        input_width, input_height,
+        output_width, output_height,
+        mask
+    )
 
     input_batch_offset = n * channels * input_height * input_width
     input_channel_offset = c * input_height * input_width

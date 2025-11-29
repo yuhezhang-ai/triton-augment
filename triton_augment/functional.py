@@ -27,7 +27,7 @@ from .kernels.geometric_kernel import (
     horizontal_flip_kernel,
     affine_transform_kernel,
 )
-from .kernels.fused_kernel import ultimate_fused_kernel
+from .kernels.fused_kernel import fused_augment_kernel
 from .utils import should_show_autotune_message
 from .config import ENABLE_AUTOTUNE
 
@@ -980,6 +980,69 @@ def _apply_affine_matrix(
     return output
 
 
+def _prepare_affine_params_to_tensor(
+    angle: float | torch.Tensor,
+    translate: list[float] | torch.Tensor,
+    scale: float | torch.Tensor,
+    shear: list[float] | torch.Tensor,
+    center: list[float] | None,
+    batch_size: int,
+    height: int,
+    width: int,
+    device: torch.device,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """
+    Helper to convert affine parameters to tensors and handle broadcasting and center translation.
+    """
+    # Convert parameters to tensors
+    angle_tensor = _convert_to_tensor(angle, batch_size, torch.float32, device, "angle")
+    
+    # Handle translate
+    if isinstance(translate, torch.Tensor):
+        if translate.ndim == 1 and translate.shape[0] == 2:
+            translate_tensor = translate.unsqueeze(0).repeat(batch_size, 1).to(device=device, dtype=torch.float32)
+        elif translate.ndim == 2 and translate.shape == (batch_size, 2):
+            translate_tensor = translate.to(device=device, dtype=torch.float32)
+        else:
+            raise ValueError(f"translate tensor must be shape (2,) or ({batch_size}, 2), got {translate.shape}")
+    else:
+        if len(translate) != 2:
+            raise ValueError(f"translate must have 2 values, got {len(translate)}")
+        translate_tensor = torch.tensor([translate], device=device, dtype=torch.float32).repeat(batch_size, 1)
+    
+    scale_tensor = _convert_to_tensor(scale, batch_size, torch.float32, device, "scale")
+    
+    # Handle shear
+    if isinstance(shear, torch.Tensor):
+        if shear.ndim == 1 and shear.shape[0] == 2:
+            shear_tensor = shear.unsqueeze(0).repeat(batch_size, 1).to(device=device, dtype=torch.float32)
+        elif shear.ndim == 2 and shear.shape == (batch_size, 2):
+            shear_tensor = shear.to(device=device, dtype=torch.float32)
+        else:
+            raise ValueError(f"shear tensor must be shape (2,) or ({batch_size}, 2), got {shear.shape}")
+    else:
+        if len(shear) != 2:
+            raise ValueError(f"shear must have 2 values, got {len(shear)}")
+        shear_tensor = torch.tensor([shear], device=device, dtype=torch.float32).repeat(batch_size, 1)
+    
+    # Handle center - convert to torchvision's translated coordinate system
+    # where [0, 0] corresponds to image center
+    # See torchvision/transforms/functional.py rotate():
+    #   center_f = [1.0 * (c - s * 0.5) for c, s in zip(center, [width, height])]
+    if center is None:
+        # Default: image center -> [0, 0] in translated coords
+        center_tensor = torch.zeros(batch_size, 2, device=device, dtype=torch.float32)
+    else:
+        if len(center) != 2:
+            raise ValueError(f"center must have 2 values, got {len(center)}")
+        # Convert pixel coords to translated coords
+        cx = center[0] - width * 0.5
+        cy = center[1] - height * 0.5
+        center_tensor = torch.tensor([[cx, cy]], device=device, dtype=torch.float32).repeat(batch_size, 1)
+        
+    return angle_tensor, translate_tensor, scale_tensor, shear_tensor, center_tensor
+
+
 def affine(
     image: torch.Tensor,
     angle: float | torch.Tensor,
@@ -1040,51 +1103,9 @@ def affine(
     
     batch_size, _, height, width = image.shape
     
-    # Convert parameters to tensors
-    angle_tensor = _convert_to_tensor(angle, batch_size, torch.float32, image.device, "angle")
-    
-    # Handle translate
-    if isinstance(translate, torch.Tensor):
-        if translate.ndim == 1 and translate.shape[0] == 2:
-            translate_tensor = translate.unsqueeze(0).repeat(batch_size, 1).to(device=image.device, dtype=torch.float32)
-        elif translate.ndim == 2 and translate.shape == (batch_size, 2):
-            translate_tensor = translate.to(device=image.device, dtype=torch.float32)
-        else:
-            raise ValueError(f"translate tensor must be shape (2,) or ({batch_size}, 2), got {translate.shape}")
-    else:
-        if len(translate) != 2:
-            raise ValueError(f"translate must have 2 values, got {len(translate)}")
-        translate_tensor = torch.tensor([translate], device=image.device, dtype=torch.float32).repeat(batch_size, 1)
-    
-    scale_tensor = _convert_to_tensor(scale, batch_size, torch.float32, image.device, "scale")
-    
-    # Handle shear
-    if isinstance(shear, torch.Tensor):
-        if shear.ndim == 1 and shear.shape[0] == 2:
-            shear_tensor = shear.unsqueeze(0).repeat(batch_size, 1).to(device=image.device, dtype=torch.float32)
-        elif shear.ndim == 2 and shear.shape == (batch_size, 2):
-            shear_tensor = shear.to(device=image.device, dtype=torch.float32)
-        else:
-            raise ValueError(f"shear tensor must be shape (2,) or ({batch_size}, 2), got {shear.shape}")
-    else:
-        if len(shear) != 2:
-            raise ValueError(f"shear must have 2 values, got {len(shear)}")
-        shear_tensor = torch.tensor([shear], device=image.device, dtype=torch.float32).repeat(batch_size, 1)
-    
-    # Handle center - convert to torchvision's translated coordinate system
-    # where [0, 0] corresponds to image center
-    # See torchvision/transforms/functional.py rotate():
-    #   center_f = [1.0 * (c - s * 0.5) for c, s in zip(center, [width, height])]
-    if center is None:
-        # Default: image center -> [0, 0] in translated coords
-        center_tensor = torch.zeros(batch_size, 2, device=image.device, dtype=torch.float32)
-    else:
-        if len(center) != 2:
-            raise ValueError(f"center must have 2 values, got {len(center)}")
-        # Convert pixel coords to translated coords
-        cx = center[0] - width * 0.5
-        cy = center[1] - height * 0.5
-        center_tensor = torch.tensor([[cx, cy]], device=image.device, dtype=torch.float32).repeat(batch_size, 1)
+    angle_tensor, translate_tensor, scale_tensor, shear_tensor, center_tensor = _prepare_affine_params_to_tensor(
+        angle, translate, scale, shear, center, batch_size, height, width, image.device
+    )
     
     # Compute inverse affine matrix
     matrix = _get_inverse_affine_matrix(
@@ -1113,7 +1134,7 @@ def rotate(
     
     Args:
         image: Input image tensor [N, C, H, W]. Must be on CUDA device.
-        angle: Rotation angle in degrees, counter-clockwise. Can be a scalar
+        angle: Rotation angle in degrees, clockwise. Can be a scalar
             (applied to all images) or tensor of shape [N] for per-image angles.
         interpolation: Interpolation mode for sampling. Either:
             - InterpolationMode.NEAREST (default): Nearest neighbor, faster.
@@ -1166,6 +1187,87 @@ def rotate(
 
 
 
+def _prepare_affine_matrix(
+    batch_size: int,
+    device: torch.device,
+    # Geometric parameters
+    top: int | torch.Tensor,
+    left: int | torch.Tensor,
+    height: int,
+    width: int,
+    img_height: int,
+    img_width: int,
+    flip_horizontal: bool | torch.Tensor,
+    # Affine parameters
+    angle: float | torch.Tensor,
+    translate: list[float] | torch.Tensor,
+    scale: float | torch.Tensor,
+    shear: list[float] | torch.Tensor,
+    center: list[float] | None,
+) -> torch.Tensor:
+    """
+    Helper to prepare the unified affine matrix for fused_augment.
+    Combines Affine @ Crop @ Flip into a single inverse matrix.
+    """
+    # Use helper to prepare affine parameters (handles tensor conversion and center translation)
+    angle_t, translate_t, scale_t, shear_t, center_t = _prepare_affine_params_to_tensor(
+        angle, translate, scale, shear, center, batch_size, img_height, img_width, device
+    )
+
+    # Calculate inverse affine matrix (RSS^-1 * C^-1 * T^-1 * C)
+    # This maps output coordinates to input coordinates for the affine part
+    affine_matrix = _get_inverse_affine_matrix(center_t, angle_t, translate_t, scale_t, shear_t)
+
+    # Convert crop/flip parameters to tensors
+    top_offsets = _convert_to_tensor(top, batch_size, torch.float32, device, "top")
+    left_offsets = _convert_to_tensor(left, batch_size, torch.float32, device, "left")
+    
+    if isinstance(flip_horizontal, bool):
+        if flip_horizontal:
+            flip_mask = torch.ones(batch_size, device=device, dtype=torch.bool)
+        else:
+            flip_mask = torch.zeros(batch_size, device=device, dtype=torch.bool)
+    else:
+        flip_mask = _convert_to_tensor(flip_horizontal, batch_size, torch.bool, device, "flip_horizontal")
+
+    # Compose matrices: M_total = M_affine @ M_crop @ M_flip
+    # We need to do this because the kernel expects a single matrix that maps
+    # output pixel (x, y) -> input pixel (u, v).
+    
+    # 1. Affine Matrix (3x3 expansion)
+    M_affine = torch.eye(3, device=device).repeat(batch_size, 1, 1)
+    M_affine[:, 0, :] = affine_matrix[:, 0:3]
+    M_affine[:, 1, :] = affine_matrix[:, 3:6]
+    
+    # 2. Crop Matrix (Translation)
+    # Maps cropped coordinates (0..w) to original image coordinates (left..left+w)
+    # x_new = x_old + left
+    # y_new = y_old + top
+    M_crop = torch.eye(3, device=device).repeat(batch_size, 1, 1)
+    M_crop[:, 0, 2] = left_offsets
+    M_crop[:, 1, 2] = top_offsets
+    
+    # 3. Flip Matrix
+    # Maps flipped coordinates to unflipped
+    # If flipped: x_new = (width - 1) - x_old
+    # Matrix: [[-1, 0, width-1], [0, 1, 0], [0, 0, 1]]
+    M_flip = torch.eye(3, device=device).repeat(batch_size, 1, 1)
+    flip_indices = torch.where(flip_mask)[0]
+    if len(flip_indices) > 0:
+        M_flip[flip_indices, 0, 0] = -1.0
+        # M_flip[flip_indices, 0, 2] = width - 1.0  # Note: using output width
+        # Yuhe note: in centered coordinate system, the flip is simply x -> -x
+        M_flip[flip_indices, 0, 2] = 0
+
+    # Combine: Affine(Crop(Flip(x)))
+    # Order of application to coordinate: Flip -> Crop -> Affine
+    # Matrix multiplication order: Affine * Crop * Flip
+    M_total = torch.bmm(M_affine, torch.bmm(M_crop, M_flip))
+    
+    # Flatten back to [N, 6]
+    return M_total[:, :2, :].reshape(batch_size, 6)
+
+
 def fused_augment(
     image: torch.Tensor,
     # Geometric parameters (can be scalars or tensors of shape (N,))
@@ -1174,6 +1276,14 @@ def fused_augment(
     height: int,
     width: int,
     flip_horizontal: bool | torch.Tensor = False,
+    # Affine parameters (optional, enables affine mode if set)
+    angle: float | torch.Tensor = 0.0,
+    translate: list[float] | torch.Tensor = [0.0, 0.0],
+    scale: float | torch.Tensor = 1.0,
+    shear: list[float] | torch.Tensor = [0.0, 0.0],
+    interpolation: str = "nearest",
+    fill: float = 0.0,
+    center: list[float] | None = None,
     # Pixel operation parameters (can be scalars or tensors of shape (N,))
     brightness_factor: float | torch.Tensor = 1.0,
     contrast_factor: float | torch.Tensor = 1.0,
@@ -1185,14 +1295,14 @@ def fused_augment(
     """
     Fused augmentation: ALL operations in ONE kernel.
     
-    Combines geometric (crop + flip) and pixel (color + normalize) operations
+    Combines geometric (crop + flip + affine) and pixel (color + normalize) operations
     in a single GPU kernel, providing maximum performance.
     
-    **Performance**: Up to 12x faster on large images (8.1x average on Tesla T4, scales dramatically with image size)
-    
-    Operations applied in sequence:
-    1. **Geometric**: Crop + Optional Horizontal Flip (index transformations, per-image)
-    2. **Pixel**: Brightness + Contrast (fast) + Saturation + Random Grayscale + Normalize (value operations, per-image)
+    Automatically selects the most efficient kernel mode:
+    1. **Simple Mode** (Crop + Flip only): Used when all affine params are identity.
+       Fastest path, uses integer indexing.
+    2. **Affine Mode** (General): Used when any affine param is non-identity.
+       Uses matrix multiplication and interpolation.
     
     Args:
         image: Input image tensor of shape (N, C, H, W) on CUDA
@@ -1201,6 +1311,15 @@ def fused_augment(
         height: Crop height
         width: Crop width
         flip_horizontal: Whether to flip horizontally (bool or uint8 tensor of shape (N,) for per-image, default: False)
+        
+        angle: Rotation angle in degrees (default: 0.0)
+        translate: Translation [dx, dy] (default: [0.0, 0.0])
+        scale: Scale factor (default: 1.0)
+        shear: Shear angles [sx, sy] (default: [0.0, 0.0])
+        interpolation: "nearest" or "bilinear" (default: "nearest")
+        fill: Fill value for out-of-bounds pixels (default: 0.0)
+        center: Center of rotation (default: image center)
+        
         brightness_factor: Brightness multiplier (float or tensor of shape (N,) for per-image, 1.0 = no change)
         contrast_factor: Contrast multiplier (float or tensor of shape (N,) for per-image, 1.0 = no change) [FAST mode]
         saturation_factor: Saturation multiplier (float or tensor of shape (N,) for per-image, 1.0 = no change)
@@ -1214,31 +1333,21 @@ def fused_augment(
     Example:
         ```python
         img = torch.rand(4, 3, 224, 224, device='cuda')
-        # Single kernel launch for ALL operations!
+        
+        # Simple mode (Crop + Flip + Color)
         result = fused_augment(
-            img,
-            top=20, left=30, height=112, width=112,
+            img, top=0, left=0, height=224, width=224,
             flip_horizontal=True,
-            brightness_factor=1.2,
-            contrast_factor=1.1,
-            saturation_factor=0.9,
-            mean=(0.485, 0.456, 0.406),
-            std=(0.229, 0.224, 0.225)
+            brightness_factor=1.2
         )
         
-        # Equivalent sequential operations (MUCH slower - 6 kernel launches):
-        result_seq = crop(img, 20, 30, 112, 112)
-        result_seq = horizontal_flip(result_seq)
-        result_seq = adjust_brightness(result_seq, 1.2)
-        result_seq = adjust_contrast_fast(result_seq, 1.1)
-        result_seq = adjust_saturation(result_seq, 0.9)
-        result_seq = normalize(result_seq, (0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
+        # Affine mode (Rotation + Crop + Color)
+        result = fused_augment(
+            img, top=0, left=0, height=224, width=224,
+            angle=30.0,  # Triggers affine mode
+            brightness_factor=1.2
+        )
         ```
-    
-    Note:
-        - Uses FAST contrast (centered scaling), not torchvision's blend-with-mean
-        - For torchvision-exact contrast, use sequential operations
-        - Zero intermediate memory allocations!
     """
     _validate_image_tensor(image, "image")
     
@@ -1247,34 +1356,57 @@ def fused_augment(
     if height <= 0 or width <= 0:
         raise ValueError(f"Crop size must be positive, got height={height}, width={width}")
     
-    # Convert geometric parameters to tensors of shape (N,)
-    top_offsets = _convert_to_tensor(top, batch_size, torch.int32, image.device, "top")
-    left_offsets = _convert_to_tensor(left, batch_size, torch.int32, image.device, "left")
-    flip_mask = _convert_to_tensor(flip_horizontal, batch_size, torch.bool, image.device, "flip_horizontal")
+    # Check if we need affine mode
+    # We check if any affine parameter is non-identity
+    has_affine = False
     
-    # Convert color factors to tensors of shape (N,)
+    # Check angle
+    if isinstance(angle, torch.Tensor):
+        if torch.any(angle != 0).item(): has_affine = True
+    elif angle != 0:
+        has_affine = True
+        
+    # Check translate
+    if isinstance(translate, torch.Tensor):
+        if torch.any(translate != 0).item(): has_affine = True
+    elif isinstance(translate, (list, tuple)) and (translate[0] != 0 or translate[1] != 0):
+        has_affine = True
+        
+    # Check scale
+    if isinstance(scale, torch.Tensor):
+        if torch.any(scale != 1.0).item(): has_affine = True
+    elif scale != 1.0:
+        has_affine = True
+        
+    # Check shear
+    if isinstance(shear, torch.Tensor):
+        if torch.any(shear != 0).item(): has_affine = True
+    elif isinstance(shear, (list, tuple)) and (shear[0] != 0 or shear[1] != 0):
+        has_affine = True
+
+    # Prepare Pixel Op Parameters
     brightness_factors = _convert_to_tensor(brightness_factor, batch_size, image.dtype, image.device, "brightness_factor")
     contrast_factors = _convert_to_tensor(contrast_factor, batch_size, image.dtype, image.device, "contrast_factor")
     saturation_factors = _convert_to_tensor(saturation_factor, batch_size, image.dtype, image.device, "saturation_factor")
     grayscale_mask = _convert_to_tensor(grayscale, batch_size, torch.bool, image.device, "grayscale")
     
     # Determine which pixel operations to apply
-    # Check if ANY image needs the operation
     apply_brightness = not torch.all(brightness_factors == 1.0).item()
     apply_contrast = not torch.all(contrast_factors == 1.0).item()
     apply_saturation = not torch.all(saturation_factors == 1.0).item()
     apply_normalize = (mean is not None and std is not None)
     
-    # Validate and prepare normalization parameters
+    # Prepare normalization parameters
     if apply_normalize:
         if len(mean) != 3 or len(std) != 3:
             raise ValueError("mean and std must have 3 values for RGB channels")
         norm_mean_tensor = torch.tensor(mean, device=image.device, dtype=image.dtype)
         norm_std_tensor = torch.tensor(std, device=image.device, dtype=image.dtype)
     else:
-        # Create dummy tensors (won't be used due to compile-time flag)
         norm_mean_tensor = torch.zeros(3, device=image.device, dtype=image.dtype)
         norm_std_tensor = torch.ones(3, device=image.device, dtype=image.dtype)
+        
+    apply_grayscale = torch.any(grayscale_mask).item()
     
     # Allocate output tensor
     output = torch.empty(
@@ -1283,55 +1415,102 @@ def fused_augment(
         device=image.device
     )
     
-    # Check if any image needs grayscale
-    apply_grayscale = torch.any(grayscale_mask).item()
-    
-    # Calculate total elements and grid size based on processing path
     output_spatial_size = height * width
     total_elements = batch_size * channels * output_spatial_size
-    
-    # N for auto-tuning key
     N = total_elements
     
+    # Determine grid
     if apply_saturation or apply_grayscale:
-        # Spatial processing (required for saturation/grayscale)
         total_spatial = batch_size * output_spatial_size
         grid = lambda meta: (triton.cdiv(total_spatial, meta['BLOCK_SIZE']),)
     else:
-        # Linear processing (faster)
         grid = lambda meta: (triton.cdiv(total_elements, meta['BLOCK_SIZE']),)
-    
-    # Show auto-tuning message if this kernel hasn't been tuned yet (only when enabled)
-    if ENABLE_AUTOTUNE and should_show_autotune_message('ultimate_fused_kernel', (N,)):
-        print(f"[Triton-Augment] Auto-tuning ultimate_fused_kernel for batch={batch_size}, size={height}×{width}... (~2-5 sec)", 
+        
+    # Auto-tuning message
+    if ENABLE_AUTOTUNE and should_show_autotune_message('fused_augment_kernel', (N,)):
+        print(f"[Triton-Augment] Auto-tuning fused_augment_kernel for batch={batch_size}, size={height}×{width}...", 
               file=sys.stderr, flush=True)
-    
-    # Launch the ultimate fused kernel (auto-tuned with 4 configs or fixed with 1 config based on ENABLE_AUTOTUNE)
-    ultimate_fused_kernel[grid](
-        image,
-        output,
-        N,                     # Auto-tuning key
-        batch_size,
-        channels,
-        img_height,
-        img_width,
-        height,
-        width,
-        top_offsets,           # Per-image tensors!
-        left_offsets,
-        flip_mask,
-        norm_mean_tensor,
-        norm_std_tensor,
-        brightness_factors,
-        contrast_factors,
-        saturation_factors,
-        grayscale_mask,        # Per-image tensor!
-        apply_brightness,
-        apply_contrast,
-        apply_saturation,
-        apply_grayscale,       # Whether to check grayscale mask at all
-        apply_normalize,
-    )
+
+    if has_affine:
+        # === AFFINE MODE ===
+        # Calculate unified affine matrix
+        matrix_t = _prepare_affine_matrix(
+            batch_size, image.device,
+            top, left, height, width, img_height, img_width, flip_horizontal,
+            angle, translate, scale, shear, center
+        )
+        
+        interp_mode_int = 1 if str(interpolation).lower() == "bilinear" else 0
+        
+        fused_augment_kernel[grid](
+            image,
+            output,
+            N,
+            batch_size,
+            channels,
+            img_height,
+            img_width,
+            height,
+            width,
+            # Crop/Flip params (unused)
+            None, None, None,
+            # Affine params
+            matrix_t,
+            fill,
+            interp_mode_int,
+            # Pixel ops
+            norm_mean_tensor,
+            norm_std_tensor,
+            brightness_factors,
+            contrast_factors,
+            saturation_factors,
+            grayscale_mask,
+            # Flags
+            True, # has_affine
+            apply_brightness,
+            apply_contrast,
+            apply_saturation,
+            apply_grayscale,
+            apply_normalize,
+        )
+    else:
+        # === SIMPLE MODE (Crop + Flip) ===
+        # Convert geometric parameters to tensors
+        top_offsets = _convert_to_tensor(top, batch_size, torch.int32, image.device, "top")
+        left_offsets = _convert_to_tensor(left, batch_size, torch.int32, image.device, "left")
+        flip_mask = _convert_to_tensor(flip_horizontal, batch_size, torch.bool, image.device, "flip_horizontal")
+        
+        fused_augment_kernel[grid](
+            image,
+            output,
+            N,
+            batch_size,
+            channels,
+            img_height,
+            img_width,
+            height,
+            width,
+            # Crop/Flip params
+            top_offsets,
+            left_offsets,
+            flip_mask,
+            # Affine params (unused)
+            None, 0.0, 0,
+            # Pixel ops
+            norm_mean_tensor,
+            norm_std_tensor,
+            brightness_factors,
+            contrast_factors,
+            saturation_factors,
+            grayscale_mask,
+            # Flags
+            False, # has_affine
+            apply_brightness,
+            apply_contrast,
+            apply_saturation,
+            apply_grayscale,
+            apply_normalize,
+        )
     
     return output
 
