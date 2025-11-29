@@ -1432,6 +1432,53 @@ class TritonFusedAugment(nn.Module):
     
     
     
+    def _get_params(self, param_count: int, device: torch.device, img_size: Tuple[int, int]):
+        """
+        Generate all parameters for the fused transformation.
+        
+        Args:
+            param_count: Number of parameter sets to generate
+            device: Device to generate parameters on
+            img_size: (height, width) of the input image
+            
+        Returns:
+            Tuple of all parameters required by fused_augment
+        """
+        img_height, img_width = img_size
+        
+        # Initialize params
+        angle = 0.0
+        translate = [0.0, 0.0]
+        scale = 1.0
+        shear = [0.0, 0.0]
+        
+        if self.has_affine:
+            # ===== AFFINE MODE =====
+            # Sample affine params
+            angle, translate, scale, shear = self.affine_helper._get_params(
+                param_count, device, (img_height, img_width)
+            )
+            
+        # Sample crop params
+        top_offsets = torch.randint(0, img_height - self.crop_height + 1, (param_count,), device=device, dtype=torch.float32)
+        left_offsets = torch.randint(0, img_width - self.crop_width + 1, (param_count,), device=device, dtype=torch.float32)
+        
+        # Sample flip params
+        do_flip = (
+            F._sample_bernoulli_tensor(param_count, self.horizontal_flip_p, device)
+            if self.horizontal_flip_p > 0
+            else torch.zeros(param_count, device=device, dtype=torch.bool)
+        )
+        
+        # Sample color params using helper
+        brightness_factors, contrast_factors, saturation_factors, grayscale_mask = self.color_helper._get_params(param_count, device)
+        
+        return (
+            angle, translate, scale, shear,
+            top_offsets, left_offsets, do_flip,
+            brightness_factors, contrast_factors, saturation_factors, grayscale_mask
+        )
+    
     def forward(self, image: torch.Tensor) -> torch.Tensor:
         """
         Apply all augmentations in a single fused kernel.
@@ -1460,40 +1507,20 @@ class TritonFusedAugment(nn.Module):
         # Compute how many parameter sets to generate
         param_count = _compute_param_count(batch_size, num_frames, self.same_on_batch, self.same_on_frame)
         
-        # Initialize params
-        angle = 0.0
-        translate = [0.0, 0.0]
-        scale = 1.0
-        shear = [0.0, 0.0]
+        # Get all parameters
+        (
+            angle, translate, scale, shear,
+            top_offsets, left_offsets, do_flip,
+            brightness_factors, contrast_factors, saturation_factors, grayscale_mask
+        ) = self._get_params(param_count, normalized_img.device, (img_height, img_width))
         
+        # Broadcast params
         if self.has_affine:
-            # ===== AFFINE MODE =====
-            # Sample affine params
-            angle, translate, scale, shear = self.affine_helper._get_params(
-                param_count, normalized_img.device, (img_height, img_width)
-            )
-            
-            # Broadcast params
             angle = _broadcast_params_to_all_samples(angle, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame)
             translate = _broadcast_2d_params(translate, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame)
             shear = _broadcast_2d_params(shear, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame)
             scale = _broadcast_params_to_all_samples(scale, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame)
 
-        # Sample crop params
-        top_offsets = torch.randint(0, img_height - self.crop_height + 1, (param_count,), device=normalized_img.device, dtype=torch.float32)
-        left_offsets = torch.randint(0, img_width - self.crop_width + 1, (param_count,), device=normalized_img.device, dtype=torch.float32)
-        
-        # Sample flip params
-        do_flip = (
-            F._sample_bernoulli_tensor(param_count, self.horizontal_flip_p, normalized_img.device)
-            if self.horizontal_flip_p > 0
-            else torch.zeros(param_count, device=normalized_img.device, dtype=torch.bool)
-        )
-        
-        # Sample color params using helper
-        brightness_factors, contrast_factors, saturation_factors, grayscale_mask = self.color_helper._get_params(param_count, normalized_img.device)
-        
-        # Broadcast params
         top_offsets = _broadcast_params_to_all_samples(top_offsets, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame)
         left_offsets = _broadcast_params_to_all_samples(left_offsets, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame)
         do_flip = _broadcast_params_to_all_samples(do_flip, batch_size, num_frames, total_samples, self.same_on_batch, self.same_on_frame)

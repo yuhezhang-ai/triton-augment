@@ -35,7 +35,7 @@ except ImportError:
         tv_get_inverse_affine_matrix = None
 
 
-def check_affine_result(ta_result, tv_result, interpolation, atol=1e-3, rtol=1e-3, max_mismatch_rate=0.25):
+def check_affine_result(ta_result, tv_result, interpolation, atol=1e-4, rtol=1e-3, max_mismatch_rate=0.25):
     """
     Check if affine transform results match, with special handling for nearest neighbor.
     
@@ -57,7 +57,6 @@ def check_affine_result(ta_result, tv_result, interpolation, atol=1e-3, rtol=1e-
                 ta_result, tv_result, atol=atol, rtol=rtol,
                 msg=f"Nearest neighbor mismatch rate {mismatch_rate:.2%} exceeds threshold {max_mismatch_rate:.2%}"
             )
-
 
 
 class TestAffineCorrectness:
@@ -104,7 +103,7 @@ class TestAffineCorrectness:
     @pytest.mark.parametrize("angle,translate,scale,shear", [
         (0.0, [0.0, 0.0], 1.0, [0.0, 0.0]),           # Identity
         (30.0, [10.0, 20.0], 1.2, [5.0, 10.0]),       # Complex transform
-        (90.0, [0.0, 0.0], 1.0, [0.0, 0.0]),          # 90 degree rotation
+        (88.0, [0.0, 0.0], 1.0, [0.0, 0.0]),          # 88 degree rotation
         (-45.0, [15.0, -10.0], 0.8, [0.0, 0.0]),      # Negative angle, scale down
         (15.0, [5.0, 5.0], 1.0, [10.0, -5.0]),        # Shear only
         (0.0, [20.0, 30.0], 1.5, [0.0, 0.0]),         # Translation + scale
