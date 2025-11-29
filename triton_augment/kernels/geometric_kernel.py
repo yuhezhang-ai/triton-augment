@@ -329,8 +329,8 @@ def apply_affine_transform(
     x_out_f = x_out.to(tl.float32)
     y_out_f = y_out.to(tl.float32)
     
-    half_ow = output_width * 0.5
-    half_oh = output_height * 0.5
+    half_ow = input_width * 0.5 # output_width * 0.5
+    half_oh = input_height * 0.5 # output_height * 0.5
     x_centered = x_out_f - half_ow + 0.5
     y_centered = y_out_f - half_oh + 0.5
     

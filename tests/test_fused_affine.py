@@ -124,8 +124,8 @@ def test_fused_affine_vs_sequential(batch_size, interpolation, imgsize, shear, f
         out_triton = ta.functional.horizontal_flip(out_triton)
     
     # 5. Compare
-    check_affine_result(out_fused, out_seq, interpolation, msg_prefix="Fused vs torchvision")
     check_affine_result(out_triton, out_seq, interpolation, msg_prefix="Triton-sequential vs torchvision")
+    check_affine_result(out_fused, out_seq, interpolation, msg_prefix="Fused vs torchvision")
 
 if __name__ == "__main__":
     test_fused_affine_vs_sequential(1, "nearest")
